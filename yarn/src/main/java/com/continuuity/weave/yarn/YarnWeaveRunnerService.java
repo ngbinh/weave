@@ -36,6 +36,7 @@ import com.continuuity.weave.internal.ZKWeaveController;
 import com.continuuity.weave.internal.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.internal.logging.KafkaWeaveRunnable;
 import com.continuuity.weave.zookeeper.RetryStrategies;
+import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
@@ -102,9 +103,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   @Override
-  public WeaveController lookup(RunId runId) {
-    // TODO: Check if the runId presences in ZK.
-    return new ZKWeaveController(zkClientService, runId, ImmutableList.<LogHandler>of());
+  public WeaveController lookup(String applicationName, RunId runId) {
+    ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
+    ZKWeaveController controller = new ZKWeaveController(zkClient, runId, ImmutableList.<LogHandler>of());
+    controller.start();
+    return controller;
   }
 
   @Override

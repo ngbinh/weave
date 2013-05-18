@@ -16,13 +16,19 @@
 package com.continuuity.weave.internal.kafka.client;
 
 import org.jboss.netty.channel.ChannelHandlerContext;
+import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
 import org.jboss.netty.channel.SimpleChannelHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  */
 final class KafkaResponseDispatcher extends SimpleChannelHandler {
+
+  private static final Logger LOG = LoggerFactory.getLogger(KafkaResponseDispatcher.class);
+
   @Override
   public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
     Object attachment = ctx.getAttachment();
@@ -39,5 +45,10 @@ final class KafkaResponseDispatcher extends SimpleChannelHandler {
       ctx.setAttachment(((KafkaRequest) e.getMessage()).getResponseHandler());
     }
     super.writeRequested(ctx, e);
+  }
+
+  @Override
+  public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+    LOG.warn("Exception caught in kafka client connection.", e.getCause());
   }
 }
