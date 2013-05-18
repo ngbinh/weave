@@ -15,9 +15,12 @@
  */
 package com.continuuity.weave.filesystem;
 
+import com.google.common.base.Throwables;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
+import java.io.IOException;
 import java.net.URI;
 
 /**
@@ -28,9 +31,24 @@ public final class HDFSLocationFactory implements LocationFactory {
   private final FileSystem fileSystem;
   private final String pathBase;
 
+  public HDFSLocationFactory(Configuration configuration) {
+    this(getFileSystem(configuration));
+  }
+  
+  public HDFSLocationFactory(Configuration configuration, String pathBase) {
+    this(getFileSystem(configuration), pathBase);
+  }
+
+  public HDFSLocationFactory(FileSystem fileSystem) {
+    this(fileSystem, "/");
+  }
+
   public HDFSLocationFactory(FileSystem fileSystem, String pathBase) {
+    String base = pathBase.equals("/") ? "" : pathBase;
+    base = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+
     this.fileSystem = fileSystem;
-    this.pathBase = pathBase;
+    this.pathBase = base;
   }
 
   @Override
@@ -41,5 +59,13 @@ public final class HDFSLocationFactory implements LocationFactory {
   @Override
   public Location create(URI uri) {
     return new HDFSLocation(fileSystem, new Path(uri));
+  }
+
+  private static FileSystem getFileSystem(Configuration configuration) {
+    try {
+      return FileSystem.get(configuration);
+    } catch (IOException e) {
+      throw Throwables.propagate(e);
+    }
   }
 }

@@ -108,13 +108,6 @@ public class EchoServerTest {
 
     runnerService = new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
                                                new LocalLocationFactory(Files.createTempDir()));
-//    YarnConfiguration config = new YarnConfiguration();
-//    config.set("yarn.resourcemanager.address", "loom-sasha2node2-1.joyent.continuuity.net:8032");
-//    config.set("fs.default.name", "hdfs://loom-sasha2node2-1.joyent.continuuity.net");
-//    String zkConnect = "loom-sasha2node2-1.joyent.continuuity.net:2181";
-//
-//    runnerService = new YarnWeaveRunnerService(config, zkConnect + "/weave");
-
     runnerService.startAndWait();
   }
 

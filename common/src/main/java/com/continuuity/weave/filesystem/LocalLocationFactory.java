@@ -25,6 +25,13 @@ public final class LocalLocationFactory implements LocationFactory {
 
   private final File basePath;
 
+  /**
+   * Constructs a LocalLocationFactory that Location created will be relative to system root.
+   */
+  public LocalLocationFactory() {
+    this(new File("/"));
+  }
+
   public LocalLocationFactory(File basePath) {
     this.basePath = basePath;
   }
