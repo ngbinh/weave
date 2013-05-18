@@ -13,10 +13,8 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.filesystem;
+package com.continuuity.weave.filesystem;
 
-import com.continuuity.weave.common.filesystem.Location;
-import com.continuuity.weave.common.filesystem.LocationFactory;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 

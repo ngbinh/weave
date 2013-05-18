@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.common.filesystem;
+package com.continuuity.weave.filesystem;
 
 import javax.annotation.Nullable;
 import java.io.IOException;

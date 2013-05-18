@@ -6,7 +6,7 @@ import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.common.filesystem.LocalLocationFactory;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.discovery.Discoverable;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
@@ -38,12 +38,12 @@ public class EchoServerTest {
   @Test
   public void testEchoServer() throws InterruptedException, ExecutionException, IOException {
     WeaveController controller = runnerService.prepare(new EchoServer(),
-                                                     ResourceSpecification.Builder.with()
-                                                       .setCores(1)
-                                                       .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
-                                                       .setInstances(2)
-                                                       .build())
-                                            .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
+                                                       ResourceSpecification.Builder.with()
+                                                         .setCores(1)
+                                                         .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
+                                                         .setInstances(2)
+                                                         .build())
+//                                            .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
                                             .start();
 
     final CountDownLatch running = new CountDownLatch(1);
@@ -80,6 +80,9 @@ public class EchoServerTest {
       }
     }
 
+    controller = runnerService.lookup("EchoServer", controller.getRunId());
+    controller.addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)));
+
     controller.stop().get();
 
     TimeUnit.SECONDS.sleep(2);
@@ -103,16 +106,23 @@ public class EchoServerTest {
     cluster.init(config);
     cluster.start();
 
-    runnerService = new YarnWeaveRunnerService(new YarnConfiguration(), zkServer.getConnectionStr() + "/weave",
+    runnerService = new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
                                                new LocalLocationFactory(Files.createTempDir()));
+//    YarnConfiguration config = new YarnConfiguration();
+//    config.set("yarn.resourcemanager.address", "loom-sasha2node2-1.joyent.continuuity.net:8032");
+//    config.set("fs.default.name", "hdfs://loom-sasha2node2-1.joyent.continuuity.net");
+//    String zkConnect = "loom-sasha2node2-1.joyent.continuuity.net:2181";
+//
+//    runnerService = new YarnWeaveRunnerService(config, zkConnect + "/weave");
+
     runnerService.startAndWait();
   }
 
   @After
   public void finish() {
     runnerService.stopAndWait();
-    cluster.stop();
-    zkServer.stopAndWait();
+//    cluster.stop();
+//    zkServer.stopAndWait();
   }
 
   private InMemoryZKServer zkServer;

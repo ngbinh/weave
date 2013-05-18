@@ -16,7 +16,7 @@
 package com.continuuity.weave.yarn.utils;
 
 import com.continuuity.weave.api.LocalFile;
-import com.continuuity.weave.common.filesystem.Location;
+import com.continuuity.weave.filesystem.Location;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import org.apache.hadoop.yarn.api.records.LocalResource;
