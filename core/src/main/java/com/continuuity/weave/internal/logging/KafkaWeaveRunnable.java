@@ -24,11 +24,13 @@ import com.continuuity.weave.internal.utils.Networks;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -97,21 +99,18 @@ public final class KafkaWeaveRunnable implements WeaveRunnable {
   }
 
   private ClassLoader getClassLoader(File kafkaDir) throws MalformedURLException {
-    String[] cp = new String[]{
-      "project/boot/scala-2.8.0/lib/scala-library.jar",
-      "core/target/scala_2.8.0/kafka-0.7.2.jar",
-      "perf/target/scala_2.8.0/kafka-perf-0.7.2.jar",
-      "core/lib_managed/scala_2.8.0/compile/jopt-simple-3.2.jar",
-      "core/lib_managed/scala_2.8.0/compile/log4j-over-slf4j-1.6.4.jar",
-      "core/lib_managed/scala_2.8.0/compile/snappy-java-1.0.4.1.jar",
-      "core/lib_managed/scala_2.8.0/compile/zkclient-0.1.jar",
-      "core/lib_managed/scala_2.8.0/compile/zookeeper-3.3.4.jar"};
-    URL[] urls = new URL[cp.length];
+    return new URLClassLoader(findJars(kafkaDir, Lists.<URL>newArrayList()).toArray(new URL[0]));
+  }
 
-    for (int i = 0; i < cp.length; i++) {
-      urls[i] = new File(kafkaDir, cp[i]).toURI().toURL();
+  private List<URL> findJars(File dir, List<URL> urls) throws MalformedURLException {
+    for (File file : dir.listFiles()) {
+      if (file.isDirectory()) {
+        findJars(file, urls);
+      } else if (file.getName().endsWith(".jar")) {
+        urls.add(file.toURI().toURL());
+      }
     }
-    return new URLClassLoader(urls);
+    return urls;
   }
 
   private Properties generateKafkaConfig(String zkConnectStr) {
