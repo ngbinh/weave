@@ -26,5 +26,5 @@ public interface WeaveRunner {
 
   WeavePreparer prepare(WeaveApplication application);
 
-  WeaveController lookup(RunId runId);
+  WeaveController lookup(String applicationName, RunId runId);
 }

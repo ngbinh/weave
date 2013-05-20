@@ -15,7 +15,9 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
@@ -31,6 +33,7 @@ import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
+import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.AsyncFunction;
 import com.google.common.util.concurrent.Futures;
@@ -71,6 +74,8 @@ public final class WeaveContainerMain extends ServiceMain {
     DiscoveryService discoveryService = new ZKDiscoveryService(zkClientService);
 
     WeaveSpecification weaveSpec = loadWeaveSpec(weaveSpecFile);
+    renameLocalFiles(weaveSpec.getRunnables().get(runnableName));
+    
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
     ContainerInfo containerInfo = new ContainerInfo();
     WeaveContext context = new BasicWeaveContext(containerInfo.getHost(), args,
@@ -87,6 +92,18 @@ public final class WeaveContainerMain extends ServiceMain {
 
     new WeaveContainerMain().doMain(wrapService(zkClientService, service));
     stopLatch.await();
+  }
+
+  private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {
+    for (LocalFile file : runtimeSpec.getLocalFiles()) {
+      if (file.isArchive()) {
+        String path = file.getURI().toString();
+        String name = file.getName() + (path.endsWith(".tar.gz") ? ".tar.gz" : path.substring(path.lastIndexOf('.')));
+        Preconditions.checkState(new File(name).renameTo(new File(file.getName())),
+                                 "Fail to rename file from %s to %s.",
+                                 name, file.getName());
+      }
+    }
   }
 
   private static ZKClient getContainerZKClient(ZKClient zkClient, RunId appRunId, String runnableName) {

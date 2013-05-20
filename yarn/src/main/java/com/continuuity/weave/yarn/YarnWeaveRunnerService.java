@@ -27,15 +27,16 @@ import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.api.logging.LogHandler;
-import com.continuuity.weave.common.filesystem.LocationFactory;
+import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultWeaveRunnableSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.SingleRunnableApplication;
 import com.continuuity.weave.internal.ZKWeaveController;
-import com.continuuity.weave.internal.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.internal.logging.KafkaWeaveRunnable;
 import com.continuuity.weave.zookeeper.RetryStrategies;
+import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
@@ -102,9 +103,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   @Override
-  public WeaveController lookup(RunId runId) {
-    // TODO: Check if the runId presences in ZK.
-    return new ZKWeaveController(zkClientService, runId, ImmutableList.<LogHandler>of());
+  public WeaveController lookup(String applicationName, RunId runId) {
+    ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
+    ZKWeaveController controller = new ZKWeaveController(zkClient, runId, ImmutableList.<LogHandler>of());
+    controller.start();
+    return controller;
   }
 
   @Override
@@ -151,7 +154,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
           @Override
           public WeaveRunnableSpecification getRunnableSpecification() {
-            KafkaWeaveRunnable kafkaRunnable = new KafkaWeaveRunnable("kafka.tgz");
+            KafkaWeaveRunnable kafkaRunnable = new KafkaWeaveRunnable("kafka");
             return new DefaultWeaveRunnableSpecification(kafkaRunnable.getClass().getName(),
                                                          kafkaRunnable.configure());
           }
@@ -166,7 +169,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           public Collection<LocalFile> getLocalFiles() {
             try {
               URL kafkaArchive = getClass().getClassLoader().getResource(KAFKA_ARCHIVE);
-              LocalFile kafka = new DefaultLocalFile("kafka.tgz", kafkaArchive.toURI(), -1, -1, true, null);
+              LocalFile kafka = new DefaultLocalFile("kafka", kafkaArchive.toURI(), -1, -1, true, null);
               return ImmutableList.of(kafka);
             } catch (Exception e) {
               throw Throwables.propagate(e);

@@ -15,7 +15,7 @@
  */
 package com.continuuity.weave.internal;
 
-import com.continuuity.weave.common.filesystem.Location;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.utils.Dependencies;
 import com.google.common.base.Function;
 import com.google.common.base.Splitter;

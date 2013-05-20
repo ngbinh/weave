@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.common.filesystem;
+package com.continuuity.weave.filesystem;
 
 import java.io.File;
 import java.net.URI;
@@ -24,6 +24,13 @@ import java.net.URI;
 public final class LocalLocationFactory implements LocationFactory {
 
   private final File basePath;
+
+  /**
+   * Constructs a LocalLocationFactory that Location created will be relative to system root.
+   */
+  public LocalLocationFactory() {
+    this(new File("/"));
+  }
 
   public LocalLocationFactory(File basePath) {
     this.basePath = basePath;
