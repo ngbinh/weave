@@ -85,12 +85,11 @@ public final class ApplicationBundler {
       Set<String> entries = Sets.newHashSet();
       JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(tmpJar));
       try {
-        findDependencies(classes, entries, jarOut);
-
         // Add all classes under the packages as listed in includePackages
         for (String pkg : includePackages) {
           copyPackage(pkg, entries, jarOut);
         }
+        findDependencies(classes, entries, jarOut);
       } finally {
         jarOut.close();
       }
