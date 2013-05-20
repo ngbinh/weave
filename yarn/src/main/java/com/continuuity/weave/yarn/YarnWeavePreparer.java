@@ -311,11 +311,13 @@ final class YarnWeavePreparer implements WeavePreparer {
     for (Map.Entry<String, RuntimeSpecification> entry: weaveSpec.getRunnables().entrySet()) {
       String name = entry.getKey();
       for (LocalFile localFile : entry.getValue().getLocalFiles()) {
-        LOG.debug("Create and copy {} : {}", name, localFile.getURI());
+        URI uri = localFile.getURI();
+        LOG.debug("Create and copy {} : {}", name, uri);
         // Temp file suffix is repeat the file name again to make sure it preserves the original suffix for expansion.
-        Location location = copyFromURI(localFile.getURI(),
-                                        createTempLocation(localFile.getName(), localFile.getName()));
-        LOG.debug("Done {} : {}", name, localFile.getURI());
+        String path = uri.toString();
+        Location location = copyFromURI(uri, createTempLocation(localFile.getName(),
+                                                                path.substring(path.lastIndexOf('/') + 1)));
+        LOG.debug("Done {} : {}", name, uri);
 
         tmpLocations.add(location);
         localFiles.put(name, new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),

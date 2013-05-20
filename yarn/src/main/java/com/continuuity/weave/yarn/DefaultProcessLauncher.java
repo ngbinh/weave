@@ -130,7 +130,12 @@ final class DefaultProcessLauncher implements ProcessLauncher {
 
       @Override
       public MoreResources add(LocalFile localFile) {
-        localResources.put(localFile.getName(), YarnUtils.createLocalResource(localFile));
+        String name = localFile.getName();
+        if (localFile.isArchive()) {
+          String path = localFile.getURI().toString();
+          name += path.endsWith(".tar.gz") ? ".tar.gz" : path.substring(path.lastIndexOf('.'));
+        }
+        localResources.put(name, YarnUtils.createLocalResource(localFile));
         return this;
       }
 

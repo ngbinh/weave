@@ -154,7 +154,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
           @Override
           public WeaveRunnableSpecification getRunnableSpecification() {
-            KafkaWeaveRunnable kafkaRunnable = new KafkaWeaveRunnable("kafka.tgz");
+            KafkaWeaveRunnable kafkaRunnable = new KafkaWeaveRunnable("kafka");
             return new DefaultWeaveRunnableSpecification(kafkaRunnable.getClass().getName(),
                                                          kafkaRunnable.configure());
           }
@@ -169,7 +169,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           public Collection<LocalFile> getLocalFiles() {
             try {
               URL kafkaArchive = getClass().getClassLoader().getResource(KAFKA_ARCHIVE);
-              LocalFile kafka = new DefaultLocalFile("kafka.tgz", kafkaArchive.toURI(), -1, -1, true, null);
+              LocalFile kafka = new DefaultLocalFile("kafka", kafkaArchive.toURI(), -1, -1, true, null);
               return ImmutableList.of(kafka);
             } catch (Exception e) {
               throw Throwables.propagate(e);
