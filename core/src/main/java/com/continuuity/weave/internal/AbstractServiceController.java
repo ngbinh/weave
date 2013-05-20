@@ -106,10 +106,10 @@ public abstract class AbstractServiceController implements ServiceController {
         public ListenableFuture<State> apply(State input) throws Exception {
           // Wait for the instance ephemeral node goes away
           return Futures.transform(
-            ZKOperations.watchDeleted(zkClient, "/instances/" + runId), new Function<String, State>() {
+            ZKOperations.watchDeleted(zkClient, "/instances/" + runId.getId()), new Function<String, State>() {
                @Override
                public State apply(String input) {
-                 LOG.info("Remote service stopped: " + runId);
+                 LOG.info("Remote service stopped: " + runId.getId());
                  state.set(State.TERMINATED);
                  fireStateChange(new StateNode(State.TERMINATED, null));
                  return State.TERMINATED;
@@ -148,7 +148,7 @@ public abstract class AbstractServiceController implements ServiceController {
   }
 
   private String getZKPath(String path) {
-    return String.format("/%s/%s", runId, path);
+    return String.format("/%s/%s", runId.getId(), path);
   }
 
   private void fireStateChange(StateNode state) {

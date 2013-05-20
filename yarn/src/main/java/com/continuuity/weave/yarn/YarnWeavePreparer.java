@@ -430,7 +430,8 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private Location createTempLocation(String path, String suffix) {
     try {
-      return locationFactory.create(String.format("/%s/%s/%s", weaveSpec.getName(), runId, path)).getTempFile(suffix);
+      return locationFactory.create(String.format("/%s/%s/%s",
+                                                  weaveSpec.getName(), runId.getId(), path)).getTempFile(suffix);
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }

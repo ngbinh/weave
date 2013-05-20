@@ -63,7 +63,7 @@ public final class ZKWeaveController extends AbstractServiceController implement
     super(zkClient, runId);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
     Iterables.addAll(this.logHandlers, logHandlers);
-    this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId + "/kafka"));
+    this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
     this.discoveryServiceClient = new ZKDiscoveryService(zkClient);
     this.logPoller = createLogPoller();
   }

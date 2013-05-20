@@ -187,8 +187,8 @@ public final class ApplicationMasterService implements Service {
 
     // Creates ZK path for runnable and kafka logging service
     Futures.allAsList(ImmutableList.of(
-      zkClientService.create("/" + runId + "/runnables", null, CreateMode.PERSISTENT),
-      zkClientService.create("/" + runId + "/kafka", null, CreateMode.PERSISTENT))).get();
+      zkClientService.create("/" + runId.getId() + "/runnables", null, CreateMode.PERSISTENT),
+      zkClientService.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))).get();
   }
 
   private void doStop() throws Exception {
@@ -351,11 +351,11 @@ public final class ApplicationMasterService implements Service {
   }
 
   private String getZKNamespace(String runnableName) {
-    return String.format("/%s/runnables/%s", runId, runnableName);
+    return String.format("/%s/runnables/%s", runId.getId(), runnableName);
   }
 
   private String getKafkaZKConnect() {
-    return String.format("%s/%s/kafka", zkConnectStr, runId);
+    return String.format("%s/%s/kafka", zkConnectStr, runId.getId());
   }
 
   private ListenableFuture<String> processMessage(String messageId, Message message) {
