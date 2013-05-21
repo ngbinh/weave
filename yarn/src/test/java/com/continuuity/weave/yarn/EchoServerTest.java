@@ -6,10 +6,12 @@ import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.discovery.Discoverable;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.io.Files;
 import com.google.common.io.LineReader;
@@ -43,8 +45,7 @@ public class EchoServerTest {
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
                                                          .build())
-//                                            .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
-                                            .start();
+                                              .start();
 
     final CountDownLatch running = new CountDownLatch(1);
     controller.addListener(new ListenerAdapter() {
@@ -101,6 +102,9 @@ public class EchoServerTest {
     config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
+    config.set("yarn.application.classpath",
+               Joiner.on(',').join(
+                 Splitter.on(System.getProperty("path.separator")).split(System.getProperty("java.class.path"))));
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);

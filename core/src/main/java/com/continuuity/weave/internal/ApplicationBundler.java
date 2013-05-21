@@ -89,6 +89,7 @@ public final class ApplicationBundler {
         for (String pkg : includePackages) {
           copyPackage(pkg, entries, jarOut);
         }
+
         findDependencies(classes, entries, jarOut);
       } finally {
         jarOut.close();

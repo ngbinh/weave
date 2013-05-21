@@ -45,7 +45,7 @@ public final class WeaveContainerLauncher {
     this.instanceId = instanceId;
   }
 
-  public ServiceController start(String stdout, String stderr) {
+  public ServiceController start(String classPath, String stdout, String stderr) {
     ProcessLauncher.PrepareLaunchContext.AfterUser afterUser = processLauncher.prepareLaunch()
       .setUser(System.getProperty("user.name"));
 
@@ -70,7 +70,7 @@ public final class WeaveContainerLauncher {
       .withCommands()
         .add("java",
              ImmutableList.<String>builder()
-               .add("-cp").add("container.jar")
+               .add("-cp").add("\\\"" + "container.jar" + (classPath.isEmpty() ? "" : ":" + classPath) + "\\\"")
                .add("-Xmx" + memory + "m")
                .add(WeaveContainerMain.class.getName())
                .addAll(args).build().toArray(new String[0]))

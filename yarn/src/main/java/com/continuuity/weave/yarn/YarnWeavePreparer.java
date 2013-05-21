@@ -39,7 +39,9 @@ import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
 import com.google.common.base.Predicates;
+import com.google.common.base.Splitter;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.HashMultimap;
@@ -182,11 +184,9 @@ final class YarnWeavePreparer implements WeavePreparer {
       // loading of the Native bytecode in a different way.
       ApplicationBundler bundler = new ApplicationBundler(ImmutableList.<String>builder()
                                                             .add("org.xerial.snappy")
-                                                            .add("org.apache.hadoop.hdfs")  // TODO: Remove later
+                                                            .add("org.apache.hadoop")
                                                             .build(),
                                                           ImmutableList.<String>builder()
-                                                            .add("org.apache.hadoop.yarn")
-                                                            .add("org.apache.hadoop.security")
                                                             .add("org.xerial.snappy")
                                                             .addAll(packages)
                                                             .build()
@@ -205,9 +205,13 @@ final class YarnWeavePreparer implements WeavePreparer {
       ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
       containerLaunchContext.setLocalResources(localResources);
 
+      String classpath = yarnClient.getConfig().get("yarn.application.classpath", "");
+      classpath = Joiner.on(':').join(Splitter.on(',').split(classpath));
+      classpath = "appMaster.jar" + (classpath.isEmpty() ? "" : ":" + classpath);
+
       containerLaunchContext.setCommands(ImmutableList.of(
         "java",
-        "-cp", "appMaster.jar:$HADOOP_CONF_DIR",
+        "-cp", "\\\"" + classpath + "\\\"",
         "-Xmx" + APP_MASTER_MEMORY_MB + "m",
         ApplicationMasterMain.class.getName(),
         " 1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",

@@ -38,7 +38,9 @@ import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
@@ -109,13 +111,13 @@ public final class ApplicationMasterService implements Service {
   private final String zkConnectStr;
   private final ZKClientService zkClientService;
   private final WeaveSpecification weaveSpec;
-  private final File weaveSpecFile;
   private final ListMultimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
   private final String masterContainerId;
   private final AMRMClient amrmClient;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
+  private final String yarnClassPath;
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
@@ -125,7 +127,6 @@ public final class ApplicationMasterService implements Service {
   public ApplicationMasterService(RunId runId, String zkConnectStr, File weaveSpecFile) throws IOException {
     this.runId = runId;
     this.zkConnectStr = zkConnectStr;
-    this.weaveSpecFile = weaveSpecFile;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
     this.runnableArgs = decodeRunnableArgs();
 
@@ -145,6 +146,10 @@ public final class ApplicationMasterService implements Service {
     amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
 
     runningContainers = new RunningContainers();
+
+    String classpath = yarnConf.get("yarn.application.classpath", "");
+    classpath = Joiner.on(':').join(Splitter.on(',').split(classpath));
+    this.yarnClassPath = classpath;
   }
 
   private ListMultimap<String, String> decodeRunnableArgs() throws IOException {
@@ -319,7 +324,8 @@ public final class ApplicationMasterService implements Service {
                                                                    runnableArgs.get(runnableName),
                                                                    instanceId);
       runningContainers.add(runnableName, container,
-                            launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
+                            launcher.start(yarnClassPath,
+                                           ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
 
       if (runningContainers.count(runnableName) == containerCount) {
