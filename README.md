@@ -1,9 +1,8 @@
 What is Weave ?
 ===============
 
-Weave is a simple set of interfaces that allow you to manage the resources, nodes and jobs in 
-distributed applications through an abstraction layer built on YARN. Weave allows you to use YARN’s capabilities 
-with a programming model that is similar to running Java threads.
+Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer built on Apache Hadoop YARN. Weave allows 
+you to use YARN’s distributed capabilities with a programming model that is similar to running threads.
 
 Why do I need Weave ?
 =====================
