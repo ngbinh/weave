@@ -22,6 +22,8 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -37,6 +39,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class EchoServerTest {
 
+  private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
+
   @Test
   public void testEchoServer() throws InterruptedException, ExecutionException, IOException {
     WeaveController controller = runnerService.prepare(new EchoServer(),
@@ -45,6 +49,7 @@ public class EchoServerTest {
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
                                                          .build())
+                                              .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
                                               .start();
 
     final CountDownLatch running = new CountDownLatch(1);
@@ -81,10 +86,10 @@ public class EchoServerTest {
       }
     }
 
-    controller = runnerService.lookup("EchoServer", controller.getRunId());
-    controller.addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)));
-
-    controller.stop().get();
+    for (WeaveController c : runnerService.lookup("EchoServer")) {
+      LOG.info("Stopping application: " + c.getRunId());
+      c.stop().get();
+    }
 
     TimeUnit.SECONDS.sleep(2);
   }
@@ -118,8 +123,8 @@ public class EchoServerTest {
   @After
   public void finish() {
     runnerService.stopAndWait();
-//    cluster.stop();
-//    zkServer.stopAndWait();
+    cluster.stop();
+    zkServer.stopAndWait();
   }
 
   private InMemoryZKServer zkServer;

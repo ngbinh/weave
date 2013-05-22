@@ -19,6 +19,7 @@ import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.ServiceController;
+import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.collect.ImmutableList;
 
@@ -33,7 +34,6 @@ public final class WeaveContainerLauncher {
   private final ZKClient zkClient;
   private final Iterable<String> args;
   private final int instanceId;
-  private ProcessLauncher.ProcessController processController;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId, ProcessLauncher processLauncher,
                                 ZKClient zkClient, Iterable<String> args, int instanceId) {
@@ -45,7 +45,7 @@ public final class WeaveContainerLauncher {
     this.instanceId = instanceId;
   }
 
-  public ServiceController start(String classPath, String stdout, String stderr) {
+  public ServiceController start(String stdout, String stderr) {
     ProcessLauncher.PrepareLaunchContext.AfterUser afterUser = processLauncher.prepareLaunch()
       .setUser(System.getProperty("user.name"));
 
@@ -62,7 +62,7 @@ public final class WeaveContainerLauncher {
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
 
-    processController = afterResources
+    final ProcessLauncher.ProcessController processController = afterResources
       .withEnvironment()
         .add(EnvKeys.WEAVE_RUN_ID, runId.getId())
         .add(EnvKeys.WEAVE_RUNNABLE_NAME, runtimeSpec.getName())
@@ -70,13 +70,24 @@ public final class WeaveContainerLauncher {
       .withCommands()
         .add("java",
              ImmutableList.<String>builder()
-               .add("-cp").add("\\\"" + "container.jar" + (classPath.isEmpty() ? "" : ":" + classPath) + "\\\"")
+               .add("-cp").add("launcher.jar")
                .add("-Xmx" + memory + "m")
+               .add(WeaveLauncher.class.getName())
+               .add("container.jar")
                .add(WeaveContainerMain.class.getName())
+               .add(Boolean.TRUE.toString())
                .addAll(args).build().toArray(new String[0]))
       .redirectOutput(stdout).redirectError(stderr)
       .launch();
 
-    return new AbstractServiceController(zkClient, runId){};
+    AbstractServiceController controller = new AbstractServiceController(zkClient, runId) {
+
+      @Override
+      public void kill() {
+        processController.kill();
+      }
+    };
+    controller.start();
+    return controller;
   }
 }

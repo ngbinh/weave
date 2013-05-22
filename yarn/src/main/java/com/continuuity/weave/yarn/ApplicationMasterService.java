@@ -38,9 +38,7 @@ import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
-import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Splitter;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
@@ -117,7 +115,6 @@ public final class ApplicationMasterService implements Service {
   private final AMRMClient amrmClient;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
-  private final String yarnClassPath;
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
@@ -146,10 +143,6 @@ public final class ApplicationMasterService implements Service {
     amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
 
     runningContainers = new RunningContainers();
-
-    String classpath = yarnConf.get("yarn.application.classpath", "");
-    classpath = Joiner.on(':').join(Splitter.on(',').split(classpath));
-    this.yarnClassPath = classpath;
   }
 
   private ListMultimap<String, String> decodeRunnableArgs() throws IOException {
@@ -169,6 +162,8 @@ public final class ApplicationMasterService implements Service {
       @Override
       public JsonElement get() {
         JsonObject jsonObj = new JsonObject();
+        jsonObj.addProperty("appId", Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)));
+        jsonObj.addProperty("appIdClusterTime", Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)));
         jsonObj.addProperty("containerId", masterContainerId);
         return jsonObj;
       }
@@ -324,8 +319,7 @@ public final class ApplicationMasterService implements Service {
                                                                    runnableArgs.get(runnableName),
                                                                    instanceId);
       runningContainers.add(runnableName, container,
-                            launcher.start(yarnClassPath,
-                                           ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
+                            launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
 
       if (runningContainers.count(runnableName) == containerCount) {
@@ -417,7 +411,7 @@ public final class ApplicationMasterService implements Service {
       setVirtualCores.invoke(capability, cores);
     } catch (Exception e) {
       // It's ok to ignore this exception, as it's using older version of API.
-      LOG.info(e.toString(), e);
+      LOG.info("Virtual cores limit not supported.");
     }
 
     int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()),

@@ -49,7 +49,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 /**
  *
  */
-public final class ZKWeaveController extends AbstractServiceController implements WeaveController {
+public abstract class ZKWeaveController extends AbstractServiceController implements WeaveController {
 
   private static final Logger LOG = LoggerFactory.getLogger(ZKWeaveController.class);
   private static final String LOG_TOPIC = "log";

@@ -84,7 +84,7 @@ public final class WeaveContainerMain extends ServiceMain {
 
     Service service = new WeaveContainerService(context, containerInfo,
                                                 getContainerZKClient(zkClientService, appRunId, runnableName),
-                                                runId, runnableSpec, ClassLoader.getSystemClassLoader());
+                                                runId, runnableSpec, getClassLoader());
     service.addListener(createServiceListener(zkClientService), Threads.SAME_THREAD_EXECUTOR);
 
     CountDownLatch stopLatch = new CountDownLatch(1);
@@ -108,6 +108,17 @@ public final class WeaveContainerMain extends ServiceMain {
 
   private static ZKClient getContainerZKClient(ZKClient zkClient, RunId appRunId, String runnableName) {
     return ZKClients.namespace(zkClient, String.format("/%s/runnables/%s", appRunId, runnableName));
+  }
+
+  /**
+   * Returns the ClassLoader for the runnable.
+   */
+  private static ClassLoader getClassLoader() {
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+    if (classLoader == null) {
+      return ClassLoader.getSystemClassLoader();
+    }
+    return classLoader;
   }
 
   private static WeaveSpecification loadWeaveSpec(File specFile) throws IOException {

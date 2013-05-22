@@ -17,6 +17,8 @@ package com.continuuity.weave.api;
 
 import com.continuuity.weave.api.logging.LogHandler;
 
+import java.net.URI;
+
 /**
  * This interface exposes methods to setup the weave runtime environment and to start weave application.
  */
@@ -69,8 +71,7 @@ public interface WeavePreparer {
 
   /**
    * Adds extra classes that the application is depended on and is not traceable from the application itself.
-   * E.g. Class name used in {@link Class#forName(String)}.
-   * @param classes set of classes to add to dependency list for generating the deployment jar.
+   * @see #withDependencies(Iterable)
    * @return This {@link WeavePreparer}.
    */
   WeavePreparer withDependencies(Class<?>...classes);
@@ -83,9 +84,38 @@ public interface WeavePreparer {
    */
   WeavePreparer withDependencies(Iterable<Class<?>> classes);
 
-  WeavePreparer withPackages(String...packages);
+  /**
+   * Adds resources that will be available through the ClassLoader of the {@link WeaveRunnable runnables}.
+   * @see #withResources(Iterable)
+   * @return This {@link WeavePreparer}.
+   */
+  WeavePreparer withResources(URI...resources);
 
-  WeavePreparer withPackages(Iterable<String> packages);
+  /**
+   * Adds resources that will be available through the ClassLoader of the {@link WeaveRunnable runnables}.
+   * Useful for adding extra resource files or libraries that are not traceable from the application itself.
+   * If the URI is a jar file, classes inside would be loadable by the ClassLoader. If URI is a directory,
+   * everything underneath would be available.
+   *
+   * @param resources Set of URI to the resources.
+   * @return This {@link WeavePreparer}.
+   */
+  WeavePreparer withResources(Iterable<URI> resources);
+
+  /**
+   * Adds the set of path to the classpath on the target machine for all runnables.
+   * @see #withClassPaths(Iterable)
+   * @return This {@link WeavePreparer}
+   */
+  WeavePreparer withClassPaths(String... classPaths);
+
+  /**
+   * Adds the set of path to the classpath on the target machine for all runnables.
+   * Note that the paths would be just added without verification.
+   * @param classPaths Set of classpaths
+   * @return This {@link WeavePreparer}
+   */
+  WeavePreparer withClassPaths(Iterable<String> classPaths);
 
   /**
    * Starts the application.
