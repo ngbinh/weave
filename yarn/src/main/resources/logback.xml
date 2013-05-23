@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<!-- Default logback configuration for weave library -->
 <configuration>
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
@@ -7,18 +8,10 @@
         </encoder>
     </appender>
 
-    <appender name="KAFKA" class="com.continuuity.weave.internal.logging.KafkaAppender">
-        <topic>log</topic>
-    </appender>
-
+    <logger name="org.apache.hadoop" level="WARN" />
     <logger name="org.apache.zookeeper" level="WARN" />
 
-    <logger name="com.continuuity.weave.internal.logging" additivity="false">
-        <appender-ref ref="STDOUT"/>
-    </logger>
-
     <root level="INFO">
-        <appender-ref ref="KAFKA"/>
         <appender-ref ref="STDOUT"/>
     </root>
 

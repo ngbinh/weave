@@ -42,6 +42,7 @@ import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.continuuity.weave.zookeeper.ZKOperations;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -104,6 +105,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
   @Override
   public WeavePreparer prepare(WeaveApplication application) {
+    Preconditions.checkState(isRunning(), "Service not start. Please call start() first.");
     return new YarnWeavePreparer(addKafka(application.configure()), yarnClient, zkClientService, locationFactory);
   }
 

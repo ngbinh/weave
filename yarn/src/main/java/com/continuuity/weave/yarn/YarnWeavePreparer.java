@@ -33,7 +33,6 @@ import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerMain;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
-import com.continuuity.weave.internal.logging.KafkaAppender;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -91,7 +90,6 @@ import java.util.jar.JarOutputStream;
 final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
-  private static final String LOGBACK_TEMPLATE = "logback-template.xml";
   private static final int APP_MASTER_MEMORY_MB = 256;
 
   private final WeaveSpecification weaveSpec;
@@ -193,13 +191,11 @@ final class YarnWeavePreparer implements WeavePreparer {
 
       createAppMasterJar(createBundler(), localResources);
       createContainerJar(createBundler(), localResources);
-      createLogBackTemplate(localResources);
       populateRunnableResources(weaveSpec, transformedLocalFiles);
       saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
       saveLauncher(localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
                                                      "container.jar",
-                                                     "logback-template.xml",
                                                      "launcher.jar"));
 
       ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
@@ -268,7 +264,7 @@ final class YarnWeavePreparer implements WeavePreparer {
                                   Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Create and copy appMaster.jar");
     Location location = createTempLocation("appMaster", ".jar");
-    bundler.createBundle(location, ApplicationMasterMain.class, KafkaAppender.class);
+    bundler.createBundle(location, ApplicationMasterMain.class);
     LOG.debug("Done appMaster.jar");
 
     localResources.put("appMaster.jar", YarnUtils.createLocalResource(location));
@@ -279,7 +275,6 @@ final class YarnWeavePreparer implements WeavePreparer {
     try {
       Set<Class<?>> classes = Sets.newIdentityHashSet();
       classes.add(WeaveContainerMain.class);
-      classes.add(KafkaAppender.class);
       classes.addAll(dependencies);
 
       ClassLoader classLoader = getClass().getClassLoader();
@@ -297,15 +292,6 @@ final class YarnWeavePreparer implements WeavePreparer {
     } catch (ClassNotFoundException e) {
       throw Throwables.propagate(e);
     }
-  }
-
-  private void createLogBackTemplate(Map<String, LocalResource> localResources) throws Exception {
-    LOG.debug("Create and copy logback-template.xml");
-    Location location = copyFromURL(getClass().getClassLoader().getResource(LOGBACK_TEMPLATE),
-                                    createTempLocation("logback-template", ".xml"));
-    LOG.debug("Done logback-template.xml");
-
-    localResources.put("logback-template.xml", YarnUtils.createLocalResource(location));
   }
 
   /**

@@ -30,6 +30,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.URISyntaxException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -42,15 +43,16 @@ public class EchoServerTest {
   private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
 
   @Test
-  public void testEchoServer() throws InterruptedException, ExecutionException, IOException {
+  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException {
     WeaveController controller = runnerService.prepare(new EchoServer(),
                                                        ResourceSpecification.Builder.with()
                                                          .setCores(1)
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
                                                          .build())
-                                              .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
-                                              .start();
+                                        .withResources(getClass().getClassLoader().getResource("logback.xml").toURI())
+                                        .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+                                        .start();
 
     final CountDownLatch running = new CountDownLatch(1);
     controller.addListener(new ListenerAdapter() {

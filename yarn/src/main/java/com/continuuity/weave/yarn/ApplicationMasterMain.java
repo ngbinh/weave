@@ -60,9 +60,4 @@ public final class ApplicationMasterMain extends ServiceMain {
   protected String getKafkaZKConnect() {
     return kafkaZKConnect;
   }
-
-  @Override
-  protected File getLogBackTemplate() {
-    return new File("logback-template.xml");
-  }
 }

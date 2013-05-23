@@ -224,9 +224,4 @@ public final class WeaveContainerMain extends ServiceMain {
   protected String getKafkaZKConnect() {
     return System.getenv(EnvKeys.WEAVE_LOG_KAFKA_ZK);
   }
-
-  @Override
-  protected File getLogBackTemplate() {
-    return new File("logback-template.xml");
-  }
 }
