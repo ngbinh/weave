@@ -69,7 +69,7 @@ The above model is something we are all accustomed to.  However, assume you want
 
 **Implement Runnable**
 <pre>
-public class EchoServer implements AbstractWeaveRunnable {
+public class EchoServer implements WeaveRunnable {
    private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
    private final ServerSocket serverSocket;
    private final int port;
