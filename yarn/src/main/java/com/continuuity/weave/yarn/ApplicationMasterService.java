@@ -116,6 +116,14 @@ public final class ApplicationMasterService implements Service {
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
 
+  // TODO (terence) : This is temporary to fix issue when shutting down. Need to unify it with WeaveContainerMain
+  private final AsyncFunction<State, State> stopZKClient = new AsyncFunction<State, State>() {
+    @Override
+    public ListenableFuture<State> apply(State input) throws Exception {
+      return zkClientService.stop();
+    }
+  };
+
   private YarnRPC yarnRPC;
   private Resource maxCapability;
   private Resource minCapability;
@@ -448,12 +456,7 @@ public final class ApplicationMasterService implements Service {
 
   @Override
   public ListenableFuture<State> stop() {
-    return Futures.transform(serviceDelegate.stop(), new AsyncFunction<State, State>() {
-      @Override
-      public ListenableFuture<State> apply(State input) throws Exception {
-        return zkClientService.stop();
-      }
-    });
+    return Futures.transform(serviceDelegate.stop(), stopZKClient);
   }
 
   @Override

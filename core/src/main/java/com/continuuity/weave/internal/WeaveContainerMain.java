@@ -22,7 +22,6 @@ import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.common.ServiceListenerAdapter;
-import com.continuuity.weave.common.Services;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.DiscoveryService;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
@@ -44,7 +43,6 @@ import com.google.gson.Gson;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -136,17 +134,25 @@ public final class WeaveContainerMain extends ServiceMain {
 
   private static Service wrapService(final ZKClientService zkClientService,
                                      final Service containerService) {
+
+    // Need to create the stop function first to workaround with Shutdown hook
+    final AsyncFunction<Service.State, Service.State> stopZKClient = new AsyncFunction<Service.State, Service.State>() {
+      @Override
+      public ListenableFuture<Service.State> apply(Service.State input) throws Exception {
+        return zkClientService.stop();
+      }
+    };
+
     return new Service() {
 
       @Override
       public ListenableFuture<State> start() {
-        return Futures.transform(Services.chainStart(zkClientService, containerService),
-                                 new AsyncFunction<List<ListenableFuture<State>>, State>() {
+        return Futures.transform(zkClientService.start(), new AsyncFunction<State, State>() {
           @Override
-          public ListenableFuture<State> apply(List<ListenableFuture<State>> input) throws Exception {
-            return input.get(1);
+          public ListenableFuture<State> apply(State input) throws Exception {
+            return containerService.start();
           }
-        });
+        }, Threads.SAME_THREAD_EXECUTOR);
       }
 
       @Override
@@ -166,13 +172,7 @@ public final class WeaveContainerMain extends ServiceMain {
 
       @Override
       public ListenableFuture<State> stop() {
-        return Futures.transform(Services.chainStop(containerService, zkClientService),
-                                 new AsyncFunction<List<ListenableFuture<State>>, State>() {
-          @Override
-          public ListenableFuture<State> apply(List<ListenableFuture<State>> input) throws Exception {
-            return input.get(0);
-          }
-        });
+        return Futures.transform(containerService.stop(), stopZKClient, Threads.SAME_THREAD_EXECUTOR);
       }
 
       @Override
