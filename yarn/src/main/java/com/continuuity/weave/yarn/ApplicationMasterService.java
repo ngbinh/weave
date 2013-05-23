@@ -109,13 +109,20 @@ public final class ApplicationMasterService implements Service {
   private final String zkConnectStr;
   private final ZKClientService zkClientService;
   private final WeaveSpecification weaveSpec;
-  private final File weaveSpecFile;
   private final ListMultimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
   private final String masterContainerId;
   private final AMRMClient amrmClient;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
+
+  // TODO (terence) : This is temporary to fix issue when shutting down. Need to unify it with WeaveContainerMain
+  private final AsyncFunction<State, State> stopZKClient = new AsyncFunction<State, State>() {
+    @Override
+    public ListenableFuture<State> apply(State input) throws Exception {
+      return zkClientService.stop();
+    }
+  };
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
@@ -125,7 +132,6 @@ public final class ApplicationMasterService implements Service {
   public ApplicationMasterService(RunId runId, String zkConnectStr, File weaveSpecFile) throws IOException {
     this.runId = runId;
     this.zkConnectStr = zkConnectStr;
-    this.weaveSpecFile = weaveSpecFile;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
     this.runnableArgs = decodeRunnableArgs();
 
@@ -164,6 +170,8 @@ public final class ApplicationMasterService implements Service {
       @Override
       public JsonElement get() {
         JsonObject jsonObj = new JsonObject();
+        jsonObj.addProperty("appId", Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)));
+        jsonObj.addProperty("appIdClusterTime", Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)));
         jsonObj.addProperty("containerId", masterContainerId);
         return jsonObj;
       }
@@ -187,8 +195,8 @@ public final class ApplicationMasterService implements Service {
 
     // Creates ZK path for runnable and kafka logging service
     Futures.allAsList(ImmutableList.of(
-      zkClientService.create("/" + runId + "/runnables", null, CreateMode.PERSISTENT),
-      zkClientService.create("/" + runId + "/kafka", null, CreateMode.PERSISTENT))).get();
+      zkClientService.create("/" + runId.getId() + "/runnables", null, CreateMode.PERSISTENT),
+      zkClientService.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))).get();
   }
 
   private void doStop() throws Exception {
@@ -351,11 +359,11 @@ public final class ApplicationMasterService implements Service {
   }
 
   private String getZKNamespace(String runnableName) {
-    return String.format("/%s/runnables/%s", runId, runnableName);
+    return String.format("/%s/runnables/%s", runId.getId(), runnableName);
   }
 
   private String getKafkaZKConnect() {
-    return String.format("%s/%s/kafka", zkConnectStr, runId);
+    return String.format("%s/%s/kafka", zkConnectStr, runId.getId());
   }
 
   private ListenableFuture<String> processMessage(String messageId, Message message) {
@@ -411,7 +419,7 @@ public final class ApplicationMasterService implements Service {
       setVirtualCores.invoke(capability, cores);
     } catch (Exception e) {
       // It's ok to ignore this exception, as it's using older version of API.
-      LOG.info(e.toString(), e);
+      LOG.info("Virtual cores limit not supported.");
     }
 
     int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()),
@@ -448,12 +456,7 @@ public final class ApplicationMasterService implements Service {
 
   @Override
   public ListenableFuture<State> stop() {
-    return Futures.transform(serviceDelegate.stop(), new AsyncFunction<State, State>() {
-      @Override
-      public ListenableFuture<State> apply(State input) throws Exception {
-        return zkClientService.stop();
-      }
-    });
+    return Futures.transform(serviceDelegate.stop(), stopZKClient);
   }
 
   @Override

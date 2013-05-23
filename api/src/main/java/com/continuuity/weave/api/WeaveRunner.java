@@ -20,11 +20,41 @@ package com.continuuity.weave.api;
  */
 public interface WeaveRunner {
 
+  /**
+   * Prepares to run the given {@link WeaveRunnable} with {@link ResourceSpecification#BASIC} resource specification.
+   * @param runnable The runnable to run through Weave when {@link WeavePreparer#start()} is called.
+   * @return A {@link WeavePreparer} for setting up runtime options.
+   */
   WeavePreparer prepare(WeaveRunnable runnable);
 
+  /**
+   * Prepares to run the given {@link WeaveRunnable} with the given resource specification.
+   * @param runnable The runnable to run through Weave when {@link WeavePreparer#start()} is called.
+   * @param resourceSpecification The resource specification for running the runnable.
+   * @return A {@link WeavePreparer} for setting up runtime options.
+   */
   WeavePreparer prepare(WeaveRunnable runnable, ResourceSpecification resourceSpecification);
 
+  /**
+   * Prepares to run the given {@link WeaveApplication} as specified by the application.
+   * @param application The application to run through Weave when {@link WeavePreparer#start()} is called.
+   * @return A {@link WeavePreparer} for setting up runtime options.
+   */
   WeavePreparer prepare(WeaveApplication application);
 
+  /**
+   * Gets a {@link WeaveController} for the given application and runId.
+   * @param applicationName Name of the application.
+   * @param runId The runId of the running application.
+   * @return A {@link WeaveController} to interact with the application.
+   */
   WeaveController lookup(String applicationName, RunId runId);
+
+  /**
+   * Gets an {@link Iterable} of {@link WeaveController} for all running instances of the given application.
+   * @param applicationName Name of the application.
+   * @return A live {@link Iterable} that givens the latest set of {@link WeaveController} for all running
+   *         instances of the application when {@link Iterable#iterator()} is invoked.
+   */
+  Iterable<WeaveController> lookup(String applicationName);
 }

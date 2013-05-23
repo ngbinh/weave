@@ -6,10 +6,12 @@ import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.discovery.Discoverable;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
+import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.io.Files;
 import com.google.common.io.LineReader;
@@ -20,12 +22,15 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.net.URISyntaxException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -35,16 +40,19 @@ import java.util.concurrent.TimeUnit;
  */
 public class EchoServerTest {
 
+  private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
+
   @Test
-  public void testEchoServer() throws InterruptedException, ExecutionException, IOException {
+  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException {
     WeaveController controller = runnerService.prepare(new EchoServer(),
                                                        ResourceSpecification.Builder.with()
                                                          .setCores(1)
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
                                                          .build())
-//                                            .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
-                                            .start();
+                                        .withResources(getClass().getClassLoader().getResource("logback.xml").toURI())
+                                        .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+                                        .start();
 
     final CountDownLatch running = new CountDownLatch(1);
     controller.addListener(new ListenerAdapter() {
@@ -80,10 +88,10 @@ public class EchoServerTest {
       }
     }
 
-    controller = runnerService.lookup("EchoServer", controller.getRunId());
-    controller.addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)));
-
-    controller.stop().get();
+    for (WeaveController c : runnerService.lookup("EchoServer")) {
+      LOG.info("Stopping application: " + c.getRunId());
+      c.stop().get();
+    }
 
     TimeUnit.SECONDS.sleep(2);
   }
@@ -101,6 +109,9 @@ public class EchoServerTest {
     config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
+    config.set("yarn.application.classpath",
+               Joiner.on(',').join(
+                 Splitter.on(System.getProperty("path.separator")).split(System.getProperty("java.class.path"))));
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);
@@ -114,8 +125,8 @@ public class EchoServerTest {
   @After
   public void finish() {
     runnerService.stopAndWait();
-//    cluster.stop();
-//    zkServer.stopAndWait();
+    cluster.stop();
+    zkServer.stopAndWait();
   }
 
   private InMemoryZKServer zkServer;

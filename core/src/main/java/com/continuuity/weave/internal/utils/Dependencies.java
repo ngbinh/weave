@@ -15,6 +15,8 @@
  */
 package com.continuuity.weave.internal.utils;
 
+import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
@@ -32,6 +34,7 @@ import org.objectweb.asm.signature.SignatureVisitor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.util.Queue;
 import java.util.Set;
@@ -45,20 +48,35 @@ public final class Dependencies {
    * Represents a callback for accepting a class during dependency traversal.
    */
   public interface ClassAcceptor {
-    boolean accept(String className, byte[] bytecode);
+    /**
+     * Invoked when a class is being found as a dependency.
+     *
+     * @param className Name of the class.
+     * @param classUrl URL for the class resource.
+     * @param classPathUrl URL for the class path resource that contains the class resource.
+     *                     If the URL protocol is {@code file}, it would be the path to root package.
+     *                     If the URL protocol is {@code jar}, it would be the jar file.
+     * @return
+     */
+    boolean accept(String className, URL classUrl, URL classPathUrl);
+  }
+
+  public static void findClassDependencies(ClassLoader classLoader,
+                                           ClassAcceptor acceptor,
+                                           String...classesToResolve) throws IOException {
+    findClassDependencies(classLoader, acceptor, ImmutableList.copyOf(classesToResolve));
   }
 
   /**
    * Finds the class dependencies of the given class.
    * @param classLoader ClassLoader for finding class bytecode.
-   * @param classesToResolve Classes for looking for dependencies.
    * @param acceptor Predicate to accept a found class and its bytecode.
+   * @param classesToResolve Classes for looking for dependencies.
    * @throws IOException Thrown where there is error when loading in class bytecode.
    */
-  public static void findClassDependencies(final ClassLoader classLoader,
-                                           Set<String> acceptClassPath,
-                                           Iterable<String> classesToResolve,
-                                           final ClassAcceptor acceptor) throws IOException {
+  public static void findClassDependencies(ClassLoader classLoader,
+                                           ClassAcceptor acceptor,
+                                           Iterable<String> classesToResolve) throws IOException {
 
     final Set<String> seenClasses = Sets.newHashSet(classesToResolve);
     final Queue<String> classes = Lists.newLinkedList(classesToResolve);
@@ -66,23 +84,20 @@ public final class Dependencies {
     // Breadth-first-search classes dependencies.
     while (!classes.isEmpty()) {
       String className = classes.remove();
-      URL classUrl = getClassURL(className, classLoader, acceptClassPath);
+      URL classUrl = getClassURL(className, classLoader);
       if (classUrl == null) {
         continue;
       }
 
-      // Open the stream for reading in class bytecode
+      // Call the accept to see if it accept the current class.
+      if (!acceptor.accept(className, classUrl, getClassPathURL(className, classUrl))) {
+        continue;
+      }
+
       InputStream is = classUrl.openStream();
       try {
-        byte[] bytecode = ByteStreams.toByteArray(is);
-
-        // Call the accept to see if it accept the current class.
-        if (!acceptor.accept(className, bytecode)) {
-          continue;
-        }
-
         // Visit the bytecode to lookup classes that the visiting class is depended on.
-        new ClassReader(bytecode).accept(new DependencyClassVisitor(new DependencyAcceptor() {
+        new ClassReader(ByteStreams.toByteArray(is)).accept(new DependencyClassVisitor(new DependencyAcceptor() {
           @Override
           public void accept(String className) {
             // See if the class is accepted
@@ -90,7 +105,7 @@ public final class Dependencies {
               classes.add(className);
             }
           }
-        }), ClassReader.SKIP_DEBUG);
+        }), ClassReader.SKIP_DEBUG + ClassReader.SKIP_FRAMES);
       } finally {
         is.close();
       }
@@ -101,32 +116,31 @@ public final class Dependencies {
    * Returns the URL for loading the class bytecode of the given class, or null if it is not found or if it is
    * a system class.
    */
-  private static URL getClassURL(String className, ClassLoader classLoader, Set<String> classPath) {
+  private static URL getClassURL(String className, ClassLoader classLoader) {
     String resourceName = className.replace('.', '/') + ".class";
-    URL url = classLoader.getResource(resourceName);
+    return classLoader.getResource(resourceName);
+  }
 
-    if (url == null) {
-      return null;
-    }
-
-    if ("file".equals(url.getProtocol())) {
-      String path = url.getPath();
-      // Extract the package root.
-      path = path.substring(0, path.length() - resourceName.length() - 1);
-      return classPath.contains(path) ? url : null;
-    }
-
-    if ("jar".equals(url.getProtocol())) {
-      String path = url.getPath();
-      path = path.substring(0, path.lastIndexOf('!'));
-      try {
-        return classPath.contains(new URL(path).getPath()) ? url : null;
-      } catch (MalformedURLException e) {
-        return null;
+  private static URL getClassPathURL(String className, URL classUrl) {
+    try {
+      if ("file".equals(classUrl.getProtocol())) {
+        String path = classUrl.getFile();
+        // Compute the directory container the class.
+        int endIdx = path.length() - className.length() - ".class".length();
+        if (endIdx > 1) {
+          // If it is not the root directory, return the end index to remove the trailing '/'.
+          endIdx--;
+        }
+        return new URL("file", "", -1, path.substring(0, endIdx));
       }
+      if ("jar".equals(classUrl.getProtocol())) {
+        String path = classUrl.getFile();
+        return URI.create(path.substring(0, path.indexOf("!/"))).toURL();
+      }
+    } catch (MalformedURLException e) {
+      throw Throwables.propagate(e);
     }
-
-    return null;
+    throw new IllegalStateException("Unsupported class URL: " + classUrl);
   }
 
   /**

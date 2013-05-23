@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -25,6 +25,8 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.net.MalformedURLException;
@@ -38,6 +40,8 @@ import java.util.Properties;
  * A {@link WeaveRunnable} for managing Kafka server.
  */
 public final class KafkaWeaveRunnable implements WeaveRunnable {
+
+  private static final Logger LOG = LoggerFactory.getLogger(KafkaWeaveRunnable.class);
 
   private final String kafkaDir;
   private Object server;
@@ -60,7 +64,8 @@ public final class KafkaWeaveRunnable implements WeaveRunnable {
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_LOG_KAFKA_ZK);
 
     try {
-      ClassLoader classLoader = getClassLoader(new File(args.get("kafkaDir")));
+      ClassLoader classLoader = createClassLoader(new File(args.get("kafkaDir")));
+      Thread.currentThread().setContextClassLoader(classLoader);
 
       Class<?> configClass = classLoader.loadClass("kafka.server.KafkaConfig");
       Object config = configClass.getConstructor(Properties.class)
@@ -98,7 +103,7 @@ public final class KafkaWeaveRunnable implements WeaveRunnable {
     }
   }
 
-  private ClassLoader getClassLoader(File kafkaDir) throws MalformedURLException {
+  private ClassLoader createClassLoader(File kafkaDir) throws MalformedURLException {
     return new URLClassLoader(findJars(kafkaDir, Lists.<URL>newArrayList()).toArray(new URL[0]));
   }
 
@@ -107,6 +112,7 @@ public final class KafkaWeaveRunnable implements WeaveRunnable {
       if (file.isDirectory()) {
         findJars(file, urls);
       } else if (file.getName().endsWith(".jar")) {
+        LOG.info("Kafka jars: " + file);
         urls.add(file.toURI().toURL());
       }
     }

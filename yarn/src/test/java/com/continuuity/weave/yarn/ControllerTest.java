@@ -70,7 +70,13 @@ public class ControllerTest {
       });
       service.startAndWait();
 
-      final WeaveController controller = new ZKWeaveController(zkClientService, runId, ImmutableList.<LogHandler>of());
+      final WeaveController controller = new ZKWeaveController(zkClientService, runId, ImmutableList.<LogHandler>of()) {
+
+        @Override
+        public void kill() {
+          // No-op
+        }
+      };
       ((ZKWeaveController) controller).start();
 
       controller.sendCommand(Command.Builder.of("test").build()).get(2, TimeUnit.SECONDS);

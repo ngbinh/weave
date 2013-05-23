@@ -27,19 +27,22 @@ import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.api.logging.LogHandler;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultWeaveRunnableSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
+import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.SingleRunnableApplication;
-import com.continuuity.weave.internal.ZKWeaveController;
-import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.internal.logging.KafkaWeaveRunnable;
+import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
+import com.continuuity.weave.zookeeper.ZKOperations;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -55,9 +58,12 @@ import org.apache.zookeeper.KeeperException;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  *
@@ -99,15 +105,52 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
   @Override
   public WeavePreparer prepare(WeaveApplication application) {
+    Preconditions.checkState(isRunning(), "Service not start. Please call start() first.");
     return new YarnWeavePreparer(addKafka(application.configure()), yarnClient, zkClientService, locationFactory);
   }
 
   @Override
   public WeaveController lookup(String applicationName, RunId runId) {
     ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
-    ZKWeaveController controller = new ZKWeaveController(zkClient, runId, ImmutableList.<LogHandler>of());
+    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient,
+                                                             runId, ImmutableList.<LogHandler>of());
     controller.start();
     return controller;
+  }
+
+  @Override
+  public Iterable<WeaveController> lookup(String applicationName) {
+    final ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
+    final AtomicReference<List<WeaveController>> controllers =
+      new AtomicReference<List<WeaveController>>(ImmutableList.<WeaveController>of());
+    final CountDownLatch firstFetch = new CountDownLatch(1);
+
+    ZKOperations.watchChildren(zkClient, "/instances", new ZKOperations.ChildrenCallback() {
+      @Override
+      public void updated(NodeChildren nodeChildren) {
+        ImmutableList.Builder<WeaveController> builder = ImmutableList.builder();
+        for (String children : nodeChildren.getChildren()) {
+          YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, RunIds.fromString(children),
+                                                                   ImmutableList.<LogHandler>of());
+          controller.start();
+          builder.add(controller);
+        }
+        controllers.set(builder.build());
+        firstFetch.countDown();
+      }
+    });
+
+    return new Iterable<WeaveController>() {
+      @Override
+      public Iterator<WeaveController> iterator() {
+        try {
+          firstFetch.await();
+          return controllers.get().iterator();
+        } catch (InterruptedException e) {
+          return ImmutableList.<WeaveController>of().iterator();
+        }
+      }
+    };
   }
 
   @Override

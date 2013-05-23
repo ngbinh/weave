@@ -18,6 +18,7 @@ package com.continuuity.weave.internal;
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
+import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.json.StateNodeCodec;
 import com.continuuity.weave.internal.state.Messages;
@@ -53,17 +54,21 @@ public abstract class AbstractServiceController implements ServiceController {
   private final AtomicReference<State> state;
   private final ListenerExecutors listenerExecutors;
   private final ZKClient zkClient;
+  private final AtomicReference<byte[]> liveNodeData;
+  private Cancellable watchCanceller;
 
   protected AbstractServiceController(ZKClient zkClient, RunId runId) {
     this.zkClient = zkClient;
     this.runId = runId;
     this.state = new AtomicReference<State>();
-    listenerExecutors = new ListenerExecutors();
+    this.listenerExecutors = new ListenerExecutors();
+    this.liveNodeData = new AtomicReference<byte[]>();
   }
 
   public void start() {
     // Watch for state changes
-    ZKOperations.watchData(zkClient, getZKPath("state"), new ZKOperations.DataCallback() {
+    final Cancellable cancelState = ZKOperations.watchData(zkClient, getZKPath("state"),
+                                                           new ZKOperations.DataCallback() {
       @Override
       public void updated(NodeData nodeData) {
         StateNode stateNode = decode(nodeData);
@@ -72,6 +77,25 @@ public abstract class AbstractServiceController implements ServiceController {
         }
       }
     });
+    // Watch for instance node data
+    final Cancellable cancelInstance = ZKOperations.watchData(zkClient, "/instances/" + runId.getId(),
+                                                              new ZKOperations.DataCallback() {
+      @Override
+      public void updated(NodeData nodeData) {
+        liveNodeData.set(nodeData.getData());
+      }
+    });
+    watchCanceller = new Cancellable() {
+      @Override
+      public void cancel() {
+        cancelState.cancel();
+        cancelInstance.cancel();
+      }
+    };
+  }
+
+  protected byte[] getLiveNodeData() {
+    return liveNodeData.get();
   }
 
   @Override
@@ -99,6 +123,7 @@ public abstract class AbstractServiceController implements ServiceController {
   public ListenableFuture<State> stop() {
     State oldState = state.getAndSet(State.STOPPING);
     if (oldState == null || oldState == State.STARTING || oldState == State.RUNNING) {
+      watchCanceller.cancel();
       return Futures.transform(
         ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"), SystemMessages.stopApplication(),
                                State.TERMINATED), new AsyncFunction<State, State>() {
@@ -106,10 +131,10 @@ public abstract class AbstractServiceController implements ServiceController {
         public ListenableFuture<State> apply(State input) throws Exception {
           // Wait for the instance ephemeral node goes away
           return Futures.transform(
-            ZKOperations.watchDeleted(zkClient, "/instances/" + runId), new Function<String, State>() {
+            ZKOperations.watchDeleted(zkClient, "/instances/" + runId.getId()), new Function<String, State>() {
                @Override
                public State apply(String input) {
-                 LOG.info("Remote service stopped: " + runId);
+                 LOG.info("Remote service stopped: " + runId.getId());
                  state.set(State.TERMINATED);
                  fireStateChange(new StateNode(State.TERMINATED, null));
                  return State.TERMINATED;
@@ -148,7 +173,7 @@ public abstract class AbstractServiceController implements ServiceController {
   }
 
   private String getZKPath(String path) {
-    return String.format("/%s/%s", runId, path);
+    return String.format("/%s/%s", runId.getId(), path);
   }
 
   private void fireStateChange(StateNode state) {

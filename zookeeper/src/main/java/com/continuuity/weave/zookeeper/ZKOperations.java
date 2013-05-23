@@ -37,15 +37,31 @@ public final class ZKOperations {
 
   private static final Logger LOG = LoggerFactory.getLogger(ZKOperations.class);
 
+  public interface Callback<T> {
+    void updated(T data);
+  }
+
   /**
    * Interface for defining callback method to receive node data updates.
    */
-  public interface DataCallback {
+  public interface DataCallback extends Callback<NodeData> {
     /**
      * Invoked when data of the node changed.
      * @param nodeData New data of the node, or {@code null} if the node has been deleted.
      */
+    @Override
     void updated(NodeData nodeData);
+  }
+
+  public interface ChildrenCallback extends Callback<NodeChildren> {
+    @Override
+    void updated(NodeChildren nodeChildren);
+  }
+
+  private interface Operation<T> {
+    ZKClient getZKClient();
+
+    OperationFuture<T> exec(String path, Watcher watcher);
   }
 
   /**
@@ -61,43 +77,19 @@ public final class ZKOperations {
    */
   public static Cancellable watchData(final ZKClient zkClient, final String path, final DataCallback callback) {
     final AtomicBoolean cancelled = new AtomicBoolean(false);
-    Futures.addCallback(zkClient.getData(path, new Watcher() {
+    watchChanges(new Operation<NodeData>() {
+
       @Override
-      public void process(WatchedEvent event) {
-        if (!cancelled.get()) {
-          watchData(zkClient, path, callback);
-        }
-      }
-    }), new FutureCallback<NodeData>() {
-      @Override
-      public void onSuccess(NodeData result) {
-        if (!cancelled.get()) {
-          callback.updated(result);
-        }
+      public ZKClient getZKClient() {
+        return zkClient;
       }
 
       @Override
-      public void onFailure(Throwable t) {
-        if (t instanceof KeeperException && ((KeeperException) t).code() == KeeperException.Code.NONODE) {
-          final SettableFuture<String> existCompletion = SettableFuture.create();
-          existCompletion.addListener(new Runnable() {
-            @Override
-            public void run() {
-              try {
-                if (!cancelled.get()) {
-                  watchData(zkClient, existCompletion.get(), callback);
-                }
-              } catch (Exception e) {
-                LOG.error("Failed to watch data for path " + path, e);
-              }
-            }
-          }, Threads.SAME_THREAD_EXECUTOR);
-          watchExists(zkClient, path, existCompletion);
-          return;
-        }
-        LOG.error("Failed to watch data for path " + path + " " + t, t);
+      public OperationFuture<NodeData> exec(String path, Watcher watcher) {
+        return zkClient.getData(path, watcher);
       }
-    });
+    }, path, callback, cancelled);
+
     return new Cancellable() {
       @Override
       public void cancel() {
@@ -141,6 +133,29 @@ public final class ZKOperations {
     });
   }
 
+  public static Cancellable watchChildren(final ZKClient zkClient, String path, ChildrenCallback callback) {
+    final AtomicBoolean cancelled = new AtomicBoolean(false);
+    watchChanges(new Operation<NodeChildren>() {
+
+      @Override
+      public ZKClient getZKClient() {
+        return zkClient;
+      }
+
+      @Override
+      public OperationFuture<NodeChildren> exec(String path, Watcher watcher) {
+        return zkClient.getChildren(path, watcher);
+      }
+    }, path, callback, cancelled);
+
+    return new Cancellable() {
+      @Override
+      public void cancel() {
+        cancelled.set(true);
+      }
+    };
+  }
+
   /**
    * Watch for the given path until it exists.
    * @param zkClient The {@link ZKClient} to use.
@@ -165,6 +180,47 @@ public final class ZKOperations {
       @Override
       public void onFailure(Throwable t) {
         completion.setException(t);
+      }
+    });
+  }
+
+  private static <T> void watchChanges(final Operation<T> operation, final String path,
+                                       final Callback<T> callback, final AtomicBoolean cancelled) {
+    Futures.addCallback(operation.exec(path, new Watcher() {
+      @Override
+      public void process(WatchedEvent event) {
+        if (!cancelled.get()) {
+          watchChanges(operation, path, callback, cancelled);
+        }
+      }
+    }), new FutureCallback<T>() {
+      @Override
+      public void onSuccess(T result) {
+        if (!cancelled.get()) {
+          callback.updated(result);
+        }
+      }
+
+      @Override
+      public void onFailure(Throwable t) {
+        if (t instanceof KeeperException && ((KeeperException) t).code() == KeeperException.Code.NONODE) {
+          final SettableFuture<String> existCompletion = SettableFuture.create();
+          existCompletion.addListener(new Runnable() {
+            @Override
+            public void run() {
+              try {
+                if (!cancelled.get()) {
+                  watchChanges(operation, existCompletion.get(), callback, cancelled);
+                }
+              } catch (Exception e) {
+                LOG.error("Failed to watch children for path " + path, e);
+              }
+            }
+          }, Threads.SAME_THREAD_EXECUTOR);
+          watchExists(operation.getZKClient(), path, existCompletion);
+          return;
+        }
+        LOG.error("Failed to watch data for path " + path + " " + t, t);
       }
     });
   }

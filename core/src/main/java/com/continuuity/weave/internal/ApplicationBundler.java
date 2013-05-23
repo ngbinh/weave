@@ -29,20 +29,23 @@ import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URL;
 import java.util.Arrays;
-import java.util.Enumeration;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.zip.CRC32;
+import java.util.zip.CheckedOutputStream;
 
 /**
  * This class builds jar files based on class dependencies.
@@ -50,23 +53,40 @@ import java.util.jar.JarOutputStream;
 public final class ApplicationBundler {
 
   private final List<String> excludePackages;
-  private final List<String> includePackages;
-  private final Set<String> acceptClassPath;
+  private final Set<String> bootstrapClassPaths;
+  private final CRC32 crc32;
 
   /**
    * Constructs a ApplicationBundler.
    *
    * @param excludePackages Class packages to exclude
-   * @param includePackages Always includes classes/resources in these packages. Note that
-   *                        classes in these packages will not get inspected for dependencies.
    */
-  public ApplicationBundler(Iterable<String> excludePackages, Iterable<String> includePackages) {
+  public ApplicationBundler(Iterable<String> excludePackages) {
     this.excludePackages = ImmutableList.copyOf(excludePackages);
-    this.includePackages = ImmutableList.copyOf(includePackages);
-    this.acceptClassPath = Sets.difference(Sets.newHashSet(Splitter.on(File.pathSeparatorChar)
-                                                             .split(System.getProperty("java.class.path"))),
-                                           Sets.newHashSet(Splitter.on(File.pathSeparatorChar)
-                                                             .split(System.getProperty("sun.boot.class.path"))));
+
+    ImmutableSet.Builder<String> builder = ImmutableSet.builder();
+    for (String classpath : Splitter.on(File.pathSeparatorChar).split(System.getProperty("sun.boot.class.path"))) {
+      File file = new File(classpath);
+      builder.add(file.getAbsolutePath());
+      try {
+        builder.add(file.getCanonicalPath());
+      } catch (IOException e) {
+        // Ignore the exception and proceed.
+      }
+    }
+    this.bootstrapClassPaths = builder.build();
+    this.crc32 = new CRC32();
+  }
+
+  public void createBundle(Location target, Iterable<Class<?>> classes) throws IOException {
+    createBundle(target, classes, ImmutableList.<URI>of());
+  }
+
+  /**
+   * Same as calling {@link #createBundle(Location, Iterable)}.
+   */
+  public void createBundle(Location target, Class<?> clz, Class<?>...classes) throws IOException {
+    createBundle(target, ImmutableSet.<Class<?>>builder().add(clz).add(classes).build());
   }
 
   /**
@@ -75,21 +95,24 @@ public final class ApplicationBundler {
    * in the constructor.
    *
    * @param target Where to save the target jar file.
+   * @param resources Extra resources to put into the jar file. If resource is a jar file, it'll be put under
+   *                  lib/ entry, otherwise under the resources/ entry.
    * @param classes Set of classes to start the dependency traversal.
    * @throws IOException
    */
-  public void createBundle(Location target, Iterable<Class<?>> classes) throws IOException {
+  public void createBundle(Location target, Iterable<Class<?>> classes, Iterable<URI> resources) throws IOException {
     // Write the jar to local tmp file first
     File tmpJar = File.createTempFile(target.getName(), ".tmp");
     try {
       Set<String> entries = Sets.newHashSet();
       JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(tmpJar));
       try {
+        // Find class dependencies
         findDependencies(classes, entries, jarOut);
 
-        // Add all classes under the packages as listed in includePackages
-        for (String pkg : includePackages) {
-          copyPackage(pkg, entries, jarOut);
+        // Add extra resources
+        for (URI resource : resources) {
+          copyResource(resource, entries, jarOut);
         }
       } finally {
         jarOut.close();
@@ -106,15 +129,8 @@ public final class ApplicationBundler {
     }
   }
 
-  /**
-   * Same as calling {@link #createBundle(Location, Iterable)}.
-   */
-  public void createBundle(Location target, Class<?> clz, Class<?>...classes) throws IOException {
-    createBundle(target, ImmutableSet.<Class<?>>builder().add(clz).add(classes).build());
-  }
-
-  private void findDependencies(Iterable<Class<?>> classes,
-                                final Set<String> entries, final JarOutputStream jarOut) throws IOException {
+  private void findDependencies(Iterable<Class<?>> classes, final Set<String> entries,
+                                final JarOutputStream jarOut) throws IOException {
 
     Iterable<String> classNames = Iterables.transform(classes, new Function<Class<?>, String>() {
       @Override
@@ -122,33 +138,71 @@ public final class ApplicationBundler {
         return input.getName();
       }
     });
-    Dependencies.findClassDependencies(Thread.currentThread().getContextClassLoader(), acceptClassPath, classNames,
-                                       new Dependencies.ClassAcceptor() {
+
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+    if (classLoader == null) {
+      classLoader = getClass().getClassLoader();
+    }
+    Dependencies.findClassDependencies(classLoader, new Dependencies.ClassAcceptor() {
       @Override
-      public boolean accept(String className, byte[] bytecode) {
+      public boolean accept(String className, URL classUrl, URL classPathUrl) {
+        if (bootstrapClassPaths.contains(classPathUrl.getFile())) {
+          return false;
+        }
+
         for (String exclude : excludePackages) {
           if (className.startsWith(exclude)) {
             return false;
           }
         }
-        putDirEntry(className.substring(0, className.lastIndexOf('.')), entries, jarOut);
-        putClassEntry(className, bytecode, entries, jarOut);
-
+        putEntry(className, classUrl, classPathUrl, entries, jarOut);
         return true;
       }
-    });
+    }, classNames);
+  }
+
+  private void putEntry(String className, URL classUrl, URL classPathUrl, Set<String> entries, JarOutputStream jarOut) {
+    String path = classUrl.getFile();
+    String classPath = classPathUrl.getFile();
+    if (classPath.endsWith(".jar")) {
+      saveDirEntry("lib/", entries, jarOut);
+      saveEntry("lib/" + classPath.substring(classPath.lastIndexOf('/') + 1), classPathUrl, entries, jarOut, false);
+    } else {
+      // Class file, put it under the classes directory
+      saveDirEntry("classes/", entries, jarOut);
+      if ("file".equals(classPathUrl.getProtocol())) {
+        // Copy every files under the classPath
+        try {
+          copyDir(new File(classPathUrl.toURI()), "classes/", entries, jarOut);
+        } catch (Exception e) {
+          throw Throwables.propagate(e);
+        }
+      } else {
+        String entry = "classes/" + className.replace('.', '/') + ".class";
+        saveDirEntry(entry.substring(0, entry.lastIndexOf('/') + 1), entries, jarOut);
+        saveEntry(entry, classUrl, entries, jarOut, true);
+      }
+    }
   }
 
   /**
    * Saves a directory entry to the jar output.
    */
-  private void putDirEntry(String pkg, Set<String> entries, JarOutputStream jarOut) {
+  private void saveDirEntry(String path, Set<String> entries, JarOutputStream jarOut) {
+    if (entries.contains(path)) {
+      return;
+    }
+
     try {
       String entry = "";
-      for (String dir : Splitter.on('.').split(pkg)) {
+      for (String dir : Splitter.on('/').omitEmptyStrings().split(path)) {
         entry += dir + '/';
         if (entries.add(entry)) {
-          jarOut.putNextEntry(new JarEntry(entry));
+          JarEntry jarEntry = new JarEntry(entry);
+          jarEntry.setMethod(JarOutputStream.STORED);
+          jarEntry.setSize(0L);
+          jarEntry.setCrc(0L);
+          jarOut.putNextEntry(jarEntry);
           jarOut.closeEntry();
         }
       }
@@ -160,82 +214,54 @@ public final class ApplicationBundler {
   /**
    * Saves a class entry to the jar output.
    */
-  private void putClassEntry(String className, byte[] bytecode, Set<String> entries, JarOutputStream jarOut) {
+  private void saveEntry(String entry, URL url, Set<String> entries, JarOutputStream jarOut, boolean compress) {
+    if (!entries.add(entry)) {
+      return;
+    }
     try {
-      String entry = className.replace('.', '/') + ".class";
-      if (entries.add(entry)) {
-        jarOut.putNextEntry(new JarEntry(entry));
-        jarOut.write(bytecode);
-        jarOut.closeEntry();
+      JarEntry jarEntry = new JarEntry(entry);
+      InputStream is = url.openStream();
+
+      try {
+        if (compress) {
+          jarOut.putNextEntry(jarEntry);
+          ByteStreams.copy(is, jarOut);
+        } else {
+          crc32.reset();
+          TransferByteOutputStream os = new TransferByteOutputStream();
+          CheckedOutputStream checkedOut = new CheckedOutputStream(os, crc32);
+          ByteStreams.copy(is, checkedOut);
+          checkedOut.close();
+
+          long size = os.size();
+          jarEntry.setMethod(JarEntry.STORED);
+          jarEntry.setSize(size);
+          jarEntry.setCrc(checkedOut.getChecksum().getValue());
+          jarOut.putNextEntry(jarEntry);
+          os.transfer(jarOut);
+        }
+      } finally {
+        is.close();
       }
-    } catch (IOException e) {
+      jarOut.closeEntry();
+    } catch (Exception e) {
       throw Throwables.propagate(e);
     }
   }
 
-  /**
-   * Copies everything under the given package to the jar output.
-   */
-  private void copyPackage(String pkg, Set<String> entries, JarOutputStream jarOut) throws IOException {
-    String prefix = pkg.replace('.', '/');
-
-    Enumeration<URL> resources = Thread.currentThread().getContextClassLoader().getResources(prefix);
-    while (resources.hasMoreElements()) {
-      URL url = resources.nextElement();
-      if ("jar".equals(url.getProtocol())) {
-        copyJarEntries(url, entries, jarOut);
-      } else if ("file".equals(url.getProtocol())) {
-        String path = url.getFile();
-        File baseDir = new File(path.substring(0, path.indexOf(prefix)));
-        copyFileEntries(baseDir, prefix, entries, jarOut);
-      }
-      // Otherwise, ignore the package
-    }
-  }
-
-  /**
-   * Copies all entries under the path specified by the jarPath to the JarOutputStream.
-   */
-  private void copyJarEntries(URL jarPath, Set<String> entries, JarOutputStream jarOut) throws IOException {
-    String spec = new URL(jarPath.getFile()).getFile();
-    String entryRoot = spec.substring(spec.lastIndexOf('!') + 1);
-    if (entryRoot.charAt(0) == '/') {
-      entryRoot = entryRoot.substring(1);
-    }
-    JarFile jarFile = new JarFile(spec.substring(0, spec.lastIndexOf('!')));
-
-    try {
-      Enumeration<JarEntry> jarEntries = jarFile.entries();
-      while (jarEntries.hasMoreElements()) {
-        JarEntry jarEntry = jarEntries.nextElement();
-        String name = jarEntry.getName();
-        if (name == null || !name.startsWith(entryRoot)) {
-          continue;
-        }
-        if (entries.add(name)) {
-          jarOut.putNextEntry(new JarEntry(jarEntry));
-          ByteStreams.copy(jarFile.getInputStream(jarEntry), jarOut);
-          jarOut.closeEntry();
-        }
-      }
-    } finally {
-      jarFile.close();
-    }
-  }
 
   /**
    * Copies all entries under the file path.
    */
-  private void copyFileEntries(File baseDir, String entryRoot,
-                               Set<String> entries, JarOutputStream jarOut) throws IOException {
+  private void copyDir(File baseDir, String entryPrefix,
+                       Set<String> entries, JarOutputStream jarOut) throws IOException {
     URI baseUri = baseDir.toURI();
-    File packageFile = new File(baseDir, entryRoot);
     Queue<File> queue = Lists.newLinkedList();
-    queue.add(packageFile);
+    Collections.addAll(queue, baseDir.listFiles());
     while (!queue.isEmpty()) {
       File file = queue.remove();
 
-      String entry = baseUri.relativize(file.toURI()).getPath();
+      String entry = entryPrefix + baseUri.relativize(file.toURI()).getPath();
       if (entries.add(entry)) {
         jarOut.putNextEntry(new JarEntry(entry));
         if (file.isFile()) {
@@ -250,6 +276,38 @@ public final class ApplicationBundler {
           queue.addAll(Arrays.asList(files));
         }
       }
+    }
+  }
+
+  private void copyResource(URI resource, Set<String> entries, JarOutputStream jarOut) throws IOException {
+    if ("file".equals(resource.getScheme())) {
+      File file = new File(resource);
+      if (file.isDirectory()) {
+        saveDirEntry("resources/", entries, jarOut);
+        copyDir(file, "resources/", entries, jarOut);
+        return;
+      }
+    }
+
+    URL url = resource.toURL();
+    String path = url.getFile();
+    String prefix = path.endsWith(".jar") ? "lib/" : "resources/";
+    path = prefix + path.substring(path.lastIndexOf('/') + 1);
+
+    saveDirEntry(prefix, entries, jarOut);
+    jarOut.putNextEntry(new JarEntry(path));
+    InputStream is = url.openStream();
+    try {
+      ByteStreams.copy(is, jarOut);
+    } finally {
+      is.close();
+    }
+  }
+
+  private static final class TransferByteOutputStream extends ByteArrayOutputStream {
+
+    public void transfer(OutputStream os) throws IOException {
+      os.write(buf, 0, count);
     }
   }
 }

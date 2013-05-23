@@ -43,7 +43,7 @@ public final class ApplicationMasterMain extends ServiceMain {
     File weaveSpec = new File("weaveSpec.json");
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
 
-    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId))
+    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId()))
       .doMain(new ApplicationMasterService(runId, zkConnect, weaveSpec));
   }
 
@@ -59,10 +59,5 @@ public final class ApplicationMasterMain extends ServiceMain {
   @Override
   protected String getKafkaZKConnect() {
     return kafkaZKConnect;
-  }
-
-  @Override
-  protected File getLogBackTemplate() {
-    return new File("logback-template.xml");
   }
 }

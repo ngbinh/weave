@@ -55,6 +55,8 @@ public interface ServiceController {
 
   void stopAndWait();
 
+  void kill();
+
   void addListener(Listener listener, Executor executor);
 
   /**

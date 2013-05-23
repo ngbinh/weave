@@ -72,7 +72,7 @@ public class ZKServiceDecoratorTest {
           }
         });
 
-        final String runnablePath = namespace + "/" + runId;
+        final String runnablePath = namespace + "/" + runId.getId();
         final AtomicReference<String> stateMatch = new AtomicReference<String>("STARTING");
         watchDataChange(zkClient, runnablePath + "/state", semaphore, stateMatch);
         Assert.assertEquals(Service.State.RUNNING, service.start().get(5, TimeUnit.SECONDS));
