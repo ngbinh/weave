@@ -1,9 +1,8 @@
 What is Weave ?
 ===============
 
-Weave is a simple set of interfaces that allow you to manage the resources, nodes and jobs in 
-distributed applications through an abstraction layer built on YARN. Weave allows you to use YARN’s capabilities 
-with a programming model that is similar to running Java threads.
+Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer built on Apache Hadoop YARN. Weave allows 
+you to use YARN’s distributed capabilities with a programming model that is similar to running threads.
 
 Why do I need Weave ?
 =====================
@@ -15,6 +14,7 @@ Continuuity Weave provides you with the following benefits:
   * A simplified API for specifying, running and managing applications
   * A simplified way to specify and manage the stages of the application lifecycle
   * A generic Application Master to better support simple applications
+  * Log & metrics aggregation for application
   * Simplified archive management
   * Improved control over application logs, metrics and errors
   * Discovery service
@@ -259,35 +259,42 @@ public class WebApplication implements WeaveApplication {
 }
 </pre>
 
-API Documentation
-==================
+Documentation & Talks
+======================
+
+API
+---
    * [Weave Doc Index](http://continuuity.github.io/weave/apidocs/index.html "Weave Doc Index")
    * [Weave API](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/api/package-summary.html "Weave API")
    * [Weave YARN](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/yarn/package-summary.html "Weave YARN")
    * [Weave Common](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/common/package-summary.html "Weave Common")
    * [Weave Discovery](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/discovery/package-summary.html "Weave Discovery")
    * [Weave Zookeeper](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/zookeeper/package-summary.html "Weave Zookeeper")
-
+   
+Talks
+-----
+   * [Weave Introduction](http://continuuity.github.io/weave/talks/Weave-Talk-v1.0.pdf "Weave Introduction")
+   
 Community
 =================
 
 How to Contribute
 -----------------
-Are you interested in making Weave better? Our development model is a pull based model with a consensus 
-building phase - similar to the Apache's voting process. If you think that you help make Weave better, add new 
+Are you interested in making Weave better? Our development model is a simple pull based model with a consensus 
+building phase - similar to the [Apache's voting process](http://www.apache.org/foundation/voting.html "Apache Voting Process"). If you think that you help make Weave better, add new 
 features or fix bugs in Weave or even if you have an idea on how to improve something that's already there in Weave, here's
 how you can do that. 
 
-  * Fork 'Weave' into your own GitHub repository
+  * Fork [weave](https://github.com/continuuity/weave "weave") into your own GitHub repository
   * Create a topic branch with an appropriate name 
   * Work on your favourite feature to your content
-  * Once you are satisifed, create a pull request by going continuuity/weave project. 
+  * Once you are satisifed, create a pull request by going [continuuity/weave](https://github.com/continuuity/weave "continuuity/weave") project. 
   * Address all the review comments
-  * Once addressed, the changes will be committed to the continuuity/weave repo. 
+  * Once addressed, the changes will be committed to the [continuuity/weave](https://github.com/continuuity/weave "continuuity/weave") repo. 
 
 Groups
 ------
-  * User Group: <https://groups.google.com/d/forum/weave-user>
+  * User Group: [weave-user](https://groups.google.com/d/forum/weave-user "weave-user")
 
 License
 =======
