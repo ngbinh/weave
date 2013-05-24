@@ -125,7 +125,6 @@ public abstract class ServiceMain {
 
   private void doConfigure(JoranConfigurator configurator, String config) {
     try {
-      System.out.println(config);
       configurator.doConfigure(new InputSource(new StringReader(config)));
     } catch (Exception e) {
       throw Throwables.propagate(e);
