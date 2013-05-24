@@ -297,9 +297,8 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   /**
    * Based on the given {@link WeaveSpecification}, upload LocalFiles to Yarn Cluster.
-   * @param weaveSpec
+   * @param weaveSpec The {@link WeaveSpecification} for populating resource.
    * @param localFiles A Multimap to store runnable name to transformed LocalFiles.
-   * @return
    * @throws IOException
    */
   private void populateRunnableResources(WeaveSpecification weaveSpec,

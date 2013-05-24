@@ -162,6 +162,7 @@ public final class KafkaAppender extends AppenderBase<ILoggingEvent> {
   public void stop() {
     super.stop();
     scheduler.shutdownNow();
+    zkClientService.stopAndWait();
     // Flush the log one more time.
     // TODO (terence): Need to move kafka server into AppMaster to resolve this issue.
 //    try {

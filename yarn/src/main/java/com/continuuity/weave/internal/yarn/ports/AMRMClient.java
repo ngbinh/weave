@@ -36,7 +36,7 @@ import org.apache.hadoop.yarn.service.Service;
 public interface AMRMClient extends Service {
 
   /**
-   * Value used to define no locality
+   * Value used to define no locality.
    */
   static final String ANY = "*";
 
@@ -115,7 +115,7 @@ public interface AMRMClient extends Service {
     throws YarnRemoteException;
 
   /**
-   * Request containers for resources before calling <code>allocate</code>
+   * Request containers for resources before calling <code>allocate</code>.
    * @param req Resource request
    */
   public void addContainerRequest(ContainerRequest req);

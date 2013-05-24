@@ -26,6 +26,7 @@ import com.continuuity.weave.zookeeper.OperationFuture;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Charsets;
 import com.google.common.base.Supplier;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.AbstractService;
 import com.google.common.util.concurrent.AsyncFunction;
@@ -87,10 +88,10 @@ public final class ZKServiceDecorator extends AbstractService {
 
     // Create nodes for states and messaging
     StateNode stateNode = new StateNode(ServiceController.State.STARTING, null);
-    final ListenableFuture<List<String>> createFuture = Futures.allAsList(
+    final ListenableFuture<List<String>> createFuture = Futures.allAsList(ImmutableList.of(
       zkClient.create(getZKPath("messages"), null, CreateMode.PERSISTENT),
       zkClient.create(getZKPath("state"), encodeStateNode(stateNode), CreateMode.PERSISTENT)
-    );
+    ));
 
     createFuture.addListener(new Runnable() {
       @Override
