@@ -31,6 +31,7 @@ import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerMain;
+import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.launcher.WeaveLauncher;
@@ -204,7 +205,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
       //     com.continuuity.weave.internal.WeaveLauncher
       //     appMaster.jar
-      //     com.continuuity.weave.yarn.ApplicationMasterMain
+      //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
       //     false
       containerLaunchContext.setCommands(ImmutableList.of(
         "java",

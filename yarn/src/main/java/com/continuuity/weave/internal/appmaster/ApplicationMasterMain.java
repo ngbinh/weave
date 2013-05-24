@@ -13,16 +13,23 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.yarn;
+package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.ServiceMain;
+import com.continuuity.weave.internal.ZKServiceWrapper;
+import com.continuuity.weave.zookeeper.RetryStrategies;
+import com.continuuity.weave.zookeeper.ZKClientService;
+import com.continuuity.weave.zookeeper.ZKClientServices;
+import com.continuuity.weave.zookeeper.ZKClients;
+import com.google.common.util.concurrent.Service;
 
 import java.io.File;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Main class for launching {@link ApplicationMasterService}.
@@ -43,8 +50,16 @@ public final class ApplicationMasterMain extends ServiceMain {
     File weaveSpec = new File("weaveSpec.json");
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
 
-    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId()))
-      .doMain(new ApplicationMasterService(runId, zkConnect, weaveSpec));
+    ZKClientService zkClientService =
+      ZKClientServices.delegate(
+        ZKClients.reWatchOnExpire(
+          ZKClients.retryOnFailure(
+            ZKClientService.Builder.of(zkConnect).build(),
+            RetryStrategies.fixDelay(1, TimeUnit.SECONDS))));
+
+    Service service = new ZKServiceWrapper(zkClientService,
+                                           new ApplicationMasterService(runId, zkClientService, weaveSpec));
+    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(service);
   }
 
   @Override
