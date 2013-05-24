@@ -21,8 +21,6 @@ import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
-import com.continuuity.weave.common.ServiceListenerAdapter;
-import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.DiscoveryService;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
@@ -34,17 +32,12 @@ import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
-import com.google.common.util.concurrent.AsyncFunction;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 import com.google.gson.Gson;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -80,16 +73,13 @@ public final class WeaveContainerMain extends ServiceMain {
                                                   decodeArgs(System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS)),
                                                   runnableSpec, instanceId, discoveryService);
 
-    Service service = new WeaveContainerService(context, containerInfo,
-                                                getContainerZKClient(zkClientService, appRunId, runnableName),
-                                                runId, runnableSpec, getClassLoader());
-    service.addListener(createServiceListener(zkClientService), Threads.SAME_THREAD_EXECUTOR);
+    Service service = new ZKServiceWrapper(
+      zkClientService,
+      new WeaveContainerService(context, containerInfo,
+                                getContainerZKClient(zkClientService, appRunId, runnableName),
+                                runId, runnableSpec, getClassLoader()));
 
-    CountDownLatch stopLatch = new CountDownLatch(1);
-    zkClientService.addListener(createZKClientServiceListener(stopLatch), Threads.SAME_THREAD_EXECUTOR);
-
-    new WeaveContainerMain().doMain(wrapService(zkClientService, service));
-    stopLatch.await();
+    new WeaveContainerMain().doMain(service);
   }
 
   private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {
@@ -130,89 +120,6 @@ public final class WeaveContainerMain extends ServiceMain {
 
   private static String[] decodeArgs(String args) {
     return new Gson().fromJson(args, String[].class);
-  }
-
-  private static Service wrapService(final ZKClientService zkClientService,
-                                     final Service containerService) {
-
-    // Need to create the stop function first to workaround with Shutdown hook
-    final AsyncFunction<Service.State, Service.State> stopZKClient = new AsyncFunction<Service.State, Service.State>() {
-      @Override
-      public ListenableFuture<Service.State> apply(Service.State input) throws Exception {
-        return zkClientService.stop();
-      }
-    };
-
-    return new Service() {
-
-      @Override
-      public ListenableFuture<State> start() {
-        return Futures.transform(zkClientService.start(), new AsyncFunction<State, State>() {
-          @Override
-          public ListenableFuture<State> apply(State input) throws Exception {
-            return containerService.start();
-          }
-        }, Threads.SAME_THREAD_EXECUTOR);
-      }
-
-      @Override
-      public State startAndWait() {
-        return Futures.getUnchecked(start());
-      }
-
-      @Override
-      public boolean isRunning() {
-        return containerService.isRunning();
-      }
-
-      @Override
-      public State state() {
-        return containerService.state();
-      }
-
-      @Override
-      public ListenableFuture<State> stop() {
-        return Futures.transform(containerService.stop(), stopZKClient, Threads.SAME_THREAD_EXECUTOR);
-      }
-
-      @Override
-      public State stopAndWait() {
-        return Futures.getUnchecked(stop());
-      }
-
-      @Override
-      public void addListener(Listener listener, Executor executor) {
-        containerService.addListener(listener, executor);
-      }
-    };
-  }
-
-  private static Service.Listener createServiceListener(final ZKClientService zkClientService) {
-    return new ServiceListenerAdapter() {
-      @Override
-      public void terminated(Service.State from) {
-        zkClientService.stop();
-      }
-
-      @Override
-      public void failed(Service.State from, Throwable failure) {
-        zkClientService.stop();
-      }
-    };
-  }
-
-  private static Service.Listener createZKClientServiceListener(final CountDownLatch stopLatch) {
-    return new ServiceListenerAdapter() {
-      @Override
-      public void terminated(Service.State from) {
-        stopLatch.countDown();
-      }
-
-      @Override
-      public void failed(Service.State from, Throwable failure) {
-        stopLatch.countDown();
-      }
-    };
   }
 
   @Override
