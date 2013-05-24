@@ -308,13 +308,21 @@ final class YarnWeavePreparer implements WeavePreparer {
     for (Map.Entry<String, RuntimeSpecification> entry: weaveSpec.getRunnables().entrySet()) {
       String name = entry.getKey();
       for (LocalFile localFile : entry.getValue().getLocalFiles()) {
-        URL url = localFile.getURI().toURL();
-        LOG.debug("Create and copy {} : {}", name, url);
-        // Temp file suffix is repeated with the file name to make sure it preserves the original suffix for expansion.
-        String path = url.getFile();
-        Location location = copyFromURL(url, createTempLocation(localFile.getName(),
-                                                                path.substring(path.lastIndexOf('/') + 1)));
-        LOG.debug("Done {} : {}", name, url);
+        Location location;
+
+        URI uri = localFile.getURI();
+        if ("hdfs".equals(uri.getScheme())) {
+          // Assuming the location factory is HDFS one. If it is not, it will failed, which is the correct behavior.
+          location = locationFactory.create(uri);
+        } else {
+          URL url = uri.toURL();
+          LOG.debug("Create and copy {} : {}", name, url);
+          // Temp file suffix is repeated with the file name to preserve original suffix for expansion.
+          String path = url.getFile();
+          location = copyFromURL(url, createTempLocation(localFile.getName(),
+                                                         path.substring(path.lastIndexOf('/') + 1)));
+          LOG.debug("Done {} : {}", name, url);
+        }
 
         localFiles.put(name, new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
                                                   location.length(), localFile.isArchive(), localFile.getPattern()));
