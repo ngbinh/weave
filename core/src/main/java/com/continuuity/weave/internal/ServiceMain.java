@@ -15,12 +15,12 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.internal.logging.KafkaAppender;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.classic.util.ContextInitializer;
 import ch.qos.logback.core.joran.spi.JoranException;
-import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.internal.logging.KafkaAppender;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
@@ -47,9 +47,11 @@ public abstract class ServiceMain {
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {
-        LOG.info("Shutdown hook triggered. Shutting down service " + serviceName);
-        service.stopAndWait();
-        LOG.info("Service shutdown " + serviceName);
+        if (service.isRunning()) {
+          LOG.info("Shutdown hook triggered. Shutting down service " + serviceName);
+          service.stopAndWait();
+          LOG.info("Service shutdown " + serviceName);
+        }
       }
     });
 
@@ -91,10 +93,10 @@ public abstract class ServiceMain {
       // If container failed with exception, the future.get() will throws exception
       completion.get();
     } finally {
-//      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-//      if (loggerFactory instanceof LoggerContext) {
-//        ((LoggerContext) loggerFactory).stop();
-//      }
+      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+      if (loggerFactory instanceof LoggerContext) {
+        ((LoggerContext) loggerFactory).stop();
+      }
     }
   }
 
@@ -123,7 +125,6 @@ public abstract class ServiceMain {
 
   private void doConfigure(JoranConfigurator configurator, String config) {
     try {
-      System.out.println(config);
       configurator.doConfigure(new InputSource(new StringReader(config)));
     } catch (Exception e) {
       throw Throwables.propagate(e);

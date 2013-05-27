@@ -162,7 +162,6 @@ public final class ApplicationBundler {
   }
 
   private void putEntry(String className, URL classUrl, URL classPathUrl, Set<String> entries, JarOutputStream jarOut) {
-    String path = classUrl.getFile();
     String classPath = classPathUrl.getFile();
     if (classPath.endsWith(".jar")) {
       saveDirEntry("lib/", entries, jarOut);

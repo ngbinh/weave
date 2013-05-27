@@ -51,12 +51,27 @@ public interface ServiceController {
    */
   State getState();
 
+  /**
+   * Requests to stop a running service.
+   * @return A {@link ListenableFuture} that will be completed when the service is stopped.
+   */
   ListenableFuture<State> stop();
 
+  /**
+   * Requests to stop a running service and wait for its completion.
+   */
   void stopAndWait();
 
+  /**
+   * Requests to forcefully kills a running service.
+   */
   void kill();
 
+  /**
+   * Adds a listener to watch for state changes of the service.
+   * @param listener The listener to attach.
+   * @param executor An executor that executes calls to the given listener.
+   */
   void addListener(Listener listener, Executor executor);
 
   /**

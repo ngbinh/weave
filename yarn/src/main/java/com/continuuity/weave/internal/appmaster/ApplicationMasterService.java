@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.yarn;
+package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
@@ -27,16 +27,18 @@ import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
+import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.state.ZKServiceDecorator;
+import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
-import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClient;
-import com.continuuity.weave.zookeeper.ZKClientService;
-import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
@@ -57,7 +59,6 @@ import com.google.common.collect.Table;
 import com.google.common.io.Files;
 import com.google.common.reflect.TypeToken;
 import com.google.common.util.concurrent.AbstractExecutionThreadService;
-import com.google.common.util.concurrent.AsyncFunction;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
@@ -81,6 +82,7 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
+import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,6 +95,7 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -106,8 +109,7 @@ public final class ApplicationMasterService implements Service {
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
 
   private final RunId runId;
-  private final String zkConnectStr;
-  private final ZKClientService zkClientService;
+  private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
   private final ListMultimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
@@ -116,33 +118,20 @@ public final class ApplicationMasterService implements Service {
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
 
-  // TODO (terence) : This is temporary to fix issue when shutting down. Need to unify it with WeaveContainerMain
-  private final AsyncFunction<State, State> stopZKClient = new AsyncFunction<State, State>() {
-    @Override
-    public ListenableFuture<State> apply(State input) throws Exception {
-      return zkClientService.stop();
-    }
-  };
-
   private YarnRPC yarnRPC;
   private Resource maxCapability;
   private Resource minCapability;
+  private EmbeddedKafkaServer kafkaServer;
 
 
-  public ApplicationMasterService(RunId runId, String zkConnectStr, File weaveSpecFile) throws IOException {
+  public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile) throws IOException {
     this.runId = runId;
-    this.zkConnectStr = zkConnectStr;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
     this.runnableArgs = decodeRunnableArgs();
-
     this.yarnConf = new YarnConfiguration();
+    this.zkClient = zkClient;
 
-    this.zkClientService = ZKClientServices.delegate(
-      ZKClients.reWatchOnExpire(
-        ZKClients.retryOnFailure(ZKClientService.Builder.of(zkConnectStr).build(),
-                                 RetryStrategies.fixDelay(1, TimeUnit.SECONDS))));
-    this.serviceDelegate = new ZKServiceDecorator(zkClientService, runId,
-                                                  createLiveNodeDataSupplier(), new ServiceDelegate());
+    this.serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
 
     // Get the container ID and convert it to ApplicationAttemptId
     masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
@@ -195,8 +184,15 @@ public final class ApplicationMasterService implements Service {
 
     // Creates ZK path for runnable and kafka logging service
     Futures.allAsList(ImmutableList.of(
-      zkClientService.create("/" + runId.getId() + "/runnables", null, CreateMode.PERSISTENT),
-      zkClientService.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))).get();
+      zkClient.create("/" + runId.getId() + "/runnables", null, CreateMode.PERSISTENT),
+      zkClient.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))
+    ).get();
+
+    // Starts kafka server
+    LOG.info("Starting kafka server");
+    kafkaServer = new EmbeddedKafkaServer(new File("kafka.tgz"), generateKafkaConfig());
+    kafkaServer.startAndWait();
+    LOG.info("Kafka server started");
   }
 
   private void doStop() throws Exception {
@@ -219,10 +215,46 @@ public final class ApplicationMasterService implements Service {
 
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
+
+    // When logger context is stopped, stop the kafka server as well.
+    ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+    if (loggerFactory instanceof LoggerContext) {
+      ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
+    } else {
+      kafkaServer.stopAndWait();
+    }
+  }
+
+  private LoggerContextListener getLoggerStopListener() {
+    return new LoggerContextListener() {
+      @Override
+      public boolean isResetResistant() {
+        return true;
+      }
+
+      @Override
+      public void onStart(LoggerContext context) {
+        // No-op
+      }
+
+      @Override
+      public void onReset(LoggerContext context) {
+        // No-op
+      }
+
+      @Override
+      public void onStop(LoggerContext context) {
+        kafkaServer.stopAndWait();
+      }
+
+      @Override
+      public void onLevelChange(ch.qos.logback.classic.Logger logger, Level level) {
+        // No-op
+      }
+    };
   }
 
   private void doRun() throws Exception {
-
     // Orderly stores container requests.
     Queue<RunnableContainerRequest> runnableRequests = Lists.newLinkedList();
     for (WeaveSpecification.Order order : weaveSpec.getOrders()) {
@@ -268,8 +300,6 @@ public final class ApplicationMasterService implements Service {
 
   /**
    * Adds {@link AMRMClient.ContainerRequest}s with the given resource capability for each runtime.
-   * @param capability
-   * @param runtimeSpecs
    */
   private Queue<ProvisionRequest> addContainerRequests(Resource capability,
                                                        Collection<RuntimeSpecification> runtimeSpecs) {
@@ -291,8 +321,6 @@ public final class ApplicationMasterService implements Service {
 
   /**
    * Launches runnables in the provisioned containers.
-   * @param containers
-   * @param provisioning
    */
   private void launchRunnable(List<Container> containers, Queue<ProvisionRequest> provisioning) {
     for (Container container : containers) {
@@ -309,12 +337,12 @@ public final class ApplicationMasterService implements Service {
 
       RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
       ProcessLauncher processLauncher = new DefaultProcessLauncher(
-        container, yarnRPC, yarnConf, getKafkaZKConnect(),
-        getLocalFiles(),
+        container, yarnRPC, yarnConf, getLocalFiles(),
         ImmutableMap.<String, String>builder()
          .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
-         .put(EnvKeys.WEAVE_ZK_CONNECT, zkConnectStr)
+         .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
          .put(EnvKeys.WEAVE_APPLICATION_ARGS, System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS))
+         .put(EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect())
          .build()
         );
 
@@ -322,7 +350,7 @@ public final class ApplicationMasterService implements Service {
 
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(weaveSpec.getRunnables().get(runnableName),
                                                                    containerRunId, processLauncher,
-                                                                   ZKClients.namespace(zkClientService,
+                                                                   ZKClients.namespace(zkClient,
                                                                                        getZKNamespace(runnableName)),
                                                                    runnableArgs.get(runnableName),
                                                                    instanceId);
@@ -351,19 +379,37 @@ public final class ApplicationMasterService implements Service {
     }
   }
 
-  /**
-   * Creates a {@link File} from the path given in the environment.
-   */
-  private File createFile(String envKey) {
-    return new File(System.getenv(envKey));
-  }
-
   private String getZKNamespace(String runnableName) {
     return String.format("/%s/runnables/%s", runId.getId(), runnableName);
   }
 
   private String getKafkaZKConnect() {
-    return String.format("%s/%s/kafka", zkConnectStr, runId.getId());
+    return String.format("%s/%s/kafka", zkClient.getConnectString(), runId.getId());
+  }
+
+  private Properties generateKafkaConfig() {
+    int port = Networks.getRandomPort();
+    Preconditions.checkState(port > 0, "Failed to get random port.");
+
+    Properties prop = new Properties();
+    prop.setProperty("log.dir", new File("kafka-logs").getAbsolutePath());
+    prop.setProperty("zk.connect", getKafkaZKConnect());
+    prop.setProperty("num.threads", "8");
+    prop.setProperty("port", Integer.toString(port));
+    prop.setProperty("log.flush.interval", "10000");
+    prop.setProperty("max.socket.request.bytes", "104857600");
+    prop.setProperty("log.cleanup.interval.mins", "1");
+    prop.setProperty("log.default.flush.scheduler.interval.ms", "1000");
+    prop.setProperty("zk.connectiontimeout.ms", "1000000");
+    prop.setProperty("socket.receive.buffer", "1048576");
+    prop.setProperty("enable.zookeeper", "true");
+    prop.setProperty("log.retention.hours", "168");
+    prop.setProperty("brokerid", "0");
+    prop.setProperty("socket.send.buffer", "1048576");
+    prop.setProperty("num.partitions", "1");
+    prop.setProperty("log.file.size", "536870912");
+    prop.setProperty("log.default.flush.interval.ms", "1000");
+    return prop;
   }
 
   private ListenableFuture<String> processMessage(String messageId, Message message) {
@@ -379,7 +425,7 @@ public final class ApplicationMasterService implements Service {
     // TODO
     if (message.getScope() == Message.Scope.ALL_RUNNABLE) {
       for (String runnableName : weaveSpec.getRunnables().keySet()) {
-        ZKClient zkClient = ZKClients.namespace(zkClientService, getZKNamespace(runnableName));
+        ZKClient runnableZkClient = ZKClients.namespace(zkClient, getZKNamespace(runnableName));
 //        ZKMessages.sendMessage(zkCl)
       }
     }
@@ -431,12 +477,7 @@ public final class ApplicationMasterService implements Service {
 
   @Override
   public ListenableFuture<State> start() {
-    return Futures.transform(zkClientService.start(), new AsyncFunction<State, State>() {
-      @Override
-      public ListenableFuture<State> apply(State input) throws Exception {
-        return serviceDelegate.start();
-      }
-    });
+    return serviceDelegate.start();
   }
 
   @Override
@@ -456,7 +497,7 @@ public final class ApplicationMasterService implements Service {
 
   @Override
   public ListenableFuture<State> stop() {
-    return Futures.transform(serviceDelegate.stop(), stopZKClient);
+    return serviceDelegate.stop();
   }
 
   @Override

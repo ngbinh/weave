@@ -30,7 +30,7 @@ public interface LocationFactory {
   Location create(String path);
 
   /**
-   * Creates an instance of {@link Location} based on {@link java.net.URI} <code>uri</code>
+   * Creates an instance of {@link Location} based on {@link java.net.URI} <code>uri</code>.
    *
    * @param uri to the resource on the filesystem.
    * @return An instance of {@link Location}

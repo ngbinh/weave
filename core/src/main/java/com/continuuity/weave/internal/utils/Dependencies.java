@@ -56,7 +56,7 @@ public final class Dependencies {
      * @param classPathUrl URL for the class path resource that contains the class resource.
      *                     If the URL protocol is {@code file}, it would be the path to root package.
      *                     If the URL protocol is {@code jar}, it would be the jar file.
-     * @return
+     * @return true keep finding dependencies on the given class.
      */
     boolean accept(String className, URL classUrl, URL classPathUrl);
   }

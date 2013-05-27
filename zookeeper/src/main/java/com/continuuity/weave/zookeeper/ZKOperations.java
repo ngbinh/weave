@@ -37,6 +37,10 @@ public final class ZKOperations {
 
   private static final Logger LOG = LoggerFactory.getLogger(ZKOperations.class);
 
+  /**
+   * Represents a ZK operation updates callback.
+   * @param <T> Type of updated data.
+   */
   public interface Callback<T> {
     void updated(T data);
   }
@@ -53,6 +57,9 @@ public final class ZKOperations {
     void updated(NodeData nodeData);
   }
 
+  /**
+   * Interface for defining callback method to receive children nodes updates.
+   */
   public interface ChildrenCallback extends Callback<NodeChildren> {
     @Override
     void updated(NodeChildren nodeChildren);

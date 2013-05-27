@@ -31,6 +31,7 @@ import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerMain;
+import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.launcher.WeaveLauncher;
@@ -90,6 +91,7 @@ import java.util.jar.JarOutputStream;
 final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
+  private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
   private static final int APP_MASTER_MEMORY_MB = 256;
 
   private final WeaveSpecification weaveSpec;
@@ -194,6 +196,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       populateRunnableResources(weaveSpec, transformedLocalFiles);
       saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
       saveLauncher(localResources);
+      saveKafka(localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
                                                      "container.jar",
                                                      "launcher.jar"));
@@ -204,7 +207,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
       //     com.continuuity.weave.internal.WeaveLauncher
       //     appMaster.jar
-      //     com.continuuity.weave.yarn.ApplicationMasterMain
+      //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
       //     false
       containerLaunchContext.setCommands(ImmutableList.of(
         "java",
@@ -296,9 +299,8 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   /**
    * Based on the given {@link WeaveSpecification}, upload LocalFiles to Yarn Cluster.
-   * @param weaveSpec
+   * @param weaveSpec The {@link WeaveSpecification} for populating resource.
    * @param localFiles A Multimap to store runnable name to transformed LocalFiles.
-   * @return
    * @throws IOException
    */
   private void populateRunnableResources(WeaveSpecification weaveSpec,
@@ -308,13 +310,21 @@ final class YarnWeavePreparer implements WeavePreparer {
     for (Map.Entry<String, RuntimeSpecification> entry: weaveSpec.getRunnables().entrySet()) {
       String name = entry.getKey();
       for (LocalFile localFile : entry.getValue().getLocalFiles()) {
-        URL url = localFile.getURI().toURL();
-        LOG.debug("Create and copy {} : {}", name, url);
-        // Temp file suffix is repeated with the file name to make sure it preserves the original suffix for expansion.
-        String path = url.getFile();
-        Location location = copyFromURL(url, createTempLocation(localFile.getName(),
-                                                                path.substring(path.lastIndexOf('/') + 1)));
-        LOG.debug("Done {} : {}", name, url);
+        Location location;
+
+        URI uri = localFile.getURI();
+        if ("hdfs".equals(uri.getScheme())) {
+          // Assuming the location factory is HDFS one. If it is not, it will failed, which is the correct behavior.
+          location = locationFactory.create(uri);
+        } else {
+          URL url = uri.toURL();
+          LOG.debug("Create and copy {} : {}", name, url);
+          // Temp file suffix is repeated with the file name to preserve original suffix for expansion.
+          String path = url.getFile();
+          location = copyFromURL(url, createTempLocation(localFile.getName(),
+                                                         path.substring(path.lastIndexOf('/') + 1)));
+          LOG.debug("Done {} : {}", name, url);
+        }
 
         localFiles.put(name, new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
                                                   location.length(), localFile.isArchive(), localFile.getPattern()));
@@ -379,6 +389,27 @@ final class YarnWeavePreparer implements WeavePreparer {
     LOG.debug("Done launcher.jar");
     localResources.put("launcher.jar", YarnUtils.createLocalResource(location));
   }
+
+  private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Copy kafka.tgz");
+    Location location = createTempLocation("kafka", ".tgz");
+    InputStream is = getClass().getClassLoader().getResourceAsStream(KAFKA_ARCHIVE);
+    try {
+      OutputStream os = location.getOutputStream();
+      try {
+        ByteStreams.copy(is, os);
+      } finally {
+        os.close();
+      }
+    } finally {
+      is.close();
+    }
+    LOG.debug("Done kafka.tgz");
+    LocalResource localResource = YarnUtils.createLocalResource(location);
+    localResource.setType(LocalResourceType.ARCHIVE);
+    localResources.put("kafka.tgz", localResource);
+  }
+
 
   private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> keys) throws IOException {
     Map<String, LocalFile> localFiles = Maps.transformEntries(
