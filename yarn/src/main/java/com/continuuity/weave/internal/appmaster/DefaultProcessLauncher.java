@@ -55,16 +55,14 @@ final class DefaultProcessLauncher implements ProcessLauncher {
   private final Container container;
   private final YarnRPC yarnRPC;
   private final YarnConfiguration yarnConf;
-  private final String kafkaZKConnect;
   private final List<LocalFile> defaultLocalFiles;
   private final Map<String, String> defaultEnv;
 
-  DefaultProcessLauncher(Container container, YarnRPC yarnRPC, YarnConfiguration yarnConf, String kafkaZKConnect,
+  DefaultProcessLauncher(Container container, YarnRPC yarnRPC, YarnConfiguration yarnConf,
                          Iterable<LocalFile> defaultLocalFiles, Map<String, String> defaultEnv) {
     this.container = container;
     this.yarnRPC = yarnRPC;
     this.yarnConf = yarnConf;
-    this.kafkaZKConnect = kafkaZKConnect;
     this.defaultEnv = ImmutableMap.copyOf(defaultEnv);
     this.defaultLocalFiles = ImmutableList.copyOf(defaultLocalFiles);
   }
@@ -167,7 +165,6 @@ final class DefaultProcessLauncher implements ProcessLauncher {
         environment.put(EnvKeys.YARN_CONTAINER_ID, container.getId().toString());
         environment.put(EnvKeys.YARN_CONTAINER_HOST, container.getNodeId().getHost());
         environment.put(EnvKeys.YARN_CONTAINER_PORT, Integer.toString(container.getNodeId().getPort()));
-        environment.put(EnvKeys.WEAVE_LOG_KAFKA_ZK, kafkaZKConnect);
 
         launchContext.setEnvironment(environment);
         return new MoreCommandImpl();

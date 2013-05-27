@@ -27,13 +27,18 @@ import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
+import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.state.ZKServiceDecorator;
+import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
@@ -77,6 +82,7 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
+import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,6 +95,7 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Executor;
@@ -114,6 +121,7 @@ public final class ApplicationMasterService implements Service {
   private YarnRPC yarnRPC;
   private Resource maxCapability;
   private Resource minCapability;
+  private EmbeddedKafkaServer kafkaServer;
 
 
   public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile) throws IOException {
@@ -177,7 +185,14 @@ public final class ApplicationMasterService implements Service {
     // Creates ZK path for runnable and kafka logging service
     Futures.allAsList(ImmutableList.of(
       zkClient.create("/" + runId.getId() + "/runnables", null, CreateMode.PERSISTENT),
-      zkClient.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))).get();
+      zkClient.create("/" + runId.getId() + "/kafka", null, CreateMode.PERSISTENT))
+    ).get();
+
+    // Starts kafka server
+    LOG.info("Starting kafka server");
+    kafkaServer = new EmbeddedKafkaServer(new File("kafka.tgz"), generateKafkaConfig());
+    kafkaServer.startAndWait();
+    LOG.info("Kafka server started");
   }
 
   private void doStop() throws Exception {
@@ -200,6 +215,43 @@ public final class ApplicationMasterService implements Service {
 
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
+
+    // When logger context is stopped, stop the kafka server as well.
+    ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+    if (loggerFactory instanceof LoggerContext) {
+      ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
+    } else {
+      kafkaServer.stopAndWait();
+    }
+  }
+
+  private LoggerContextListener getLoggerStopListener() {
+    return new LoggerContextListener() {
+      @Override
+      public boolean isResetResistant() {
+        return true;
+      }
+
+      @Override
+      public void onStart(LoggerContext context) {
+        // No-op
+      }
+
+      @Override
+      public void onReset(LoggerContext context) {
+        // No-op
+      }
+
+      @Override
+      public void onStop(LoggerContext context) {
+        kafkaServer.stopAndWait();
+      }
+
+      @Override
+      public void onLevelChange(ch.qos.logback.classic.Logger logger, Level level) {
+        // No-op
+      }
+    };
   }
 
   private void doRun() throws Exception {
@@ -285,12 +337,12 @@ public final class ApplicationMasterService implements Service {
 
       RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
       ProcessLauncher processLauncher = new DefaultProcessLauncher(
-        container, yarnRPC, yarnConf, getKafkaZKConnect(),
-        getLocalFiles(),
+        container, yarnRPC, yarnConf, getLocalFiles(),
         ImmutableMap.<String, String>builder()
          .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
          .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
          .put(EnvKeys.WEAVE_APPLICATION_ARGS, System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS))
+         .put(EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect())
          .build()
         );
 
@@ -333,6 +385,31 @@ public final class ApplicationMasterService implements Service {
 
   private String getKafkaZKConnect() {
     return String.format("%s/%s/kafka", zkClient.getConnectString(), runId.getId());
+  }
+
+  private Properties generateKafkaConfig() {
+    int port = Networks.getRandomPort();
+    Preconditions.checkState(port > 0, "Failed to get random port.");
+
+    Properties prop = new Properties();
+    prop.setProperty("log.dir", new File("kafka-logs").getAbsolutePath());
+    prop.setProperty("zk.connect", getKafkaZKConnect());
+    prop.setProperty("num.threads", "8");
+    prop.setProperty("port", Integer.toString(port));
+    prop.setProperty("log.flush.interval", "10000");
+    prop.setProperty("max.socket.request.bytes", "104857600");
+    prop.setProperty("log.cleanup.interval.mins", "1");
+    prop.setProperty("log.default.flush.scheduler.interval.ms", "1000");
+    prop.setProperty("zk.connectiontimeout.ms", "1000000");
+    prop.setProperty("socket.receive.buffer", "1048576");
+    prop.setProperty("enable.zookeeper", "true");
+    prop.setProperty("log.retention.hours", "168");
+    prop.setProperty("brokerid", "0");
+    prop.setProperty("socket.send.buffer", "1048576");
+    prop.setProperty("num.partitions", "1");
+    prop.setProperty("log.file.size", "536870912");
+    prop.setProperty("log.default.flush.interval.ms", "1000");
+    return prop;
   }
 
   private ListenableFuture<String> processMessage(String messageId, Message message) {

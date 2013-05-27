@@ -15,26 +15,18 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
-import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveApplication;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeavePreparer;
 import com.continuuity.weave.api.WeaveRunnable;
-import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveRunnerService;
-import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocationFactory;
-import com.continuuity.weave.internal.DefaultLocalFile;
-import com.continuuity.weave.internal.DefaultWeaveRunnableSpecification;
-import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.SingleRunnableApplication;
-import com.continuuity.weave.internal.logging.KafkaWeaveRunnable;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -45,8 +37,6 @@ import com.continuuity.weave.zookeeper.ZKOperations;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.yarn.client.YarnClient;
@@ -56,11 +46,8 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 
 import java.io.IOException;
-import java.net.URL;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -70,7 +57,6 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public final class YarnWeaveRunnerService extends AbstractIdleService implements WeaveRunnerService {
 
-  private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
   private static final int ZK_TIMEOUT = 10000;
 
   private final YarnClient yarnClient;
@@ -106,7 +92,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   @Override
   public WeavePreparer prepare(WeaveApplication application) {
     Preconditions.checkState(isRunning(), "Service not start. Please call start() first.");
-    return new YarnWeavePreparer(addKafka(application.configure()), yarnClient, zkClientService, locationFactory);
+    return new YarnWeavePreparer(application.configure(), yarnClient, zkClientService, locationFactory);
   }
 
   @Override
@@ -121,8 +107,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   @Override
   public Iterable<WeaveController> lookup(String applicationName) {
     final ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
-    final AtomicReference<List<WeaveController>> controllers =
-      new AtomicReference<List<WeaveController>>(ImmutableList.<WeaveController>of());
+    final AtomicReference<List<WeaveController>> controllers = new AtomicReference<List<WeaveController>>(
+                                                                            ImmutableList.<WeaveController>of());
     final CountDownLatch firstFetch = new CountDownLatch(1);
 
     ZKOperations.watchChildren(zkClient, "/instances", new ZKOperations.ChildrenCallback() {
@@ -158,7 +144,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     yarnClient.start();
     zkClientService.startAndWait();
     try {
-      // Create the root node, so that the namespace root would get created it is missing
+      // Create the root node, so that the namespace root would get created if it is missing
       zkClientService.create("/", null, CreateMode.PERSISTENT).get();
     } catch (Exception e) {
       // If the exception is caused by node exists, then it's ok. Otherwise propagate the exception.
@@ -173,67 +159,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   protected void shutDown() throws Exception {
     zkClientService.stopAndWait();
     yarnClient.stop();
-  }
-
-  // Add the kafka runnable.
-  // TODO: It is a bit hacky to just add it in here
-  private WeaveSpecification addKafka(final WeaveSpecification weaveSpec) {
-    final String kafkaName = "kafka";
-
-    return new WeaveSpecification() {
-      @Override
-      public String getName() {
-        return weaveSpec.getName();
-      }
-
-      @Override
-      public Map<String, RuntimeSpecification> getRunnables() {
-        RuntimeSpecification kafkaRuntimeSpec = new RuntimeSpecification() {
-
-          @Override
-          public String getName() {
-            return kafkaName;
-          }
-
-          @Override
-          public WeaveRunnableSpecification getRunnableSpecification() {
-            KafkaWeaveRunnable kafkaRunnable = new KafkaWeaveRunnable("kafka");
-            return new DefaultWeaveRunnableSpecification(kafkaRunnable.getClass().getName(),
-                                                         kafkaRunnable.configure());
-          }
-
-          @Override
-          public ResourceSpecification getResourceSpecification() {
-            return ResourceSpecification.Builder.with()
-              .setCores(1).setMemory(1, ResourceSpecification.SizeUnit.GIGA).build();
-          }
-
-          @Override
-          public Collection<LocalFile> getLocalFiles() {
-            try {
-              URL kafkaArchive = getClass().getClassLoader().getResource(KAFKA_ARCHIVE);
-              LocalFile kafka = new DefaultLocalFile("kafka", kafkaArchive.toURI(), -1, -1, true, null);
-              return ImmutableList.of(kafka);
-            } catch (Exception e) {
-              throw Throwables.propagate(e);
-            }
-          }
-        };
-
-        return ImmutableMap.<String, RuntimeSpecification>builder()
-                      .putAll(weaveSpec.getRunnables())
-                      .put(kafkaName, kafkaRuntimeSpec)
-                      .build();
-      }
-
-      @Override
-      public List<Order> getOrders() {
-        ImmutableList.Builder<Order> orders = ImmutableList.builder();
-        orders.add(new DefaultWeaveSpecification.DefaultOrder(ImmutableSet.of(kafkaName), Order.Type.STARTED));
-        orders.addAll(weaveSpec.getOrders());
-        return orders.build();
-      }
-    };
   }
 
   private ZKClientService getZKClientService(String zkConnect) {

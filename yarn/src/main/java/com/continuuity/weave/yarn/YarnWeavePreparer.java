@@ -91,6 +91,7 @@ import java.util.jar.JarOutputStream;
 final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
+  private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
   private static final int APP_MASTER_MEMORY_MB = 256;
 
   private final WeaveSpecification weaveSpec;
@@ -195,6 +196,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       populateRunnableResources(weaveSpec, transformedLocalFiles);
       saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
       saveLauncher(localResources);
+      saveKafka(localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
                                                      "container.jar",
                                                      "launcher.jar"));
@@ -387,6 +389,27 @@ final class YarnWeavePreparer implements WeavePreparer {
     LOG.debug("Done launcher.jar");
     localResources.put("launcher.jar", YarnUtils.createLocalResource(location));
   }
+
+  private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Copy kafka.tgz");
+    Location location = createTempLocation("kafka", ".tgz");
+    InputStream is = getClass().getClassLoader().getResourceAsStream(KAFKA_ARCHIVE);
+    try {
+      OutputStream os = location.getOutputStream();
+      try {
+        ByteStreams.copy(is, os);
+      } finally {
+        os.close();
+      }
+    } finally {
+      is.close();
+    }
+    LOG.debug("Done kafka.tgz");
+    LocalResource localResource = YarnUtils.createLocalResource(location);
+    localResource.setType(LocalResourceType.ARCHIVE);
+    localResources.put("kafka.tgz", localResource);
+  }
+
 
   private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> keys) throws IOException {
     Map<String, LocalFile> localFiles = Maps.transformEntries(

@@ -93,10 +93,10 @@ public abstract class ServiceMain {
       // If container failed with exception, the future.get() will throws exception
       completion.get();
     } finally {
-//      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-//      if (loggerFactory instanceof LoggerContext) {
-//        ((LoggerContext) loggerFactory).stop();
-//      }
+      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+      if (loggerFactory instanceof LoggerContext) {
+        ((LoggerContext) loggerFactory).stop();
+      }
     }
   }
 
