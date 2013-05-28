@@ -1,7 +1,9 @@
 What is Weave ?
 ===============
 
-Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to running threads. Weave is NOT a replacement for Apache YARN.  It is instead a value-added framework that operates on top of Apache YARN.
+Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer 
+built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to 
+running threads. Weave is **NOT** a replacement for Apache YARN.  It is instead a value-added framework that operates on top of Apache YARN.
 
 Why do I need Weave ?
 =====================
