@@ -8,6 +8,7 @@ import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.Discoverable;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
+import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
@@ -65,12 +66,7 @@ public class EchoServerTest {
     Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
 
     Iterable<Discoverable> echoServices = controller.discoverService("echo");
-    int trial = 0;
-    while (Iterables.size(echoServices) != 2 && trial < 60) {
-      TimeUnit.SECONDS.sleep(1);
-      trial++;
-    }
-    Assert.assertTrue(trial < 60);
+    Assert.assertTrue(waitForEndpoints(echoServices, 2, 60));
 
     for (Discoverable discoverable : echoServices) {
       String msg = "Hello: " + discoverable.getSocketAddress();
@@ -88,12 +84,27 @@ public class EchoServerTest {
       }
     }
 
+    controller.changeInstances("EchoServer", 3);
+    Assert.assertTrue(waitForEndpoints(echoServices, 3, 60));
+
+    controller.changeInstances("EchoServer", 1);
+    Assert.assertTrue(waitForEndpoints(echoServices, 1, 60));
+
     for (WeaveController c : runnerService.lookup("EchoServer")) {
       LOG.info("Stopping application: " + c.getRunId());
       c.stop().get();
     }
 
     TimeUnit.SECONDS.sleep(2);
+  }
+
+  private boolean waitForEndpoints(Iterable<Discoverable> endpoints, int count, int limit) throws InterruptedException {
+    int trial = 0;
+    while (Iterables.size(endpoints) != count && trial < limit) {
+      TimeUnit.SECONDS.sleep(1);
+      trial++;
+    }
+    return trial < limit;
   }
 
   @Before

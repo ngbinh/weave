@@ -53,9 +53,9 @@ public abstract class AbstractServiceController implements ServiceController {
   private final RunId runId;
   private final AtomicReference<State> state;
   private final ListenerExecutors listenerExecutors;
-  private final ZKClient zkClient;
   private final AtomicReference<byte[]> liveNodeData;
   private Cancellable watchCanceller;
+  protected final ZKClient zkClient;
 
   protected AbstractServiceController(ZKClient zkClient, RunId runId) {
     this.zkClient = zkClient;
@@ -105,12 +105,12 @@ public abstract class AbstractServiceController implements ServiceController {
 
   @Override
   public ListenableFuture<Command> sendCommand(Command command) {
-    return ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"), Messages.createForAll(command), command);
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(), Messages.createForAll(command), command);
   }
 
   @Override
   public ListenableFuture<Command> sendCommand(String runnableName, Command command) {
-    return ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"),
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(),
                                   Messages.createForRunnable(runnableName, command), command);
   }
 
@@ -125,7 +125,7 @@ public abstract class AbstractServiceController implements ServiceController {
     if (oldState == null || oldState == State.STARTING || oldState == State.RUNNING) {
       watchCanceller.cancel();
       return Futures.transform(
-        ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"), SystemMessages.stopApplication(),
+        ZKMessages.sendMessage(zkClient, getMessagePrefix(), SystemMessages.stopApplication(),
                                State.TERMINATED), new AsyncFunction<State, State>() {
         @Override
         public ListenableFuture<State> apply(State input) throws Exception {
@@ -155,6 +155,10 @@ public abstract class AbstractServiceController implements ServiceController {
   @Override
   public void addListener(Listener listener, Executor executor) {
     listenerExecutors.addListener(listener, executor);
+  }
+
+  protected final String getMessagePrefix() {
+    return getZKPath("messages/msg");
   }
 
   private StateNode decode(NodeData nodeData) {

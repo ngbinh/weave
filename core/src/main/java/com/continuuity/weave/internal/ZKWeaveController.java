@@ -26,11 +26,13 @@ import com.continuuity.weave.discovery.ZKDiscoveryService;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.kafka.client.SimpleKafkaClient;
 import com.continuuity.weave.internal.logging.LogEntryDecoder;
+import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.kafka.client.FetchedMessage;
 import com.continuuity.weave.kafka.client.KafkaClient;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -118,6 +120,17 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   @Override
   public Iterable<Discoverable> discoverService(String serviceName) {
     return discoveryServiceClient.discover(serviceName);
+  }
+
+  @Override
+  public void changeInstances(String runnable, int newCount) {
+    try {
+      ZKMessages.sendMessage(zkClient, getMessagePrefix(),
+                             SystemMessages.setInstances(runnable, newCount), runnable)
+                .get();
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
   }
 
   private Thread createLogPoller() {

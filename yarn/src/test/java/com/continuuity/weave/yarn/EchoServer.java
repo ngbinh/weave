@@ -1,6 +1,7 @@
 package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.AbstractWeaveRunnable;
+import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.WeaveContext;
 import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
@@ -14,6 +15,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 
 /**
  *
@@ -44,17 +46,21 @@ public final class EchoServer extends AbstractWeaveRunnable {
     try {
       runThread = Thread.currentThread();
       while (running) {
-        Socket socket = serverSocket.accept();
         try {
-          BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), Charsets.UTF_8));
-          PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
-          String line = reader.readLine();
-          LOG.info("Received: " + line);
-          if (line != null) {
-            writer.println(line);
+          Socket socket = serverSocket.accept();
+          try {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), Charsets.UTF_8));
+            PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true);
+            String line = reader.readLine();
+            LOG.info("Received: " + line);
+            if (line != null) {
+              writer.println(line);
+            }
+          } finally {
+            socket.close();
           }
-        } finally {
-          socket.close();
+        } catch (SocketException e) {
+          LOG.info("Socket exception: " + e);
         }
       }
     } catch (Exception e) {
@@ -75,5 +81,10 @@ public final class EchoServer extends AbstractWeaveRunnable {
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
+  }
+
+  @Override
+  public void handleCommand(Command command) throws Exception {
+    LOG.info("Command received: " + command);
   }
 }

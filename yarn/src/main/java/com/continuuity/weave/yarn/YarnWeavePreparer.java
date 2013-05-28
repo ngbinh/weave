@@ -92,7 +92,7 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
   private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
-  private static final int APP_MASTER_MEMORY_MB = 256;
+  private static final int APP_MASTER_MEMORY_MB = 1024;
 
   private final WeaveSpecification weaveSpec;
   private final YarnClient yarnClient;
@@ -392,18 +392,8 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Copy kafka.tgz");
-    Location location = createTempLocation("kafka", ".tgz");
-    InputStream is = getClass().getClassLoader().getResourceAsStream(KAFKA_ARCHIVE);
-    try {
-      OutputStream os = location.getOutputStream();
-      try {
-        ByteStreams.copy(is, os);
-      } finally {
-        os.close();
-      }
-    } finally {
-      is.close();
-    }
+    Location location = copyFromURL(getClass().getClassLoader().getResource(KAFKA_ARCHIVE),
+                                    createTempLocation("kafka", ".tgz"));
     LOG.debug("Done kafka.tgz");
     LocalResource localResource = YarnUtils.createLocalResource(location);
     localResource.setType(LocalResourceType.ARCHIVE);
