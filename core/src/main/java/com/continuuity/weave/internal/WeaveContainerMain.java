@@ -69,7 +69,7 @@ public final class WeaveContainerMain extends ServiceMain {
     
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
     ContainerInfo containerInfo = new ContainerInfo();
-    WeaveContext context = new BasicWeaveContext(containerInfo.getHost(), args,
+    WeaveContext context = new BasicWeaveContext(runId, appRunId, containerInfo.getHost(), args,
                                                   decodeArgs(System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS)),
                                                   runnableSpec, instanceId, discoveryService);
 

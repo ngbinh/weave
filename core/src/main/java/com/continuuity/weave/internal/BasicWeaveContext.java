@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Cancellable;
@@ -29,6 +30,8 @@ import java.net.InetSocketAddress;
  */
 public final class BasicWeaveContext implements WeaveContext {
 
+  private final RunId runId;
+  private final RunId appRunId;
   private final InetAddress host;
   private final String[] args;
   private final String[] appArgs;
@@ -36,8 +39,10 @@ public final class BasicWeaveContext implements WeaveContext {
   private final int instanceId;
   private final DiscoveryService discoveryService;
 
-  public BasicWeaveContext(InetAddress host, String[] args, String[] appArgs,
-                    WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService) {
+  public BasicWeaveContext(RunId runId, RunId appRunId, InetAddress host, String[] args, String[] appArgs,
+                           WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService) {
+    this.runId = runId;
+    this.appRunId = appRunId;
     this.host = host;
     this.args = args;
     this.appArgs = appArgs;
@@ -46,6 +51,15 @@ public final class BasicWeaveContext implements WeaveContext {
     this.discoveryService = discoveryService;
   }
 
+  @Override
+  public RunId getRunId() {
+    return runId;
+  }
+
+  @Override
+  public RunId getApplicationRunId() {
+    return appRunId;
+  }
 
   @Override
   public InetAddress getHost() {

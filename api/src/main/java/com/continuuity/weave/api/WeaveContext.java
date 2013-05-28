@@ -23,6 +23,16 @@ import java.net.InetAddress;
 public interface WeaveContext extends ServiceAnnouncer {
 
   /**
+   * Returns the {@link RunId} of this running instance of {@link WeaveRunnable}.
+   */
+  RunId getRunId();
+
+  /**
+   * Returns the {@link RunId} of this running application.
+   */
+  RunId getApplicationRunId();
+
+  /**
    * Returns the hostname that the runnable is running on.
    */
   InetAddress getHost();
