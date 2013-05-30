@@ -286,18 +286,23 @@ public final class ZKServiceDecorator extends AbstractService {
 
         @Override
         public void run() {
-          Futures.addCallback(callback.onReceived(id, message), new FutureCallback<String>() {
-            @Override
-            public void onSuccess(String result) {
-              // Delete the message node when processing is completed successfully.
-              listenFailure(zkClient.delete(path, version));
-            }
+          try {
+            Futures.addCallback(callback.onReceived(id, message), new FutureCallback<String>() {
+              @Override
+              public void onSuccess(String result) {
+                listenFailure(zkClient.delete(path, version));
+              }
 
-            @Override
-            public void onFailure(Throwable t) {
-              LOG.error("Failed to process message for " + id + " in " + path, t);
-            }
-          });
+              @Override
+              public void onFailure(Throwable t) {
+                LOG.error("Failed to process message: {}, {}, {}", id, message, path, t);
+                listenFailure(zkClient.delete(path, version));
+              }
+            });
+          } catch (Throwable t) {
+            LOG.error("Exception when invoking message process: {}, {}, {}", id, message, path, t);
+            listenFailure(zkClient.delete(path, version));
+          }
         }
       });
     }

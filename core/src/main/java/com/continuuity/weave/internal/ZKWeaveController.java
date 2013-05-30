@@ -144,9 +144,13 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
         Iterator<FetchedMessage> messageIterator = kafkaClient.consume(LOG_TOPIC, 0, 0, 1048576);
         while (messageIterator.hasNext()) {
           String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
-          LogEntry entry = gson.fromJson(json, LogEntry.class);
-          if (entry != null) {
-            invokeHandlers(entry);
+          try {
+            LogEntry entry = gson.fromJson(json, LogEntry.class);
+            if (entry != null) {
+              invokeHandlers(entry);
+            }
+          } catch (Exception e) {
+            LOG.error("Failed to decode log entry {}", json, e);
           }
         }
       }

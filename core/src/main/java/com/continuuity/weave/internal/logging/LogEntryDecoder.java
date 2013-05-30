@@ -92,11 +92,7 @@ public final class LogEntryDecoder implements JsonDeserializer<LogEntry> {
         if (line.equals("?")) {
           return -1;
         } else {
-          try {
-            return Integer.parseInt(line);
-          } catch (NumberFormatException e) {
-            return -1;
-          }
+          return Integer.parseInt(line);
         }
       }
 

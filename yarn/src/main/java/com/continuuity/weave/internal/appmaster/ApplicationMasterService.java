@@ -439,29 +439,33 @@ public final class ApplicationMasterService implements Service {
 
     // Replicate message to a particular runnable.
     if (message.getScope() == Message.Scope.RUNNABLE) {
-
+      runningContainers.sendToRunnable(message.getRunnableName(), message.getCommand(), completion);
+      return result;
     }
 
-    return result;
+    LOG.info("Message ignored. {}", message);
+    return Futures.immediateFuture(messageId);
   }
 
   /**
-   * Changes the number of running instances. This method is not designed to be called
-   * concurrently.
+   * Attempts to change the number of running instances.
+   * @return {@code true} if the message does requests for changes in number of running instances of a runnable,
+   *         {@code false} otherwise.
    */
   private boolean handleSetInstances(Message message, final Runnable completion) {
     if (message.getType() != Message.Type.SYSTEM) {
       return false;
     }
 
-    final String runnableName = message.getRunnableName();
-    if (runnableName == null || runnableName.isEmpty() || !weaveSpec.getRunnables().containsKey(runnableName)) {
-      return false;
-    }
-
     Command command = message.getCommand();
     Map<String, String> options = command.getOptions();
     if (!"instances".equals(command.getCommand()) || !options.containsKey("count")) {
+      return false;
+    }
+
+    final String runnableName = message.getRunnableName();
+    if (runnableName == null || runnableName.isEmpty() || !weaveSpec.getRunnables().containsKey(runnableName)) {
+      LOG.info("Unknown runnable {}", runnableName);
       return false;
     }
 
@@ -738,26 +742,7 @@ public final class ApplicationMasterService implements Service {
         final AtomicInteger count = new AtomicInteger(containers.size());
         for (final Map.Entry<String, Map<ContainerId, ServiceController>> entry : containers.rowMap().entrySet()) {
           for (final ServiceController controller : entry.getValue().values()) {
-            Futures.addCallback(controller.sendCommand(command), new FutureCallback<Command>() {
-              @Override
-              public void onSuccess(Command result) {
-                if (count.decrementAndGet() == 0) {
-                  completion.run();
-                }
-              }
-
-              @Override
-              public void onFailure(Throwable t) {
-                try {
-                  LOG.error("Failed to process command. Runnable: {}, RunId: {}, Command: {}.",
-                            entry.getKey(), controller.getRunId(), command, t);
-                } finally {
-                  if (count.decrementAndGet() == 0) {
-                    completion.run();
-                  }
-                }
-              }
-            });
+            sendCommand(entry.getKey(), command, controller, count, completion);
           }
         }
       } finally {
@@ -769,28 +754,13 @@ public final class ApplicationMasterService implements Service {
       containerLock.lock();
       try {
         Collection<ServiceController> controllers = containers.row(runnableName).values();
+        if (controllers.isEmpty()) {
+          completion.run();
+        }
+
         final AtomicInteger count = new AtomicInteger(controllers.size());
         for (final ServiceController controller : controllers) {
-          Futures.addCallback(controller.sendCommand(command), new FutureCallback<Command>() {
-            @Override
-            public void onSuccess(Command result) {
-              if (count.decrementAndGet() == 0) {
-                completion.run();
-              }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-              try {
-                LOG.error("Failed to process command. Runnable: {}, RunId: {}, Command: {}.",
-                          runnableName, controller.getRunId(), command, t);
-              } finally {
-                if (count.decrementAndGet() == 0) {
-                  completion.run();
-                }
-              }
-            }
-          });
+          sendCommand(runnableName, command, controller, count, completion);
         }
       } finally {
         containerLock.unlock();
@@ -833,6 +803,34 @@ public final class ApplicationMasterService implements Service {
       } finally {
         containerLock.unlock();
       }
+    }
+
+    /**
+     * Sends a command through the given {@link ServiceController} of a runnable. Decrements the count
+     * when the sending of command completed. Triggers completion when count reaches zero.
+     */
+    private void sendCommand(final String runnableName, final Command command,
+                             final ServiceController controller, final AtomicInteger count, final Runnable completion) {
+      Futures.addCallback(controller.sendCommand(command), new FutureCallback<Command>() {
+        @Override
+        public void onSuccess(Command result) {
+          if (count.decrementAndGet() == 0) {
+            completion.run();
+          }
+        }
+
+        @Override
+        public void onFailure(Throwable t) {
+          try {
+            LOG.error("Failed to process command. Runnable: {}, RunId: {}, Command: {}.",
+                      runnableName, controller.getRunId(), command, t);
+          } finally {
+            if (count.decrementAndGet() == 0) {
+              completion.run();
+            }
+          }
+        }
+      });
     }
   }
 }
