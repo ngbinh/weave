@@ -8,7 +8,6 @@ import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.Discoverable;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
-import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
@@ -51,7 +50,6 @@ public class EchoServerTest {
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
                                                          .build())
-                                        .withResources(getClass().getClassLoader().getResource("logback.xml").toURI())
                                         .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
                                         .start();
 

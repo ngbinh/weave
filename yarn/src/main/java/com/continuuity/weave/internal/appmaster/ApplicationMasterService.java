@@ -452,12 +452,12 @@ public final class ApplicationMasterService implements Service {
    * @return {@code true} if the message does requests for changes in number of running instances of a runnable,
    *         {@code false} otherwise.
    */
-  private boolean handleSetInstances(Message message, final Runnable completion) {
-    if (message.getType() != Message.Type.SYSTEM) {
+  private boolean handleSetInstances(final Message message, final Runnable completion) {
+    if (message.getType() != Message.Type.SYSTEM || message.getScope() != Message.Scope.RUNNABLE) {
       return false;
     }
 
-    Command command = message.getCommand();
+    final Command command = message.getCommand();
     Map<String, String> options = command.getOptions();
     if (!"instances".equals(command.getCommand()) || !options.containsKey("count")) {
       return false;
@@ -510,7 +510,7 @@ public final class ApplicationMasterService implements Service {
             }
           } finally {
             LOG.info("Change instances completed. From {} to {}.", oldCount, newCount);
-            completion.run();
+            runningContainers.sendToRunnable(runnableName, command, completion);
           }
         } catch (InterruptedException e) {
           // If the wait is being interrupted, discard the message.

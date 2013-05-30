@@ -195,9 +195,11 @@ final class YarnWeavePreparer implements WeavePreparer {
       createContainerJar(createBundler(), localResources);
       populateRunnableResources(weaveSpec, transformedLocalFiles);
       saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
+      saveLogback(localResources);
       saveLauncher(localResources);
       saveKafka(localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
+                                                     "logback-template.xml",
                                                      "container.jar",
                                                      "launcher.jar"));
 
@@ -357,6 +359,14 @@ final class YarnWeavePreparer implements WeavePreparer {
     }
     LOG.debug("Done weaveSpec.json");
     localResources.put("weaveSpec.json", YarnUtils.createLocalResource(location));
+  }
+
+  private void saveLogback(Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Create and copy logback-template.xml");
+    Location location = copyFromURL(getClass().getClassLoader().getResource("logback-template.xml"),
+                                    createTempLocation("logback-template", ".xml"));
+    LOG.debug("Done logback-template.xml");
+    localResources.put("logback-template.xml", YarnUtils.createLocalResource(location));
   }
 
   /**
