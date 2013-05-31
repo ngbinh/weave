@@ -267,7 +267,7 @@ form {
   content: "///";
   color: #39aed1;
   padding-right: 0.3em;
-  margin-left: -2em;
+  margin-left: -1.7em;
 }
 
 #main-content h4 {
@@ -275,13 +275,6 @@ form {
   font-size: 15px;
   font-weight: bold;
   color: #474747;
-}
-
-h4:before {
-  content: "////";
-  color: #39aed1;
-  padding-right: 0.3em;
-  margin-left: -2.8em;
 }
 
 #main-content h5 {
