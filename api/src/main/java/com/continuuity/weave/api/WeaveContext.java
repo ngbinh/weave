@@ -33,6 +33,11 @@ public interface WeaveContext extends ServiceAnnouncer {
   RunId getApplicationRunId();
 
   /**
+   * Returns the number of running instances assigned for this {@link WeaveRunnable}.
+   */
+  int getInstanceCount();
+
+  /**
    * Returns the hostname that the runnable is running on.
    */
   InetAddress getHost();

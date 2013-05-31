@@ -24,6 +24,7 @@ public final class EnvKeys {
   public static final String WEAVE_APP_RUN_ID = "WEAVE_APP_RUN_ID";
   public static final String WEAVE_RUN_ID = "WEAVE_RUN_ID";
   public static final String WEAVE_INSTANCE_ID = "WEAVE_INSTANCE_ID";
+  public static final String WEAVE_INSTANCE_COUNT = "WEAVE_INSTANCE_COUNT";
 
   public static final String WEAVE_APP_ID = "WEAVE_APP_ID";
   public static final String WEAVE_APP_ID_CLUSTER_TIME = "WEAVE_APP_ID_CLUSTER_TIME";

@@ -38,9 +38,11 @@ public final class BasicWeaveContext implements WeaveContext {
   private final WeaveRunnableSpecification spec;
   private final int instanceId;
   private final DiscoveryService discoveryService;
+  private volatile int instanceCount;
 
   public BasicWeaveContext(RunId runId, RunId appRunId, InetAddress host, String[] args, String[] appArgs,
-                           WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService) {
+                           WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService,
+                           int instanceCount) {
     this.runId = runId;
     this.appRunId = appRunId;
     this.host = host;
@@ -49,6 +51,7 @@ public final class BasicWeaveContext implements WeaveContext {
     this.spec = spec;
     this.instanceId = instanceId;
     this.discoveryService = discoveryService;
+    this.instanceCount = instanceCount;
   }
 
   @Override
@@ -59,6 +62,15 @@ public final class BasicWeaveContext implements WeaveContext {
   @Override
   public RunId getApplicationRunId() {
     return appRunId;
+  }
+
+  @Override
+  public int getInstanceCount() {
+    return instanceCount;
+  }
+
+  public void setInstanceCount(int count) {
+    this.instanceCount = count;
   }
 
   @Override

@@ -26,6 +26,7 @@ import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
+import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
@@ -361,7 +362,7 @@ public final class ApplicationMasterService implements Service {
                                                                    ZKClients.namespace(zkClient,
                                                                                        getZKNamespace(runnableName)),
                                                                    runnableArgs.get(runnableName),
-                                                                   instanceId);
+                                                                   instanceId, instanceCounts.get(runnableName));
       runningContainers.add(runnableName, container,
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
@@ -433,13 +434,13 @@ public final class ApplicationMasterService implements Service {
 
     // Replicate messages to all runnables
     if (message.getScope() == Message.Scope.ALL_RUNNABLE) {
-      runningContainers.sendToAll(message.getCommand(), completion);
+      runningContainers.sendToAll(message, completion);
       return result;
     }
 
     // Replicate message to a particular runnable.
     if (message.getScope() == Message.Scope.RUNNABLE) {
-      runningContainers.sendToRunnable(message.getRunnableName(), message.getCommand(), completion);
+      runningContainers.sendToRunnable(message.getRunnableName(), message, completion);
       return result;
     }
 
@@ -457,7 +458,7 @@ public final class ApplicationMasterService implements Service {
       return false;
     }
 
-    final Command command = message.getCommand();
+    Command command = message.getCommand();
     Map<String, String> options = command.getOptions();
     if (!"instances".equals(command.getCommand()) || !options.containsKey("count")) {
       return false;
@@ -510,7 +511,7 @@ public final class ApplicationMasterService implements Service {
             }
           } finally {
             LOG.info("Change instances completed. From {} to {}.", oldCount, newCount);
-            runningContainers.sendToRunnable(runnableName, command, completion);
+            runningContainers.sendToRunnable(runnableName, message, completion);
           }
         } catch (InterruptedException e) {
           // If the wait is being interrupted, discard the message.
@@ -637,7 +638,7 @@ public final class ApplicationMasterService implements Service {
   }
 
   private static final class RunningContainers {
-    private final Table<String, ContainerId, ServiceController> containers;
+    private final Table<String, ContainerId, WeaveContainerController> containers;
     private final Deque<String> startSequence;
     private final Lock containerLock;
     private final Condition containerChange;
@@ -649,7 +650,7 @@ public final class ApplicationMasterService implements Service {
       containerChange = containerLock.newCondition();
     }
 
-    void add(String runnableName, Container container, ServiceController controller) {
+    void add(String runnableName, Container container, WeaveContainerController controller) {
       containerLock.lock();
       try {
         containers.put(runnableName, container.getId(), controller);
@@ -665,7 +666,7 @@ public final class ApplicationMasterService implements Service {
     RunId getBaseRunId(String runnableName) {
       containerLock.lock();
       try {
-        Collection<ServiceController> controllers = containers.row(runnableName).values();
+        Collection<WeaveContainerController> controllers = containers.row(runnableName).values();
         if (controllers.isEmpty()) {
           return RunIds.generate();
         }
@@ -684,9 +685,9 @@ public final class ApplicationMasterService implements Service {
       containerLock.lock();
       try {
         ContainerId containerId = null;
-        ServiceController lastController = null;
+        WeaveContainerController lastController = null;
         int maxId = -1;
-        for (Map.Entry<ContainerId, ServiceController> entry : containers.row(runnableName).entrySet()) {
+        for (Map.Entry<ContainerId, WeaveContainerController> entry : containers.row(runnableName).entrySet()) {
           // A bit hacky, as it knows the naming convention of RunId as (base-[instanceId]).
           // Could be more generic if using data structure other than a hashbased table.
           String id = entry.getValue().getRunId().getId();
@@ -731,7 +732,7 @@ public final class ApplicationMasterService implements Service {
       }
     }
 
-    void sendToAll(final Command command, final Runnable completion) {
+    void sendToAll(Message message, Runnable completion) {
       containerLock.lock();
       try {
         if (containers.isEmpty()) {
@@ -739,10 +740,10 @@ public final class ApplicationMasterService implements Service {
         }
 
         // Sends the command to all running containers
-        final AtomicInteger count = new AtomicInteger(containers.size());
-        for (final Map.Entry<String, Map<ContainerId, ServiceController>> entry : containers.rowMap().entrySet()) {
-          for (final ServiceController controller : entry.getValue().values()) {
-            sendCommand(entry.getKey(), command, controller, count, completion);
+        AtomicInteger count = new AtomicInteger(containers.size());
+        for (Map.Entry<String, Map<ContainerId, WeaveContainerController>> entry : containers.rowMap().entrySet()) {
+          for (WeaveContainerController controller : entry.getValue().values()) {
+            sendMessage(entry.getKey(), message, controller, count, completion);
           }
         }
       } finally {
@@ -750,17 +751,17 @@ public final class ApplicationMasterService implements Service {
       }
     }
 
-    void sendToRunnable(final String runnableName, final Command command, final Runnable completion) {
+    void sendToRunnable(String runnableName, Message message, Runnable completion) {
       containerLock.lock();
       try {
-        Collection<ServiceController> controllers = containers.row(runnableName).values();
+        Collection<WeaveContainerController> controllers = containers.row(runnableName).values();
         if (controllers.isEmpty()) {
           completion.run();
         }
 
-        final AtomicInteger count = new AtomicInteger(controllers.size());
-        for (final ServiceController controller : controllers) {
-          sendCommand(runnableName, command, controller, count, completion);
+        AtomicInteger count = new AtomicInteger(controllers.size());
+        for (WeaveContainerController controller : controllers) {
+          sendMessage(runnableName, message, controller, count, completion);
         }
       } finally {
         containerLock.unlock();
@@ -782,7 +783,7 @@ public final class ApplicationMasterService implements Service {
 
           futures.clear();
           // Parallel stops all running containers of the current runnable.
-          for (ServiceController controller : containers.row(runnableName).values()) {
+          for (WeaveContainerController controller : containers.row(runnableName).values()) {
             futures.add(controller.stop());
           }
           // Wait for containers to stop. Assuming the future returned by Futures.successfulAsList won't throw exception.
@@ -806,14 +807,15 @@ public final class ApplicationMasterService implements Service {
     }
 
     /**
-     * Sends a command through the given {@link ServiceController} of a runnable. Decrements the count
+     * Sends a command through the given {@link WeaveContainerController} of a runnable. Decrements the count
      * when the sending of command completed. Triggers completion when count reaches zero.
      */
-    private void sendCommand(final String runnableName, final Command command,
-                             final ServiceController controller, final AtomicInteger count, final Runnable completion) {
-      Futures.addCallback(controller.sendCommand(command), new FutureCallback<Command>() {
+    private void sendMessage(final String runnableName, final Message message,
+                             final WeaveContainerController controller, final AtomicInteger count,
+                             final Runnable completion) {
+      Futures.addCallback(controller.sendMessage(message), new FutureCallback<Message>() {
         @Override
-        public void onSuccess(Command result) {
+        public void onSuccess(Message result) {
           if (count.decrementAndGet() == 0) {
             completion.run();
           }
@@ -822,8 +824,8 @@ public final class ApplicationMasterService implements Service {
         @Override
         public void onFailure(Throwable t) {
           try {
-            LOG.error("Failed to process command. Runnable: {}, RunId: {}, Command: {}.",
-                      runnableName, controller.getRunId(), command, t);
+            LOG.error("Failed to send message. Runnable: {}, RunId: {}, Message: {}.",
+                      runnableName, controller.getRunId(), message, t);
           } finally {
             if (count.decrementAndGet() == 0) {
               completion.run();

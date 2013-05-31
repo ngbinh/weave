@@ -34,7 +34,9 @@ public final class EchoServer extends AbstractWeaveRunnable {
     running = true;
     try {
       serverSocket = new ServerSocket(0);
-      LOG.info("EchoServer started: " + serverSocket.getLocalSocketAddress() + ", id: " + context.getInstanceId());
+      LOG.info("EchoServer started: " + serverSocket.getLocalSocketAddress() +
+               ", id: " + context.getInstanceId() +
+               ", count: " + context.getInstanceCount());
       context.announce("echo", serverSocket.getLocalPort());
     } catch (IOException e) {
       throw Throwables.propagate(e);
@@ -85,6 +87,6 @@ public final class EchoServer extends AbstractWeaveRunnable {
 
   @Override
   public void handleCommand(Command command) throws Exception {
-    LOG.info("Command received: " + command);
+    LOG.info("Command received: " + command + " " + getContext().getInstanceCount());
   }
 }
