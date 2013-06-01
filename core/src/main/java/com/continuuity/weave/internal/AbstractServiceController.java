@@ -21,6 +21,7 @@ import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.json.StateNodeCodec;
+import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.Messages;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.internal.state.SystemMessages;
@@ -98,6 +99,10 @@ public abstract class AbstractServiceController implements ServiceController {
     return liveNodeData.get();
   }
 
+  protected <V> ListenableFuture<V> sendMessage(Message message, V result) {
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(), message, result);
+  }
+
   @Override
   public RunId getRunId() {
     return runId;
@@ -153,8 +158,8 @@ public abstract class AbstractServiceController implements ServiceController {
   }
 
   @Override
-  public void addListener(Listener listener, Executor executor) {
-    listenerExecutors.addListener(listener, executor);
+  public Cancellable addListener(Listener listener, Executor executor) {
+    return listenerExecutors.addListener(listener, executor);
   }
 
   protected final String getMessagePrefix() {
@@ -204,8 +209,15 @@ public abstract class AbstractServiceController implements ServiceController {
     private final Queue<ListenerExecutor> listeners = new ConcurrentLinkedQueue<ListenerExecutor>();
     private final ConcurrentMap<State, Boolean> callStates = Maps.newConcurrentMap();
 
-    void addListener(Listener listener, Executor executor) {
-      listeners.add(new ListenerExecutor(listener, executor));
+    Cancellable addListener(Listener listener, Executor executor) {
+      final ListenerExecutor listenerExecutor = new ListenerExecutor(listener, executor);
+      listeners.add(listenerExecutor);
+      return new Cancellable() {
+        @Override
+        public void cancel() {
+          listeners.remove(listenerExecutor);
+        }
+      };
     }
 
     @Override

@@ -102,7 +102,7 @@ public final class WeaveContainerLauncher {
 
     @Override
     public ListenableFuture<Message> sendMessage(Message message) {
-      return ZKMessages.sendMessage(zkClient, getMessagePrefix(), message, message);
+      return sendMessage(message, message);
     }
 
     @Override

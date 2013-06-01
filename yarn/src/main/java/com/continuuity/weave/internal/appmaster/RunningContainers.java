@@ -1,5 +1,17 @@
 /*
  * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
  */
 package com.continuuity.weave.internal.appmaster;
 
@@ -17,6 +29,8 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Collection;
 import java.util.Deque;
@@ -33,6 +47,8 @@ import java.util.concurrent.locks.ReentrantLock;
 *
 */
 final class RunningContainers {
+  private static final Logger LOG = LoggerFactory.getLogger(RunningContainers.class);
+
   private final Table<String, ContainerId, WeaveContainerController> containers;
   private final Deque<String> startSequence;
   private final Lock containerLock;
@@ -94,10 +110,10 @@ final class RunningContainers {
         }
       }
       if (lastController == null) {
-        ApplicationMasterService.LOG.warn("No running container found for {}", runnableName);
+        LOG.warn("No running container found for {}", runnableName);
         return;
       }
-      ApplicationMasterService.LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
+      LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
       lastController.stopAndWait();
       containers.remove(runnableName, containerId);
       containerChange.signalAll();
@@ -174,7 +190,7 @@ final class RunningContainers {
       List<ListenableFuture<ServiceController.State>> futures = Lists.newLinkedList();
       while (itor.hasNext()) {
         String runnableName = itor.next();
-        ApplicationMasterService.LOG.info("Stopping all instances of " + runnableName);
+        LOG.info("Stopping all instances of " + runnableName);
 
         futures.clear();
         // Parallel stops all running containers of the current runnable.
@@ -184,7 +200,7 @@ final class RunningContainers {
         // Wait for containers to stop. Assuming the future returned by Futures.successfulAsList won't throw exception.
         Futures.getUnchecked(Futures.successfulAsList(futures));
 
-        ApplicationMasterService.LOG.info("Terminated all instances of " + runnableName);
+        LOG.info("Terminated all instances of " + runnableName);
       }
       containerChange.signalAll();
     } finally {
@@ -219,7 +235,7 @@ final class RunningContainers {
       @Override
       public void onFailure(Throwable t) {
         try {
-          ApplicationMasterService.LOG.error("Failed to send message. Runnable: {}, RunId: {}, Message: {}.",
+          LOG.error("Failed to send message. Runnable: {}, RunId: {}, Message: {}.",
                     runnableName, controller.getRunId(), message, t);
         } finally {
           if (count.decrementAndGet() == 0) {

@@ -125,9 +125,7 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   @Override
   public void changeInstances(String runnable, int newCount) {
     try {
-      ZKMessages.sendMessage(zkClient, getMessagePrefix(),
-                             SystemMessages.setInstances(runnable, newCount), runnable)
-                .get();
+      sendMessage(SystemMessages.setInstances(runnable, newCount), runnable).get();
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
