@@ -16,7 +16,9 @@
 package com.continuuity.weave.filesystem;
 
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Options;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -124,8 +126,13 @@ final class HDFSLocation implements Location {
   @Override
   public Location renameTo(Location destination) throws IOException {
     // destination will always be of the same type as this location
-    boolean success = fs.rename(path, ((HDFSLocation) destination).path);
-    if (success) {
+    boolean success;
+    if (fs instanceof DistributedFileSystem) {
+      ((DistributedFileSystem)fs).rename(path, ((HDFSLocation) destination).path, Options.Rename.OVERWRITE);
+      return new HDFSLocation(fs, new Path(destination.toURI()));
+    }
+
+    if (fs.rename(path, ((HDFSLocation) destination).path)) {
       return new HDFSLocation(fs, new Path(destination.toURI()));
     } else {
       return null;
