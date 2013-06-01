@@ -10,4 +10,10 @@ import com.google.common.util.concurrent.ListenableFuture;
 public interface WeaveContainerController extends ServiceController {
 
   ListenableFuture<Message> sendMessage(Message message);
+
+  /**
+   * Calls to indicated that the container that this controller is associated with is completed.
+   * Any resources it hold will be releases and all pending futures will be cancelled.
+   */
+  void completed(int exitStatus);
 }

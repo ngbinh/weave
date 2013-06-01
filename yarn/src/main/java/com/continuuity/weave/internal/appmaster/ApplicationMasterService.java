@@ -274,7 +274,17 @@ public final class ApplicationMasterService implements Service {
 
       // Assign runnable to container
       launchRunnable(amResponse.getAllocatedContainers(), provisioning);
+      handleCompleted(amResponse.getCompletedContainersStatuses());
       TimeUnit.SECONDS.sleep(1);
+    }
+  }
+
+  /**
+   * Handling containers that are completed.
+   */
+  private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+    for (ContainerStatus status : completedContainersStatuses) {
+      runningContainers.handleCompleted(status.getContainerId(), status.getExitStatus());
     }
   }
 
@@ -351,9 +361,12 @@ public final class ApplicationMasterService implements Service {
                                                                                        getZKNamespace(runnableName)),
                                                                    runnableArgs.get(runnableName),
                                                                    instanceId, instanceCounts.get(runnableName));
-      runningContainers.add(runnableName, container,
+      runningContainers.add(runnableName, container.getId(),
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
+
+      // Seems like a bug in amrm causing manual removal is needed.
+      amrmClient.removeContainerRequest(provisionRequest.getRequest());
 
       if (runningContainers.count(runnableName) == containerCount) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");

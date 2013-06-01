@@ -27,7 +27,6 @@ import com.google.common.collect.Table;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -61,10 +60,10 @@ final class RunningContainers {
     containerChange = containerLock.newCondition();
   }
 
-  void add(String runnableName, Container container, WeaveContainerController controller) {
+  void add(String runnableName, ContainerId container, WeaveContainerController controller) {
     containerLock.lock();
     try {
-      containers.put(runnableName, container.getId(), controller);
+      containers.put(runnableName, container, controller);
       if (startSequence.isEmpty() || !runnableName.equals(startSequence.peekLast())) {
         startSequence.addLast(runnableName);
       }
@@ -202,7 +201,6 @@ final class RunningContainers {
 
         LOG.info("Terminated all instances of " + runnableName);
       }
-      containerChange.signalAll();
     } finally {
       containerLock.unlock();
     }
@@ -212,6 +210,34 @@ final class RunningContainers {
     containerLock.lock();
     try {
       return ImmutableSet.copyOf(containers.columnKeySet());
+    } finally {
+      containerLock.unlock();
+    }
+  }
+
+  void handleCompleted(ContainerId containerId, int exitStatus) {
+    containerLock.lock();
+    try {
+      Map<String, WeaveContainerController> lookup = containers.column(containerId);
+      if (lookup.isEmpty()) {
+        // It's ok as if a container is stopped through the controller, this would be empty.
+        return;
+      }
+
+      if (lookup.size() != 1) {
+        LOG.warn("More than one controller found for container {}", containerId);
+      }
+
+      if (exitStatus != 0) {
+        LOG.warn("Container exited abnormally with exit code {}", exitStatus);
+      }
+
+      for (WeaveContainerController controller : lookup.values()) {
+        controller.completed(exitStatus);
+      }
+
+      lookup.clear();
+      containerChange.signalAll();
     } finally {
       containerLock.unlock();
     }

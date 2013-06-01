@@ -166,26 +166,7 @@ public abstract class AbstractServiceController implements ServiceController {
     return getZKPath("messages/msg");
   }
 
-  private StateNode decode(NodeData nodeData) {
-    // Node data and data inside shouldn't be null. If it does, the service must not be running anymore.
-    if (nodeData == null) {
-      return new StateNode(State.TERMINATED, null);
-    }
-    byte[] data = nodeData.getData();
-    if (data == null) {
-      return new StateNode(State.TERMINATED, null);
-    }
-    return new GsonBuilder().registerTypeAdapter(StateNode.class, new StateNodeCodec())
-      .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
-      .create()
-      .fromJson(new String(data, Charsets.UTF_8), StateNode.class);
-  }
-
-  private String getZKPath(String path) {
-    return String.format("/%s/%s", runId.getId(), path);
-  }
-
-  private void fireStateChange(StateNode state) {
+  protected final void fireStateChange(StateNode state) {
     switch (state.getState()) {
       case STARTING:
         listenerExecutors.starting();
@@ -203,6 +184,25 @@ public abstract class AbstractServiceController implements ServiceController {
         listenerExecutors.failed(state.getStackTraces());
         break;
     }
+  }
+
+  private StateNode decode(NodeData nodeData) {
+    // Node data and data inside shouldn't be null. If it does, the service must not be running anymore.
+    if (nodeData == null) {
+      return new StateNode(State.TERMINATED, null);
+    }
+    byte[] data = nodeData.getData();
+    if (data == null) {
+      return new StateNode(State.TERMINATED, null);
+    }
+    return new GsonBuilder().registerTypeAdapter(StateNode.class, new StateNodeCodec())
+      .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
+      .create()
+      .fromJson(new String(data, Charsets.UTF_8), StateNode.class);
+  }
+
+  private String getZKPath(String path) {
+    return String.format("/%s/%s", runId.getId(), path);
   }
 
   private static final class ListenerExecutors implements Listener {
