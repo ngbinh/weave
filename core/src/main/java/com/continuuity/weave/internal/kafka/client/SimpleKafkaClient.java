@@ -20,10 +20,14 @@ import com.continuuity.weave.kafka.client.FetchedMessage;
 import com.continuuity.weave.kafka.client.KafkaClient;
 import com.continuuity.weave.kafka.client.PreparePublish;
 import com.continuuity.weave.zookeeper.ZKClient;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.AbstractIdleService;
+import com.google.common.util.concurrent.AbstractService;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
@@ -36,18 +40,20 @@ import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
+import org.jboss.netty.channel.FailedChannelFuture;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Basic implementation of {@link KafkaClient}.
@@ -58,11 +64,13 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
   private static final int BROKER_POLL_INTERVAL = 100;
 
   private final KafkaBrokerCache brokerCache;
+  private final Collection<RetryKafkaRequestSender> requestSenders;
   private ClientBootstrap bootstrap;
   private ConnectionPool connectionPool;
 
   public SimpleKafkaClient(ZKClient zkClient) {
     this.brokerCache = new KafkaBrokerCache(zkClient);
+    this.requestSenders = new ConcurrentLinkedQueue<RetryKafkaRequestSender>();
   }
 
   @Override
@@ -77,6 +85,13 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
 
   @Override
   protected void shutDown() throws Exception {
+    Futures.successfulAsList(Iterables.transform(requestSenders,
+                                                 new Function<RetryKafkaRequestSender, ListenableFuture<?>>() {
+                                                   @Override
+                                                   public ListenableFuture<?> apply(RetryKafkaRequestSender input) {
+                                                     return input.stop();
+                                                   }
+                                                 })).get();
     connectionPool.close();
     bootstrap.releaseExternalResources();
     brokerCache.stopAndWait();
@@ -142,37 +157,19 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
   @Override
   public Iterator<FetchedMessage> consume(final String topic, final int partition, long offset, int maxSize) {
     Preconditions.checkArgument(maxSize >= 10, "Message size cannot be smaller than 10.");
-
-    // Connect to broker. Consumer connection are long connection. No need to worry about reuse.
-    final AtomicReference<ChannelFuture> channelFutureRef = new AtomicReference<ChannelFuture>(
-          connectionPool.connect(getTopicBroker(topic, partition).getAddress()).getChannelFuture());
-
-    return new MessageFetcher(topic, partition, offset, maxSize, new KafkaRequestSender() {
-
+    RetryKafkaRequestSender sender = new RetryKafkaRequestSender(new Supplier<ChannelFuture>() {
       @Override
-      public void send(final KafkaRequest request) {
-        try {
-          // Try to send the request
-          Channel channel = channelFutureRef.get().getChannel();
-          if (!channel.write(request).await().isSuccess()) {
-            // If failed, retry
-            channel.close();
-            ChannelFuture channelFuture = connectionPool.connect(
-                                              getTopicBroker(topic, partition).getAddress()).getChannelFuture();
-            channelFutureRef.set(channelFuture);
-            channelFuture.addListener(new ChannelFutureListener() {
-              @Override
-              public void operationComplete(ChannelFuture channelFuture) throws Exception {
-                send(request);
-              }
-            });
-          }
-        } catch (InterruptedException e) {
-          // Ignore it
-          LOG.info("Interrupted when sending consume request", e);
+      public ChannelFuture get() {
+        TopicBroker topicBroker = brokerCache.getBrokerAddress(topic, partition);
+        if (topicBroker == null) {
+          return new FailedChannelFuture(null, null);
         }
+        return connectionPool.connect(topicBroker.getAddress()).getChannelFuture();
       }
     });
+    requestSenders.add(sender);
+    sender.start();
+    return new MessageFetcher(topic, partition, offset, maxSize, sender);
   }
 
   private TopicBroker getTopicBroker(String topic, int partition) {
@@ -229,6 +226,82 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
       pipeline.addLast("decoder", new KafkaResponseHandler());
       pipeline.addLast("dispatcher", new KafkaResponseDispatcher());
       return pipeline;
+    }
+  }
+
+  /**
+   * A {@link KafkaRequestSender} that will reconnect and resend if there error when sending request.
+   */
+  private static class RetryKafkaRequestSender extends AbstractService implements KafkaRequestSender {
+
+    private final Supplier<ChannelFuture> connectionSupplier;
+    private ChannelFuture connectionFuture;
+
+    public RetryKafkaRequestSender(Supplier<ChannelFuture> connectionSupplier) {
+      this.connectionSupplier = connectionSupplier;
+    }
+
+    @Override
+    public synchronized void send(final KafkaRequest request) {
+      if (!isRunning()) {
+        return;
+      }
+      connectionFuture.addListener(new ChannelFutureListener() {
+        @Override
+        public void operationComplete(ChannelFuture future) throws Exception {
+          // Try to send the request
+          final Channel channel = future.getChannel();
+          final ChannelFutureListener connectionListener = this;
+
+          if (!future.isSuccess()) {
+            if (isRunning()) {
+              connect(connectionListener);
+            }
+            return;
+          }
+
+          channel.write(request).addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+              if (!future.isSuccess()) {
+                channel.close();
+                if (isRunning()) {
+                  connect(connectionListener);
+                }
+              }
+            }
+          });
+        }
+      });
+    }
+
+    @Override
+    protected void doStart() {
+      connect(new ChannelFutureListener() {
+        @Override
+        public void operationComplete(ChannelFuture future) throws Exception {
+          notifyStarted();
+        }
+      });
+    }
+
+    @Override
+    protected void doStop() {
+      connectionFuture.addListener(new ChannelFutureListener() {
+        @Override
+        public void operationComplete(ChannelFuture future) throws Exception {
+          try {
+            future.getChannel().close();
+          } finally {
+            notifyStopped();
+          }
+        }
+      });
+    }
+
+    private synchronized void connect(ChannelFutureListener connectionListener) {
+      connectionFuture = connectionSupplier.get();
+      connectionFuture.addListener(connectionListener);
     }
   }
 }

@@ -151,6 +151,7 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
             LOG.error("Failed to decode log entry {}", json, e);
           }
         }
+        LOG.info("Weave log poller thread stopped.");
       }
 
       private void invokeHandlers(LogEntry entry) {
