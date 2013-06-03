@@ -103,6 +103,11 @@ final class HDFSLocation implements Location {
     return path.getName();
   }
 
+  @Override
+  public boolean createNew() throws IOException {
+    return fs.createNewFile(path);
+  }
+
   /**
    * @return A {@link URI} for this location on HDFS.
    */
@@ -124,6 +129,11 @@ final class HDFSLocation implements Location {
   }
 
   @Override
+  public boolean delete(boolean recursive) throws IOException {
+    return fs.delete(path, true);
+  }
+
+  @Override
   public Location renameTo(Location destination) throws IOException {
     // destination will always be of the same type as this location
     boolean success;
@@ -137,23 +147,6 @@ final class HDFSLocation implements Location {
     } else {
       return null;
     }
-  }
-
-  /**
-   * Requests that the file or directory denoted by this abstract pathname be
-   * deleted when the virtual machine terminates. Files (or directories) are deleted in
-   * the reverse order that they are registered. Invoking this method to delete a file or
-   * directory that is already registered for deletion has no effect. Deletion will be
-   * attempted only for normal termination of the virtual machine, as defined by the
-   * Java Language Specification.
-   * <p>
-   * Once deletion has been requested, it is not possible to cancel the request.
-   * This method should therefore be used with care.
-   * </p>
-   */
-  @Override
-  public void deleteOnExit() throws IOException {
-    fs.deleteOnExit(path);
   }
 
   /**

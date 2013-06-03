@@ -64,13 +64,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   private final LocationFactory locationFactory;
 
   public YarnWeaveRunnerService(YarnConfiguration config, String zkConnect) {
-    try {
-      this.locationFactory = new HDFSLocationFactory(FileSystem.get(config), "/weave");
-      this.yarnClient = getYarnClient(config);
-      this.zkClientService = getZKClientService(zkConnect);
-    } catch (IOException e) {
-      throw Throwables.propagate(e);
-    }
+    this(config, zkConnect, new HDFSLocationFactory(getFileSystem(config), "/weave"));
   }
 
   public YarnWeaveRunnerService(YarnConfiguration config, String zkConnect, LocationFactory locationFactory) {
@@ -173,5 +167,13 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     YarnClient client = new YarnClientImpl();
     client.init(config);
     return client;
+  }
+
+  private static FileSystem getFileSystem(YarnConfiguration configuration) {
+    try {
+      return FileSystem.get(configuration);
+    } catch (IOException e) {
+      throw Throwables.propagate(e);
+    }
   }
 }

@@ -29,6 +29,11 @@ public final class EnvKeys {
   public static final String WEAVE_APP_ID = "WEAVE_APP_ID";
   public static final String WEAVE_APP_ID_CLUSTER_TIME = "WEAVE_APP_ID_CLUSTER_TIME";
 
+  /**
+   * Cluster filesystem directory for storing weave app related files.
+   */
+  public static final String WEAVE_APP_DIR = "WEAVE_APP_DIR";
+
   public static final String WEAVE_APPLICATION_ARGS = "WEAVE_APPLICATION_ARGS";
   public static final String WEAVE_RUNNABLE_ARGS = "WEAVE_RUNNABLE_ARGS";
   public static final String WEAVE_RUNNABLE_NAME = "WEAVE_RUNNABLE_NAME";

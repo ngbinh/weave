@@ -22,6 +22,9 @@ import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
@@ -87,6 +90,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -229,12 +233,39 @@ public final class ApplicationMasterService implements Service {
 
     instanceChangeExecutor.shutdownNow();
 
+    // App location cleanup
+    cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+
     // When logger context is stopped, stop the kafka server as well.
     ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
     if (loggerFactory instanceof LoggerContext) {
       ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
     } else {
       kafkaServer.stopAndWait();
+    }
+  }
+
+  private void cleanupDir(URI appDir) {
+    // Cleanup based on the uri schema.
+    // Note: It's a little bit hacky, refactor it later.
+    Location location;
+    if ("file".equals(appDir.getScheme())) {
+      location = new LocalLocationFactory().create(appDir);
+    } else if ("hdfs".equals(appDir.getScheme())) {
+      location = new HDFSLocationFactory(yarnConf).create(appDir);
+    } else {
+      LOG.warn("Unsupport location type {}. Cleanup not performed.", appDir);
+      return;
+    }
+
+    try {
+      if (location.delete(true)) {
+        LOG.info("Application directory deleted: {}", appDir);
+      } else {
+        LOG.warn("Failed to cleanup directory {}.", appDir);
+      }
+    } catch (IOException e) {
+      LOG.warn("Exception while cleanup directory {}.", appDir, e);
     }
   }
 

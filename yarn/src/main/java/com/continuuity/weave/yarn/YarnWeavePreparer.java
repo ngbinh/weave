@@ -226,6 +226,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
         .put(EnvKeys.WEAVE_APP_ID, Integer.toString(response.getApplicationId().getId()))
         .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME, Long.toString(response.getApplicationId().getClusterTimestamp()))
+        .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
         .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
         .put(EnvKeys.WEAVE_APPLICATION_ARGS, encodeArguments(arguments))
         .put(EnvKeys.WEAVE_RUNNABLE_ARGS, encodeRunnableArguments(runnableArgs))
@@ -458,10 +459,13 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private Location createTempLocation(String path, String suffix) {
     try {
-      return locationFactory.create(String.format("/%s/%s/%s",
-                                                  weaveSpec.getName(), runId.getId(), path)).getTempFile(suffix);
+      return getAppLocation().append(path).getTempFile(suffix);
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
+  }
+
+  private Location getAppLocation() {
+    return locationFactory.create(String.format("/%s/%s", weaveSpec.getName(), runId.getId()));
   }
 }
