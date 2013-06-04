@@ -26,11 +26,13 @@ import com.continuuity.weave.discovery.ZKDiscoveryService;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.kafka.client.SimpleKafkaClient;
 import com.continuuity.weave.internal.logging.LogEntryDecoder;
+import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.kafka.client.FetchedMessage;
 import com.continuuity.weave.kafka.client.KafkaClient;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
@@ -62,16 +64,18 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   public ZKWeaveController(ZKClient zkClient, RunId runId, Iterable<LogHandler> logHandlers) {
     super(zkClient, runId);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
-    Iterables.addAll(this.logHandlers, logHandlers);
     this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
     this.discoveryServiceClient = new ZKDiscoveryService(zkClient);
     this.logPoller = createLogPoller();
+    Iterables.addAll(this.logHandlers, logHandlers);
   }
 
   @Override
   public void start() {
     kafkaClient.startAndWait();
-    logPoller.start();
+    if (!logHandlers.isEmpty()) {
+      logPoller.start();
+    }
     super.start();
   }
 
@@ -111,13 +115,25 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   }
 
   @Override
-  public void addLogHandler(LogHandler handler) {
+  public synchronized void addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
+    if (!logPoller.isAlive()) {
+      logPoller.start();
+    }
   }
 
   @Override
   public Iterable<Discoverable> discoverService(String serviceName) {
     return discoveryServiceClient.discover(serviceName);
+  }
+
+  @Override
+  public void changeInstances(String runnable, int newCount) {
+    try {
+      sendMessage(SystemMessages.setInstances(runnable, newCount), runnable).get();
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
   }
 
   private Thread createLogPoller() {
@@ -131,11 +147,16 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
         Iterator<FetchedMessage> messageIterator = kafkaClient.consume(LOG_TOPIC, 0, 0, 1048576);
         while (messageIterator.hasNext()) {
           String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
-          LogEntry entry = gson.fromJson(json, LogEntry.class);
-          if (entry != null) {
-            invokeHandlers(entry);
+          try {
+            LogEntry entry = gson.fromJson(json, LogEntry.class);
+            if (entry != null) {
+              invokeHandlers(entry);
+            }
+          } catch (Exception e) {
+            LOG.error("Failed to decode log entry {}", json, e);
           }
         }
+        LOG.info("Weave log poller thread stopped.");
       }
 
       private void invokeHandlers(LogEntry entry) {

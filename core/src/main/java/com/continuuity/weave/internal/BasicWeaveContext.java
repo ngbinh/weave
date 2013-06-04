@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Cancellable;
@@ -29,23 +30,48 @@ import java.net.InetSocketAddress;
  */
 public final class BasicWeaveContext implements WeaveContext {
 
+  private final RunId runId;
+  private final RunId appRunId;
   private final InetAddress host;
   private final String[] args;
   private final String[] appArgs;
   private final WeaveRunnableSpecification spec;
   private final int instanceId;
   private final DiscoveryService discoveryService;
+  private volatile int instanceCount;
 
-  public BasicWeaveContext(InetAddress host, String[] args, String[] appArgs,
-                    WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService) {
+  public BasicWeaveContext(RunId runId, RunId appRunId, InetAddress host, String[] args, String[] appArgs,
+                           WeaveRunnableSpecification spec, int instanceId, DiscoveryService discoveryService,
+                           int instanceCount) {
+    this.runId = runId;
+    this.appRunId = appRunId;
     this.host = host;
     this.args = args;
     this.appArgs = appArgs;
     this.spec = spec;
     this.instanceId = instanceId;
     this.discoveryService = discoveryService;
+    this.instanceCount = instanceCount;
   }
 
+  @Override
+  public RunId getRunId() {
+    return runId;
+  }
+
+  @Override
+  public RunId getApplicationRunId() {
+    return appRunId;
+  }
+
+  @Override
+  public int getInstanceCount() {
+    return instanceCount;
+  }
+
+  public void setInstanceCount(int count) {
+    this.instanceCount = count;
+  }
 
   @Override
   public InetAddress getHost() {

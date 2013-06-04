@@ -15,8 +15,8 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.RunId;
-import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnable;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Threads;
@@ -51,12 +51,12 @@ public final class WeaveContainerService implements Service {
   private final WeaveRunnableSpecification specification;
   private final ClassLoader classLoader;
   private final ContainerInfo containerInfo;
-  private final WeaveContext context;
+  private final BasicWeaveContext context;
   private final ZKServiceDecorator serviceDelegate;
   private ExecutorService commandExecutor;
   private WeaveRunnable runnable;
 
-  public WeaveContainerService(WeaveContext context, ContainerInfo containerInfo, ZKClient zkClient,
+  public WeaveContainerService(BasicWeaveContext context, ContainerInfo containerInfo, ZKClient zkClient,
                                RunId runId, WeaveRunnableSpecification specification, ClassLoader classLoader) {
     this.specification = specification;
     this.classLoader = classLoader;
@@ -66,7 +66,14 @@ public final class WeaveContainerService implements Service {
   }
 
   private ListenableFuture<String> processMessage(final String messageId, final Message message) {
+    LOG.info("Message received: " + message);
     final SettableFuture<String> result = SettableFuture.create();
+    Command command = message.getCommand();
+    if (message.getType() == Message.Type.SYSTEM
+          && "instances".equals(command.getCommand()) && command.getOptions().containsKey("count")) {
+      context.setInstanceCount(Integer.parseInt(command.getOptions().get("count")));
+    }
+
     commandExecutor.execute(new Runnable() {
 
       @Override

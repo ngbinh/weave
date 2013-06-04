@@ -25,11 +25,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarEntry;
@@ -156,7 +158,7 @@ public final class WeaveLauncher {
             String line = reader.readLine();
             if (line != null) {
               for (String path : line.split(":")) {
-                urls.add(new File(expand(path)).toURI().toURL());
+                urls.addAll(getClassPaths(path));
               }
             }
           } finally {
@@ -170,6 +172,34 @@ public final class WeaveLauncher {
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
+  }
+
+  private static Collection<URL> getClassPaths(String path) throws MalformedURLException {
+    String classpath = expand(path);
+    if (classpath.endsWith("/*")) {
+      // Grab all .jar files
+      File dir = new File(classpath.substring(0, classpath.length() - 2));
+      File[] files = dir.listFiles();
+      if (files == null || files.length == 0) {
+        return singleItem(dir.toURI().toURL());
+      }
+
+      List<URL> result = new ArrayList<URL>(files.length);
+      for (File file : files) {
+        if (file.getName().endsWith(".jar")) {
+          result.add(file.toURI().toURL());
+        }
+      }
+      return result;
+    } else {
+      return singleItem(new File(classpath).toURI().toURL());
+    }
+  }
+
+  private static Collection<URL> singleItem(URL url) {
+    List<URL> result = new ArrayList<URL>(1);
+    result.add(url);
+    return result;
   }
 
   private static String expand(String value) {

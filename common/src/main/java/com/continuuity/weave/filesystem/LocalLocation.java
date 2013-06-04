@@ -15,6 +15,8 @@
  */
 package com.continuuity.weave.filesystem;
 
+import com.google.common.collect.Lists;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -22,6 +24,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.util.Collections;
+import java.util.Deque;
 import java.util.UUID;
 
 /**
@@ -84,6 +88,11 @@ final class LocalLocation implements Location {
     return file.getName();
   }
 
+  @Override
+  public boolean createNew() throws IOException {
+    return file.createNewFile();
+  }
+
   /**
    * Appends the child to the current {@link Location} on local filesystem.
    * <p>
@@ -126,6 +135,30 @@ final class LocalLocation implements Location {
   }
 
   @Override
+  public boolean delete(boolean recursive) throws IOException {
+    if (!recursive) {
+      return delete();
+    }
+
+    Deque<File> stack = Lists.newLinkedList();
+    stack.add(file);
+    while (!stack.isEmpty()) {
+      File f = stack.peekLast();
+      File[] files = f.listFiles();
+
+      if (files != null && files.length != 0) {
+        Collections.addAll(stack, files);
+      } else {
+        if (!f.delete()) {
+          return false;
+        }
+        stack.pollLast();
+      }
+    }
+    return true;
+  }
+
+  @Override
   public Location renameTo(Location destination) throws IOException {
     // destination will always be of the same type as this location
     boolean success = file.renameTo(((LocalLocation) destination).file);
@@ -134,23 +167,6 @@ final class LocalLocation implements Location {
     } else {
       return null;
     }
-  }
-
-  /**
-   * Requests that the file or directory denoted by this abstract pathname be
-   * deleted when the virtual machine terminates. Files (or directories) are deleted in
-   * the reverse order that they are registered. Invoking this method to delete a file or
-   * directory that is already registered for deletion has no effect. Deletion will be
-   * attempted only for normal termination of the virtual machine, as defined by the
-   * Java Language Specification.
-   * <p>
-   * Once deletion has been requested, it is not possible to cancel the request.
-   * This method should therefore be used with care.
-   * </p>
-   */
-  @Override
-  public void deleteOnExit() throws IOException {
-    file.deleteOnExit();
   }
 
   /**

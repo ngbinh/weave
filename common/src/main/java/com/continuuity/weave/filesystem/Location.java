@@ -37,7 +37,7 @@ public interface Location {
    * Checks if the this location exists.
    *
    * @return true if found; false otherwise.
-   * @throws java.io.IOException
+   * @throws IOException
    */
   boolean exists() throws IOException;
 
@@ -45,6 +45,14 @@ public interface Location {
    * @return Returns the name of the file or directory denoteed by this abstract pathname.
    */
   String getName();
+
+  /**
+   * Atomically creates a new, empty file named by this abstract pathname if and only if a file with this name
+   * does not yet exist.
+   * @return {@code true} if the file is successfully create, {@code false} otherwise.
+   * @throws IOException
+   */
+  boolean createNew() throws IOException;
 
   /**
    * @return An {@link java.io.InputStream} for this location.
@@ -94,6 +102,18 @@ public interface Location {
   boolean delete() throws IOException;
 
   /**
+   * Deletes the file or directory denoted by this abstract pathname. If this
+   * pathname denotes a directory and {@code recursive} is {@code true}, then content of the
+   * directory will be deleted recursively, otherwise the directory must be empty in order to be deleted.
+   * Note that when calling this method with {@code recursive = true} for a directory, any
+   * failure during deletion will have some entries inside the directory being deleted while some are not.
+   *
+   * @param recursive Indicate if recursively delete a directory. Ignored if the pathname represents a file.
+   * @return true if and only if the file or directory is successfully delete; false otherwise.
+   */
+  boolean delete(boolean recursive) throws IOException;
+
+  /**
    * Moves the file or directory denoted by this abstract pathname.
    *
    * @param destination destination location
@@ -101,20 +121,6 @@ public interface Location {
    */
   @Nullable
   Location renameTo(Location destination) throws IOException;
-
-  /**
-   * Requests that the file or directory denoted by this abstract pathname be
-   * deleted when the virtual machine terminates. Files (or directories) are deleted in
-   * the reverse order that they are registered. Invoking this method to delete a file or
-   * directory that is already registered for deletion has no effect. Deletion will be
-   * attempted only for normal termination of the virtual machine, as defined by the
-   * Java Language Specification.
-   * <p>
-   * Once deletion has been requested, it is not possible to cancel the request.
-   * This method should therefore be used with care.
-   * </p>
-   */
-  void deleteOnExit() throws IOException;
 
   /**
    * Creates the directory named by this abstract pathname, including any necessary

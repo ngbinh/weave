@@ -1,4 +1,4 @@
-/**
+/*
  * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
@@ -15,12 +15,16 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
+import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
-import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.api.WeaveSpecification;
+import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
@@ -36,26 +40,22 @@ import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
-import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterators;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-import com.google.common.collect.Table;
 import com.google.common.io.Files;
 import com.google.common.reflect.TypeToken;
 import com.google.common.util.concurrent.AbstractExecutionThreadService;
@@ -90,15 +90,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.lang.reflect.Method;
+import java.net.URI;
 import java.util.Collection;
-import java.util.Deque;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -117,11 +118,14 @@ public final class ApplicationMasterService implements Service {
   private final AMRMClient amrmClient;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
+  private final Map<String, Integer> instanceCounts;
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
   private Resource minCapability;
   private EmbeddedKafkaServer kafkaServer;
+  private Queue<RunnableContainerRequest> runnableContainerRequests;
+  private ExecutorService instanceChangeExecutor;
 
 
   public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile) throws IOException {
@@ -131,8 +135,6 @@ public final class ApplicationMasterService implements Service {
     this.yarnConf = new YarnConfiguration();
     this.zkClient = zkClient;
 
-    this.serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
-
     // Get the container ID and convert it to ApplicationAttemptId
     masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
     Preconditions.checkArgument(masterContainerId != null,
@@ -140,6 +142,9 @@ public final class ApplicationMasterService implements Service {
     amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
 
     runningContainers = new RunningContainers();
+
+    serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
+    instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
   }
 
   private ListMultimap<String, String> decodeRunnableArgs() throws IOException {
@@ -167,9 +172,17 @@ public final class ApplicationMasterService implements Service {
     };
   }
 
+  private Map<String, Integer> initInstanceCounts(WeaveSpecification weaveSpec, Map<String, Integer> result) {
+    for (RuntimeSpecification runtimeSpec : weaveSpec.getRunnables().values()) {
+      result.put(runtimeSpec.getName(), runtimeSpec.getResourceSpecification().getInstances());
+    }
+    return result;
+  }
+
   private void doStart() throws Exception {
     LOG.info("Start application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
 
+    instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
     yarnRPC = YarnRPC.create(yarnConf);
 
     amrmClient.init(yarnConf);
@@ -193,6 +206,8 @@ public final class ApplicationMasterService implements Service {
     kafkaServer = new EmbeddedKafkaServer(new File("kafka.tgz"), generateKafkaConfig());
     kafkaServer.startAndWait();
     LOG.info("Kafka server started");
+
+    runnableContainerRequests = initContainerRequests();
   }
 
   private void doStop() throws Exception {
@@ -216,6 +231,11 @@ public final class ApplicationMasterService implements Service {
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
 
+    instanceChangeExecutor.shutdownNow();
+
+    // App location cleanup
+    cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+
     // When logger context is stopped, stop the kafka server as well.
     ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
     if (loggerFactory instanceof LoggerContext) {
@@ -225,60 +245,51 @@ public final class ApplicationMasterService implements Service {
     }
   }
 
+  private void cleanupDir(URI appDir) {
+    // Cleanup based on the uri schema.
+    // Note: It's a little bit hacky, refactor it later.
+    Location location;
+    if ("file".equals(appDir.getScheme())) {
+      location = new LocalLocationFactory().create(appDir);
+    } else if ("hdfs".equals(appDir.getScheme())) {
+      location = new HDFSLocationFactory(yarnConf).create(appDir);
+    } else {
+      LOG.warn("Unsupport location type {}. Cleanup not performed.", appDir);
+      return;
+    }
+
+    try {
+      if (location.delete(true)) {
+        LOG.info("Application directory deleted: {}", appDir);
+      } else {
+        LOG.warn("Failed to cleanup directory {}.", appDir);
+      }
+    } catch (IOException e) {
+      LOG.warn("Exception while cleanup directory {}.", appDir, e);
+    }
+  }
+
   private LoggerContextListener getLoggerStopListener() {
-    return new LoggerContextListener() {
-      @Override
-      public boolean isResetResistant() {
-        return true;
-      }
-
-      @Override
-      public void onStart(LoggerContext context) {
-        // No-op
-      }
-
-      @Override
-      public void onReset(LoggerContext context) {
-        // No-op
-      }
-
+    return new LoggerContextListenerAdapter(true) {
       @Override
       public void onStop(LoggerContext context) {
         kafkaServer.stopAndWait();
-      }
-
-      @Override
-      public void onLevelChange(ch.qos.logback.classic.Logger logger, Level level) {
-        // No-op
       }
     };
   }
 
   private void doRun() throws Exception {
-    // Orderly stores container requests.
-    Queue<RunnableContainerRequest> runnableRequests = Lists.newLinkedList();
-    for (WeaveSpecification.Order order : weaveSpec.getOrders()) {
-
-      ImmutableMultimap.Builder<Resource, RuntimeSpecification> builder = ImmutableMultimap.builder();
-      for (String runnableName : order.getNames()) {
-        RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
-        Resource capability = createCapability(runtimeSpec.getResourceSpecification());
-        builder.put(capability, runtimeSpec);
-      }
-      runnableRequests.add(new RunnableContainerRequest(order.getType(), builder.build()));
-    }
-
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
     Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
     while (isRunning()) {
       // If nothing is in provisioning, and no pending request, move to next one
-      while (provisioning.isEmpty() && currentRequest == null && !runnableRequests.isEmpty()) {
-        currentRequest = runnableRequests.peek().takeRequest();
+      while (provisioning.isEmpty() && currentRequest == null && !runnableContainerRequests.isEmpty()) {
+        currentRequest = runnableContainerRequests.peek().takeRequest();
         if (currentRequest == null) {
           // All different types of resource request from current order is done, move to next one
           // TODO: Need to handle order type as well
-          runnableRequests.poll();
+          runnableContainerRequests.poll();
         }
       }
       // Nothing in provision, makes the next batch of provision request
@@ -294,8 +305,35 @@ public final class ApplicationMasterService implements Service {
 
       // Assign runnable to container
       launchRunnable(amResponse.getAllocatedContainers(), provisioning);
+      handleCompleted(amResponse.getCompletedContainersStatuses());
       TimeUnit.SECONDS.sleep(1);
     }
+  }
+
+  /**
+   * Handling containers that are completed.
+   */
+  private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+    for (ContainerStatus status : completedContainersStatuses) {
+      runningContainers.handleCompleted(status.getContainerId(), status.getExitStatus());
+    }
+  }
+
+  private Queue<RunnableContainerRequest> initContainerRequests() {
+    // Orderly stores container requests.
+    Queue<RunnableContainerRequest> requests = Lists.newLinkedList();
+    // For each order in the weaveSpec, create container request for each runnable.
+    for (WeaveSpecification.Order order : weaveSpec.getOrders()) {
+      // Group container requests based on resource requirement.
+      ImmutableMultimap.Builder<Resource, RuntimeSpecification> builder = ImmutableMultimap.builder();
+      for (String runnableName : order.getNames()) {
+        RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
+        Resource capability = createCapability(runtimeSpec.getResourceSpecification());
+        builder.put(capability, runtimeSpec);
+      }
+      requests.add(new RunnableContainerRequest(order.getType(), builder.build()));
+    }
+    return requests;
   }
 
   /**
@@ -309,11 +347,11 @@ public final class ApplicationMasterService implements Service {
       Priority priority = Records.newRecord(Priority.class);
       priority.setPriority(0);
 
-      int containerCount = runtimeSpec.getResourceSpecification().getInstances();
+      int containerCount = instanceCounts.get(runtimeSpec.getName());
       AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
                                                                             priority, containerCount);
       LOG.info("Request for container: " + request);
-      requests.add(new ProvisionRequest(request, runtimeSpec));
+      requests.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(runtimeSpec.getName())));
       amrmClient.addContainerRequest(request);
     }
     return requests;
@@ -332,7 +370,7 @@ public final class ApplicationMasterService implements Service {
       }
 
       String runnableName = provisionRequest.getRuntimeSpec().getName();
-      int containerCount = provisionRequest.getRuntimeSpec().getResourceSpecification().getInstances();
+      int containerCount = instanceCounts.get(provisionRequest.getRuntimeSpec().getName());
       int instanceId = runningContainers.count(runnableName);
 
       RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
@@ -353,10 +391,13 @@ public final class ApplicationMasterService implements Service {
                                                                    ZKClients.namespace(zkClient,
                                                                                        getZKNamespace(runnableName)),
                                                                    runnableArgs.get(runnableName),
-                                                                   instanceId);
-      runningContainers.add(runnableName, container,
+                                                                   instanceId, instanceCounts.get(runnableName));
+      runningContainers.add(runnableName, container.getId(),
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
+
+      // Seems like a bug in amrm causing manual removal is needed.
+      amrmClient.removeContainerRequest(provisionRequest.getRequest());
 
       if (runningContainers.count(runnableName) == containerCount) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");
@@ -412,29 +453,104 @@ public final class ApplicationMasterService implements Service {
     return prop;
   }
 
-  private ListenableFuture<String> processMessage(String messageId, Message message) {
+  private ListenableFuture<String> processMessage(final String messageId, Message message) {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Message received: " + messageId + " " + message);
     }
 
     SettableFuture<String> result = SettableFuture.create();
-    if (handleSetInstances(message, getMessageCompletion(messageId, result))) {
+    Runnable completion = getMessageCompletion(messageId, result);
+    if (handleSetInstances(message, completion)) {
       return result;
     }
 
-    // TODO
+    // Replicate messages to all runnables
     if (message.getScope() == Message.Scope.ALL_RUNNABLE) {
-      for (String runnableName : weaveSpec.getRunnables().keySet()) {
-        ZKClient runnableZkClient = ZKClients.namespace(zkClient, getZKNamespace(runnableName));
-//        ZKMessages.sendMessage(zkCl)
-      }
+      runningContainers.sendToAll(message, completion);
+      return result;
     }
 
-    return result;
+    // Replicate message to a particular runnable.
+    if (message.getScope() == Message.Scope.RUNNABLE) {
+      runningContainers.sendToRunnable(message.getRunnableName(), message, completion);
+      return result;
+    }
+
+    LOG.info("Message ignored. {}", message);
+    return Futures.immediateFuture(messageId);
   }
 
-  private boolean handleSetInstances(Message message, Runnable completion) {
-    // TODO
+  /**
+   * Attempts to change the number of running instances.
+   * @return {@code true} if the message does requests for changes in number of running instances of a runnable,
+   *         {@code false} otherwise.
+   */
+  private boolean handleSetInstances(final Message message, final Runnable completion) {
+    if (message.getType() != Message.Type.SYSTEM || message.getScope() != Message.Scope.RUNNABLE) {
+      return false;
+    }
+
+    Command command = message.getCommand();
+    Map<String, String> options = command.getOptions();
+    if (!"instances".equals(command.getCommand()) || !options.containsKey("count")) {
+      return false;
+    }
+
+    final String runnableName = message.getRunnableName();
+    if (runnableName == null || runnableName.isEmpty() || !weaveSpec.getRunnables().containsKey(runnableName)) {
+      LOG.info("Unknown runnable {}", runnableName);
+      return false;
+    }
+
+    final int newCount = Integer.parseInt(options.get("count"));
+    final int oldCount = instanceCounts.get(runnableName);
+
+    if (newCount == oldCount) {   // Nothing to do
+      return true;
+    }
+
+    LOG.info("Received change instances request. From {} to {}.", oldCount, newCount);
+
+    instanceChangeExecutor.execute(new Runnable() {
+      @Override
+      public void run() {
+        try {
+          // Wait until running container count is the same as old count
+          while (isRunning() && oldCount != runningContainers.count(runnableName)) {
+            runningContainers.waitForChange();
+          }
+          instanceCounts.put(runnableName, newCount);
+
+          try {
+            if (newCount < oldCount) {
+              // Shutdown some running containers
+              for (int i = 0; i < oldCount - newCount; i++) {
+                runningContainers.removeLast(runnableName);
+              }
+            } else {
+              WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(),
+                                                              new Predicate<WeaveSpecification.Order>() {
+                @Override
+                public boolean apply(WeaveSpecification.Order input) {
+                  return (input.getNames().contains(runnableName));
+                }
+              });
+
+              RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
+              Resource capability = createCapability(runtimeSpec.getResourceSpecification());
+              runnableContainerRequests.add(
+                new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec)));
+            }
+          } finally {
+            LOG.info("Change instances completed. From {} to {}.", oldCount, newCount);
+            runningContainers.sendToRunnable(runnableName, message, completion);
+          }
+        } catch (InterruptedException e) {
+          // If the wait is being interrupted, discard the message.
+          completion.run();
+        }
+      }
+    });
     return true;
   }
 
@@ -550,76 +666,6 @@ public final class ApplicationMasterService implements Service {
     @Override
     public ListenableFuture<String> onReceived(String messageId, Message message) {
       return processMessage(messageId, message);
-    }
-  }
-
-  private static final class RunnableContainerRequest {
-    private final WeaveSpecification.Order.Type orderType;
-    private final Iterator<Map.Entry<Resource, Collection<RuntimeSpecification>>> requests;
-
-    private RunnableContainerRequest(WeaveSpecification.Order.Type orderType,
-                                     Multimap<Resource, RuntimeSpecification> requests) {
-      this.orderType = orderType;
-      this.requests = requests.asMap().entrySet().iterator();
-    }
-
-    private WeaveSpecification.Order.Type getOrderType() {
-      return orderType;
-    }
-
-    /**
-     * Remove a resource request and returns it.
-     * @return The {@link Resource} and {@link Collection} of {@link RuntimeSpecification} or
-     *         {@code null} if there is no more request.
-     */
-    private Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> takeRequest() {
-      Map.Entry<Resource, Collection<RuntimeSpecification>> next = Iterators.getNext(requests, null);
-      return next == null ? null : Maps.immutableEntry(next.getKey(), ImmutableList.copyOf(next.getValue()));
-    }
-  }
-
-  private static final class RunningContainers {
-    private final Table<String, ContainerId, ServiceController> runningContainers;
-    private final Deque<String> startSequence;
-
-    RunningContainers() {
-      runningContainers = HashBasedTable.create();
-      startSequence = Lists.newLinkedList();
-    }
-
-    synchronized void add(String runnableName, Container container, ServiceController controller) {
-      runningContainers.put(runnableName, container.getId(), controller);
-      if (startSequence.isEmpty() || !runnableName.equals(startSequence.peekLast())) {
-        startSequence.addLast(runnableName);
-      }
-    }
-
-    synchronized int count(String runnableName) {
-      return runningContainers.row(runnableName).size();
-    }
-
-    synchronized void stopAll() {
-      // Stop it one by one in reverse order of start sequence
-      Iterator<String> itor = startSequence.descendingIterator();
-      List<ListenableFuture<ServiceController.State>> futures = Lists.newLinkedList();
-      while (itor.hasNext()) {
-        String runnableName = itor.next();
-        LOG.info("Stopping all instances of " + runnableName);
-
-        futures.clear();
-        // Parallel stops all running containers of the current runnable.
-        for (ServiceController controller : runningContainers.row(runnableName).values()) {
-          futures.add(controller.stop());
-        }
-        // Wait for containers to stop. Assuming the future returned by Futures.successfulAsList won't throw exception.
-        Futures.getUnchecked(Futures.successfulAsList(futures));
-
-        LOG.info("Terminated all instances of " + runnableName);
-      }
-    }
-
-    synchronized Set<ContainerId> getContainerIds() {
-      return ImmutableSet.copyOf(runningContainers.columnKeySet());
     }
   }
 }

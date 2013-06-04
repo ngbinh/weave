@@ -151,6 +151,9 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
 
       @Override
       public void send(final KafkaRequest request) {
+        if (!isRunning()) {
+          return;
+        }
         try {
           // Try to send the request
           Channel channel = channelFutureRef.get().getChannel();

@@ -283,21 +283,17 @@ public final class ZKServiceDecorator extends AbstractService {
       }
 
       executor.execute(new Runnable() {
-
         @Override
         public void run() {
-          Futures.addCallback(callback.onReceived(id, message), new FutureCallback<String>() {
-            @Override
-            public void onSuccess(String result) {
-              // Delete the message node when processing is completed successfully.
-              listenFailure(zkClient.delete(path, version));
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-              LOG.error("Failed to process message for " + id + " in " + path, t);
-            }
-          });
+          try {
+            // Message process is synchronous for now. Making it async needs more thoughts about race conditions.
+            // The executor is the callbackExecutor which is a single thread executor.
+            callback.onReceived(id, message).get();
+          } catch (Throwable t) {
+            LOG.error("Exception when processing message: {}, {}, {}", id, message, path, t);
+          } finally {
+            listenFailure(zkClient.delete(path, version));
+          }
         }
       });
     }

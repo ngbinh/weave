@@ -22,13 +22,13 @@ import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.OperationFuture;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
+import com.continuuity.weave.zookeeper.ZKOperations;
 import com.google.common.base.Charsets;
-import com.google.common.collect.HashMultimap;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.gson.GsonBuilder;
@@ -40,9 +40,6 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +47,6 @@ import java.lang.reflect.Type;
 import java.net.InetSocketAddress;
 import java.util.Iterator;
 import java.util.List;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -93,8 +89,7 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
   private static final Logger LOG = LoggerFactory.getLogger(ZKDiscoveryService.class);
   private static final String NAMESPACE = "/discoverable";
 
-  private final AtomicReference<Multimap<String, Discoverable>> services;
-  private final ConcurrentMap<String, Boolean> serviceWatched;
+  private final LoadingCache<String, Iterable<Discoverable>> services;
   private final ZKClient zkClient;
 
   /**
@@ -113,8 +108,7 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
    */
   public ZKDiscoveryService(ZKClient zkClient, String namespace) {
     this.zkClient = namespace == null ? zkClient : ZKClients.namespace(zkClient, namespace);
-    services = new AtomicReference<Multimap<String, Discoverable>>(HashMultimap.<String, Discoverable>create());
-    serviceWatched = Maps.newConcurrentMap();
+    this.services = CacheBuilder.newBuilder().build(createServiceLoader());
   }
 
   /**
@@ -146,100 +140,62 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
     };
   }
 
+  @Override
+  public Iterable<Discoverable> discover(String service) {
+    return services.getUnchecked(service);
+  }
+
   /**
-   * Gets the list of {@link Discoverable} for a given service.
-   * <p>
-   *   Once, the list is retrieved a watcher is set on the service to track
-   *   any changes that would require us to reload the service information
-   *   information from zookeeper.
-   * </p>
-   * @param service for which we are requested to retrieve the list of {@link Discoverable}
+   * Creates a CacheLoader for creating live Iterable for watching instances changes for a given service.
    */
-  private void getChildren(final String service) {
-    final String sb = "/" + service;
+  private CacheLoader<String, Iterable<Discoverable>> createServiceLoader() {
+    return new CacheLoader<String, Iterable<Discoverable>>() {
+      @Override
+      public Iterable<Discoverable> load(String service) throws Exception {
+        // The atomic reference is to keep the resulting Iterable live. It always contains a
+        // immutable snapshot of the latest detected set of Discoverable.
+        final AtomicReference<Iterable<Discoverable>> iterable =
+              new AtomicReference<Iterable<Discoverable>>(ImmutableList.<Discoverable>of());
+        final String serviceBase = "/" + service;
 
-    Futures.addCallback(zkClient.exists(sb, new Watcher() {
-      @Override
-      public void process(WatchedEvent event) {
-        if (event.getType() == Event.EventType.NodeCreated) {
-          getChildren(service);
-        }
-      }
-    }), new FutureCallback<Stat>() {
-      @Override
-      public void onSuccess(Stat result) {
-        if (result == null) {
-          // Node not yet exists, the Watcher will get triggered when the node is created.
-          return;
-        }
-        Futures.addCallback(zkClient.getChildren(sb, new Watcher() {
+        // Watch for children changes in /service
+        ZKOperations.watchChildren(zkClient, serviceBase, new ZKOperations.ChildrenCallback() {
           @Override
-          public void process(WatchedEvent event) {
-            if (event.getType() == Event.EventType.NodeChildrenChanged) {
-              getChildren(service);
+          public void updated(NodeChildren nodeChildren) {
+            // Fetch data of all children nodes in parallel.
+            List<String> children = nodeChildren.getChildren();
+            List<OperationFuture<NodeData>> dataFutures = Lists.newArrayListWithCapacity(children.size());
+            for (String child : children) {
+              dataFutures.add(zkClient.getData(serviceBase + "/" + child));
             }
-          }
-        }), new FutureCallback<NodeChildren>() {
-          @Override
-          public void onSuccess(NodeChildren result) {
-            updateService(result, service);
-          }
 
-          @Override
-          public void onFailure(Throwable t) {
-            LOG.error("Failed to fetch children node for service " + service + ": " + t, t);
+            // Update the service map when all fetching are done.
+            final ListenableFuture<List<NodeData>> fetchFuture = Futures.successfulAsList(dataFutures);
+            fetchFuture.addListener(new Runnable() {
+              @Override
+              public void run() {
+                ImmutableList.Builder<Discoverable> builder = ImmutableList.builder();
+                for (NodeData nodeData : Futures.getUnchecked(fetchFuture)) {
+                  // For successful fetch, decode the content.
+                  if (nodeData != null) {
+                    Discoverable discoverable = decode(nodeData.getData());
+                    if (discoverable != null) {
+                      builder.add(discoverable);
+                    }
+                  }
+                }
+                iterable.set(builder.build());
+              }
+            }, Threads.SAME_THREAD_EXECUTOR);
           }
         });
-      }
 
-      @Override
-      public void onFailure(Throwable t) {
-        LOG.error("Failed to access discovery service node " + service + ": " + t, t);
-      }
-    });
-  }
-
-  private void updateService(NodeChildren children, final String service) {
-    final String sb = "/" + service;
-    final Multimap<String, Discoverable> newServices = HashMultimap.create(services.get());
-    newServices.removeAll(service);
-
-    // Fetch data of all children nodes in parallel.
-    List<OperationFuture<NodeData>> dataFutures = Lists.newArrayListWithCapacity(children.getChildren().size());
-    for (String child : children.getChildren()) {
-      String path = sb + "/" + child;
-      dataFutures.add(zkClient.getData(path));
-    }
-
-    // Update the service map when all fetching are done.
-    final ListenableFuture<List<NodeData>> fetchFuture = Futures.successfulAsList(dataFutures);
-    fetchFuture.addListener(new Runnable() {
-      @Override
-      public void run() {
-        for (NodeData nodeData : Futures.getUnchecked(fetchFuture)) {
-          // For successful fetch, decode the content.
-          if (nodeData != null) {
-            Discoverable discoverable = decode(nodeData.getData());
-            if (discoverable != null) {
-              newServices.put(service, discoverable);
-            }
+        return new Iterable<Discoverable>() {
+          @Override
+          public Iterator<Discoverable> iterator() {
+            return iterable.get().iterator();
           }
-        }
-        // Replace the local service register with changes.
-        services.set(newServices);
-      }
-    }, Threads.SAME_THREAD_EXECUTOR);
-  }
-
-  @Override
-  public Iterable<Discoverable> discover(final String service) {
-    if (serviceWatched.putIfAbsent(service, true) == null) {
-      getChildren(service);
-    }
-    return new Iterable<Discoverable>() {
-      @Override
-      public Iterator<Discoverable> iterator() {
-        return ImmutableList.copyOf(services.get().get(service)).iterator();
+        };
       }
     };
   }

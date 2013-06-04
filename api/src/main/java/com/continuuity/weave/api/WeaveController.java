@@ -36,4 +36,14 @@ public interface WeaveController extends ServiceController {
    *         {@link Iterable#iterator()}} is invoked.
    */
   Iterable<Discoverable> discoverService(String serviceName);
+
+
+  /**
+   * Changes the number of running instances of a given runnable. This method would block until
+   * the command is completely executed.
+   *
+   * @param runnable The name of the runnable.
+   * @param newCount Number of instances for the given runnable.
+   */
+  void changeInstances(String runnable, int newCount);
 }

@@ -25,6 +25,7 @@ import java.util.Map;
 public abstract class AbstractWeaveRunnable implements WeaveRunnable {
 
   private Map<String, String> args;
+  private WeaveContext context;
 
   protected AbstractWeaveRunnable() {
     this.args = ImmutableMap.of();
@@ -44,6 +45,7 @@ public abstract class AbstractWeaveRunnable implements WeaveRunnable {
 
   @Override
   public void initialize(WeaveContext context) {
+    this.context = context;
     this.args = context.getSpecification().getConfigs();
   }
 
@@ -58,5 +60,9 @@ public abstract class AbstractWeaveRunnable implements WeaveRunnable {
 
   protected String getArgument(String key) {
     return args.get(key);
+  }
+
+  protected WeaveContext getContext() {
+    return context;
   }
 }

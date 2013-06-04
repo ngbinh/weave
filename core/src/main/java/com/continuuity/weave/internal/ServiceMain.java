@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
 
+import java.io.File;
 import java.io.StringReader;
 import java.util.concurrent.ExecutionException;
 
@@ -113,13 +114,18 @@ public abstract class ServiceMain {
 
     LoggerContext context = (LoggerContext) loggerFactory;
     context.reset();
+    JoranConfigurator configurator = new JoranConfigurator();
+    configurator.setContext(context);
+
     try {
+      File weaveLogback = new File("logback-template.xml");
+      if (weaveLogback.exists()) {
+        configurator.doConfigure(weaveLogback);
+      }
       new ContextInitializer(context).autoConfig();
     } catch (JoranException e) {
       throw Throwables.propagate(e);
     }
-    JoranConfigurator configurator = new JoranConfigurator();
-    configurator.setContext(context);
     doConfigure(configurator, getLogConfig(getLoggerLevel(context.getLogger(Logger.ROOT_LOGGER_NAME))));
   }
 

@@ -18,7 +18,6 @@ package com.continuuity.weave.internal;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
-import com.continuuity.weave.api.WeaveContext;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.discovery.DiscoveryService;
@@ -56,6 +55,7 @@ public final class WeaveContainerMain extends ServiceMain {
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
     String runnableName = System.getenv(EnvKeys.WEAVE_RUNNABLE_NAME);
     int instanceId = Integer.parseInt(System.getenv(EnvKeys.WEAVE_INSTANCE_ID));
+    int instanceCount = Integer.parseInt(System.getenv(EnvKeys.WEAVE_INSTANCE_COUNT));
 
     ZKClientService zkClientService = ZKClientServices.delegate(
       ZKClients.reWatchOnExpire(
@@ -69,9 +69,9 @@ public final class WeaveContainerMain extends ServiceMain {
     
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
     ContainerInfo containerInfo = new ContainerInfo();
-    WeaveContext context = new BasicWeaveContext(containerInfo.getHost(), args,
+    BasicWeaveContext context = new BasicWeaveContext(runId, appRunId, containerInfo.getHost(), args,
                                                   decodeArgs(System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS)),
-                                                  runnableSpec, instanceId, discoveryService);
+                                                  runnableSpec, instanceId, discoveryService, instanceCount);
 
     Service service = new ZKServiceWrapper(
       zkClientService,

@@ -20,6 +20,12 @@ package com.continuuity.weave.api;
  */
 public interface WeaveRunner {
 
+  interface LiveInfo {
+    String getApplicationName();
+
+    Iterable<RunId> getRunIds();
+  }
+
   /**
    * Prepares to run the given {@link WeaveRunnable} with {@link ResourceSpecification#BASIC} resource specification.
    * @param runnable The runnable to run through Weave when {@link WeavePreparer#start()} is called.
@@ -57,4 +63,11 @@ public interface WeaveRunner {
    *         instances of the application when {@link Iterable#iterator()} is invoked.
    */
   Iterable<WeaveController> lookup(String applicationName);
+
+  /**
+   * Gets an {@link Iterable} of {@link LiveInfo}.
+   * @return A live {@link Iterable} that gives the latest set of application informations that have running instances
+   *         when {@link Iterable#iterator()}} is invoked.
+   */
+  Iterable<LiveInfo> lookupLive();
 }

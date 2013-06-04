@@ -92,7 +92,7 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
   private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
-  private static final int APP_MASTER_MEMORY_MB = 256;
+  private static final int APP_MASTER_MEMORY_MB = 1024;
 
   private final WeaveSpecification weaveSpec;
   private final YarnClient yarnClient;
@@ -195,9 +195,11 @@ final class YarnWeavePreparer implements WeavePreparer {
       createContainerJar(createBundler(), localResources);
       populateRunnableResources(weaveSpec, transformedLocalFiles);
       saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
+      saveLogback(localResources);
       saveLauncher(localResources);
       saveKafka(localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
+                                                     "logback-template.xml",
                                                      "container.jar",
                                                      "launcher.jar"));
 
@@ -224,6 +226,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
         .put(EnvKeys.WEAVE_APP_ID, Integer.toString(response.getApplicationId().getId()))
         .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME, Long.toString(response.getApplicationId().getClusterTimestamp()))
+        .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
         .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
         .put(EnvKeys.WEAVE_APPLICATION_ARGS, encodeArguments(arguments))
         .put(EnvKeys.WEAVE_RUNNABLE_ARGS, encodeRunnableArguments(runnableArgs))
@@ -359,6 +362,14 @@ final class YarnWeavePreparer implements WeavePreparer {
     localResources.put("weaveSpec.json", YarnUtils.createLocalResource(location));
   }
 
+  private void saveLogback(Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Create and copy logback-template.xml");
+    Location location = copyFromURL(getClass().getClassLoader().getResource("logback-template.xml"),
+                                    createTempLocation("logback-template", ".xml"));
+    LOG.debug("Done logback-template.xml");
+    localResources.put("logback-template.xml", YarnUtils.createLocalResource(location));
+  }
+
   /**
    * Creates the launcher.jar.
    */
@@ -392,18 +403,8 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Copy kafka.tgz");
-    Location location = createTempLocation("kafka", ".tgz");
-    InputStream is = getClass().getClassLoader().getResourceAsStream(KAFKA_ARCHIVE);
-    try {
-      OutputStream os = location.getOutputStream();
-      try {
-        ByteStreams.copy(is, os);
-      } finally {
-        os.close();
-      }
-    } finally {
-      is.close();
-    }
+    Location location = copyFromURL(getClass().getClassLoader().getResource(KAFKA_ARCHIVE),
+                                    createTempLocation("kafka", ".tgz"));
     LOG.debug("Done kafka.tgz");
     LocalResource localResource = YarnUtils.createLocalResource(location);
     localResource.setType(LocalResourceType.ARCHIVE);
@@ -458,10 +459,13 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private Location createTempLocation(String path, String suffix) {
     try {
-      return locationFactory.create(String.format("/%s/%s/%s",
-                                                  weaveSpec.getName(), runId.getId(), path)).getTempFile(suffix);
+      return getAppLocation().append(path).getTempFile(suffix);
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
+  }
+
+  private Location getAppLocation() {
+    return locationFactory.create(String.format("/%s/%s", weaveSpec.getName(), runId.getId()));
   }
 }

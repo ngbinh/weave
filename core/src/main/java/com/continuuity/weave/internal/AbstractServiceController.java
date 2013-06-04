@@ -21,6 +21,7 @@ import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.json.StateNodeCodec;
+import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.Messages;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.internal.state.SystemMessages;
@@ -53,9 +54,9 @@ public abstract class AbstractServiceController implements ServiceController {
   private final RunId runId;
   private final AtomicReference<State> state;
   private final ListenerExecutors listenerExecutors;
-  private final ZKClient zkClient;
   private final AtomicReference<byte[]> liveNodeData;
   private Cancellable watchCanceller;
+  protected final ZKClient zkClient;
 
   protected AbstractServiceController(ZKClient zkClient, RunId runId) {
     this.zkClient = zkClient;
@@ -98,6 +99,10 @@ public abstract class AbstractServiceController implements ServiceController {
     return liveNodeData.get();
   }
 
+  protected <V> ListenableFuture<V> sendMessage(Message message, V result) {
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(), message, result);
+  }
+
   @Override
   public RunId getRunId() {
     return runId;
@@ -105,12 +110,12 @@ public abstract class AbstractServiceController implements ServiceController {
 
   @Override
   public ListenableFuture<Command> sendCommand(Command command) {
-    return ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"), Messages.createForAll(command), command);
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(), Messages.createForAll(command), command);
   }
 
   @Override
   public ListenableFuture<Command> sendCommand(String runnableName, Command command) {
-    return ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"),
+    return ZKMessages.sendMessage(zkClient, getMessagePrefix(),
                                   Messages.createForRunnable(runnableName, command), command);
   }
 
@@ -125,7 +130,7 @@ public abstract class AbstractServiceController implements ServiceController {
     if (oldState == null || oldState == State.STARTING || oldState == State.RUNNING) {
       watchCanceller.cancel();
       return Futures.transform(
-        ZKMessages.sendMessage(zkClient, getZKPath("messages/msg"), SystemMessages.stopApplication(),
+        ZKMessages.sendMessage(zkClient, getMessagePrefix(), SystemMessages.stopApplication(),
                                State.TERMINATED), new AsyncFunction<State, State>() {
         @Override
         public ListenableFuture<State> apply(State input) throws Exception {
@@ -153,8 +158,32 @@ public abstract class AbstractServiceController implements ServiceController {
   }
 
   @Override
-  public void addListener(Listener listener, Executor executor) {
-    listenerExecutors.addListener(listener, executor);
+  public Cancellable addListener(Listener listener, Executor executor) {
+    return listenerExecutors.addListener(listener, executor);
+  }
+
+  protected final String getMessagePrefix() {
+    return getZKPath("messages/msg");
+  }
+
+  protected final void fireStateChange(StateNode state) {
+    switch (state.getState()) {
+      case STARTING:
+        listenerExecutors.starting();
+        break;
+      case RUNNING:
+        listenerExecutors.running();
+        break;
+      case STOPPING:
+        listenerExecutors.stopping();
+        break;
+      case TERMINATED:
+        listenerExecutors.terminated();
+        break;
+      case FAILED:
+        listenerExecutors.failed(state.getStackTraces());
+        break;
+    }
   }
 
   private StateNode decode(NodeData nodeData) {
@@ -176,32 +205,19 @@ public abstract class AbstractServiceController implements ServiceController {
     return String.format("/%s/%s", runId.getId(), path);
   }
 
-  private void fireStateChange(StateNode state) {
-    switch (state.getState()) {
-      case STARTING:
-        listenerExecutors.starting();
-        break;
-      case RUNNING:
-        listenerExecutors.running();
-        break;
-      case STOPPING:
-        listenerExecutors.stopping();
-        break;
-      case TERMINATED:
-        listenerExecutors.terminated();
-        break;
-      case FAILED:
-        listenerExecutors.failed(state.getStackTraces());
-        break;
-    }
-  }
-
   private static final class ListenerExecutors implements Listener {
     private final Queue<ListenerExecutor> listeners = new ConcurrentLinkedQueue<ListenerExecutor>();
     private final ConcurrentMap<State, Boolean> callStates = Maps.newConcurrentMap();
 
-    void addListener(Listener listener, Executor executor) {
-      listeners.add(new ListenerExecutor(listener, executor));
+    Cancellable addListener(Listener listener, Executor executor) {
+      final ListenerExecutor listenerExecutor = new ListenerExecutor(listener, executor);
+      listeners.add(listenerExecutor);
+      return new Cancellable() {
+        @Override
+        public void cancel() {
+          listeners.remove(listenerExecutor);
+        }
+      };
     }
 
     @Override

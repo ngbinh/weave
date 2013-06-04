@@ -44,7 +44,7 @@ public final class LogEntryDecoder implements JsonDeserializer<LogEntry> {
     final String className = jsonObj.get("className").getAsString();
     final String method = jsonObj.get("method").getAsString();
     final String file = jsonObj.get("file").getAsString();
-    final int line = jsonObj.get("line").getAsInt();
+    final String line = jsonObj.get("line").getAsString();
     final String thread = jsonObj.get("thread").getAsString();
     final String message = jsonObj.get("message").getAsString();
 
@@ -89,7 +89,11 @@ public final class LogEntryDecoder implements JsonDeserializer<LogEntry> {
 
       @Override
       public int getLineNumber() {
-        return line;
+        if (line.equals("?")) {
+          return -1;
+        } else {
+          return Integer.parseInt(line);
+        }
       }
 
       @Override

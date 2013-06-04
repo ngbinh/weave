@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.api;
 
+import com.continuuity.weave.common.Cancellable;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import java.util.concurrent.Executor;
@@ -71,8 +72,9 @@ public interface ServiceController {
    * Adds a listener to watch for state changes of the service.
    * @param listener The listener to attach.
    * @param executor An executor that executes calls to the given listener.
+   * @return A {@link Cancellable} for removing the listener.
    */
-  void addListener(Listener listener, Executor executor);
+  Cancellable addListener(Listener listener, Executor executor);
 
   /**
    * Represents the service state.

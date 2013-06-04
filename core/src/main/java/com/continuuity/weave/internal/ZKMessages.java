@@ -19,10 +19,10 @@ import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCodec;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKOperations;
-import com.google.common.base.Function;
-import com.google.common.util.concurrent.AsyncFunction;
+import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.SettableFuture;
 import org.apache.zookeeper.CreateMode;
 
 /**
@@ -43,17 +43,46 @@ public final class ZKMessages {
    *         to the future returned.
    */
   public static <V> ListenableFuture<V> sendMessage(final ZKClient zkClient, String messagePathPrefix,
-                                                    final Message message, final V completionResult) {
-    return Futures.transform(zkClient.create(messagePathPrefix, MessageCodec.encode(message),
-                                             CreateMode.PERSISTENT_SEQUENTIAL), new AsyncFunction<String, V>() {
+                                                    Message message, final V completionResult) {
+    SettableFuture<V> result = SettableFuture.create();
+    sendMessage(zkClient, messagePathPrefix, message, result, completionResult);
+    return result;
+  }
+
+  /**
+   * Creates a message node in zookeeper. The message node created is a PERSISTENT_SEQUENTIAL node.
+   *
+   * @param zkClient The ZooKeeper client for interacting with ZooKeeper.
+   * @param messagePathPrefix ZooKeeper path prefix for the message node.
+   * @param message The {@link Message} object for the content of the message node.
+   * @param completion A {@link SettableFuture} to reflect the result of message process completion.
+   * @param completionResult Object to set to the result future when the message is processed.
+   * @param <V> Type of the completion result.
+   */
+  public static <V> void sendMessage(final ZKClient zkClient, String messagePathPrefix, Message message,
+                                     final SettableFuture<V> completion, final V completionResult) {
+
+    // Creates a message and watch for its deletion for completion.
+    Futures.addCallback(zkClient.create(messagePathPrefix, MessageCodec.encode(message),
+                                        CreateMode.PERSISTENT_SEQUENTIAL), new FutureCallback<String>() {
       @Override
-      public ListenableFuture<V> apply(String path) throws Exception {
-        return Futures.transform(ZKOperations.watchDeleted(zkClient, path), new Function<String, V>() {
+      public void onSuccess(String path) {
+        Futures.addCallback(ZKOperations.watchDeleted(zkClient, path), new FutureCallback<String>() {
           @Override
-          public V apply(String path) {
-            return completionResult;
+          public void onSuccess(String result) {
+            completion.set(completionResult);
+          }
+
+          @Override
+          public void onFailure(Throwable t) {
+            completion.setException(t);
           }
         });
+      }
+
+      @Override
+      public void onFailure(Throwable t) {
+        completion.setException(t);
       }
     });
   }
