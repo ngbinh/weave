@@ -475,3 +475,6 @@ footer a:hover {
   padding: 10px;
 }
 
+.syntaxhighlighter .toolbar {
+  display: none;
+}
