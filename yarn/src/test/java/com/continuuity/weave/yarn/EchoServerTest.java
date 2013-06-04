@@ -3,6 +3,7 @@ package com.continuuity.weave.yarn;
 import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
+import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
@@ -64,7 +65,7 @@ public class EchoServerTest {
     Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
 
     Iterable<Discoverable> echoServices = controller.discoverService("echo");
-    Assert.assertTrue(waitForEndpoints(echoServices, 2, 60));
+    Assert.assertTrue(waitForSize(echoServices, 2, 60));
 
     for (Discoverable discoverable : echoServices) {
       String msg = "Hello: " + discoverable.getSocketAddress();
@@ -83,22 +84,25 @@ public class EchoServerTest {
     }
 
     controller.changeInstances("EchoServer", 3);
-    Assert.assertTrue(waitForEndpoints(echoServices, 3, 60));
+    Assert.assertTrue(waitForSize(echoServices, 3, 60));
 
     controller.changeInstances("EchoServer", 1);
-    Assert.assertTrue(waitForEndpoints(echoServices, 1, 60));
+    Assert.assertTrue(waitForSize(echoServices, 1, 60));
+
+    Assert.assertEquals(1, Iterables.size(runnerService.lookupLive()));
 
     for (WeaveController c : runnerService.lookup("EchoServer")) {
       LOG.info("Stopping application: " + c.getRunId());
       c.stop().get();
     }
 
-    TimeUnit.SECONDS.sleep(2);
+    Iterable<WeaveRunner.LiveInfo> apps = runnerService.lookupLive();
+    Assert.assertTrue(waitForSize(apps, 0, 60));
   }
 
-  private boolean waitForEndpoints(Iterable<Discoverable> endpoints, int count, int limit) throws InterruptedException {
+  private <T> boolean waitForSize(Iterable<T> iterable, int count, int limit) throws InterruptedException {
     int trial = 0;
-    while (Iterables.size(endpoints) != count && trial < limit) {
+    while (Iterables.size(iterable) != count && trial < limit) {
       TimeUnit.SECONDS.sleep(1);
       trial++;
     }

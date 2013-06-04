@@ -64,16 +64,18 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   public ZKWeaveController(ZKClient zkClient, RunId runId, Iterable<LogHandler> logHandlers) {
     super(zkClient, runId);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
-    Iterables.addAll(this.logHandlers, logHandlers);
     this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
     this.discoveryServiceClient = new ZKDiscoveryService(zkClient);
     this.logPoller = createLogPoller();
+    Iterables.addAll(this.logHandlers, logHandlers);
   }
 
   @Override
   public void start() {
     kafkaClient.startAndWait();
-    logPoller.start();
+    if (!logHandlers.isEmpty()) {
+      logPoller.start();
+    }
     super.start();
   }
 
@@ -113,8 +115,11 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   }
 
   @Override
-  public void addLogHandler(LogHandler handler) {
+  public synchronized void addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
+    if (!logPoller.isAlive()) {
+      logPoller.start();
+    }
   }
 
   @Override
