@@ -10,6 +10,8 @@
     <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print" />
 
     <link href='http://fonts.googleapis.com/css?family=Maven+Pro:400,500,700,900' rel='stylesheet' type='text/css'>
+    <link href="third_party/syntaxhighlighter_3.0.83/styles/shCore.css" rel="stylesheet" type="text/css" />
+    <link href="third_party/syntaxhighlighter_3.0.83/styles/shThemeRDark.css" rel="stylesheet" type="text/css" />
 
     <!--[if lt IE 9]>
     <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
@@ -17,8 +19,14 @@
 
 <link rel="shortcut icon" href="http://www.continuuity.com/wp-content/themes/continuuity/images/favicon.ico">
 
+    <script type="text/javascript" src="third_party/syntaxhighlighter_3.0.83/scripts/shCore.js"></script>
+    <script type="text/javascript" src="third_party/syntaxhighlighter_3.0.83/scripts/shBrushJScript.js"></script>
+    <script type="text/javascript" src="third_party/syntaxhighlighter_3.0.83/scripts/shBrushJava.js"></script>
+    <script type="text/javascript" src="third_party/syntaxhighlighter_3.0.83/scripts/shBrushBash.js"></script>
+
     <title>Weave by Continuuity</title>
-  </head>
+
+    </head>
 
   <body>
     <header>
@@ -60,7 +68,7 @@
 
           <h4>Building the Weave Library</h4>
 
-          <pre>$ git clone http://github.com/continuuity/weave.git
+          <pre class="brush: bash">$ git clone http://github.com/continuuity/weave.git
 $ cd weave
 $ mvn install</pre>
 
@@ -69,7 +77,7 @@ $ mvn install</pre>
           <p>Let's take a simple example of building an <code>EchoServer</code> in Weave. Traditionally, when you build a server as simple
           as this, you add logic within a <code>Runnable</code> implementation to run it in within a <code>Thread</code> using appropriate <code>ExecutorService</code>.</p>
 
-          <pre>public class EchoServer implements Runnable {
+          <pre class="brush: java">public class EchoServer implements Runnable {
   private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
   private final ServerSocket serverSocket;
 
@@ -89,7 +97,7 @@ $ mvn install</pre>
           <p>Defines an implementation of <code>Runnable</code> that implements method <code>run</code>. Now, the <code>EchoServer</code> which is a <code>Runnable</code> can be
           executed by <code>ExecutorService</code> in a <code>Thread</code>.</p>
 
-          <pre>...
+          <pre class="brush: java">...
 ExecutorService service = Executors.newFixedThreadPool(2);
 service.submit(new EchoServer());
 ...</pre>
@@ -98,7 +106,7 @@ service.submit(new EchoServer());
 
           <h4>Implementing WeaveRunnable</h4>
 
-          <pre>public class EchoServer implements WeaveRunnable {
+          <pre class="brush: java">public class EchoServer implements WeaveRunnable {
   private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
   private final ServerSocket serverSocket;
   private final int port;
@@ -120,7 +128,7 @@ service.submit(new EchoServer());
 
           <h4>Starting the YARN Runner Service</h4>
 
-          <pre>WeaveRunnerService runnerService = new YarnWeaveRunnerService(
+          <pre class="brush: java">WeaveRunnerService runnerService = new YarnWeaveRunnerService(
   new YarnConfiguration(), zkServer.getConnectionString());
 runnerService.startAndWait();</pre>
 
@@ -128,7 +136,7 @@ runnerService.startAndWait();</pre>
 
           <h4>Preparing to Run WeaveRunnable</h4>
 
-          <pre>WeaveController controller = runnerService.prepare(new EchoServer())
+          <pre class="brush: java">WeaveController controller = runnerService.prepare(new EchoServer())
   .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
   .start();</pre>
 
@@ -136,7 +144,7 @@ runnerService.startAndWait();</pre>
 
           <h4>Attaching Listeners for State Transitions</h4>
 
-          <pre>controller.addListener(new ListenerAdapter() {
+          <pre class="brush: java">controller.addListener(new ListenerAdapter() {
   @Override
   public void running() {
     LOG.info('Echo Server Started');
@@ -147,7 +155,7 @@ runnerService.startAndWait();</pre>
 
           <h4>Stopping WeaveRunnable</h4>
 
-          <pre>controller.stop().get();</pre>
+          <pre class="brush: java">controller.stop().get();</pre>
 
           <p>This will shutdown the application master and all the containers configured during prepare. Note, in the code above you do not need to specify the archives
           that need to be shipped to remote machines on the YARN cluster (were the container will run). It's all taken care by Weave.</p>
@@ -156,11 +164,11 @@ runnerService.startAndWait();</pre>
 
           <h3><a name="discovery-service" class="anchor" href="#discovery-service"><span class="octicon octicon-link"></span></a>Discovery Service</h3>
 
-          <p>What use is the <code>EchoServer</code> if it's not discoverable? Meaning, if clients who want to access the server running in the cluster are not able to connect to the service and talk to it, the purpose of the <code>EchoServer</code> is defeated. Weave address this issue by exposing a discovery service that allows Weave application to announce themselves on the cluster and the client can discover and connect to running applications. Let's see how we can add this capability to the <code>EchoServer</code>. In order to do so, the <code>EchoServer</code> will have to start on a port that's available on the machine it is started on, and then announce it's presence via the Weave discovery service API. </p>
+          <p>What use is the <code>EchoServer</code> if it's not discoverable? Meaning, if clients who want to access the server running in the cluster are not able to connect to the service and talk to it, the purpose of the <code>EchoServer</code> is defeated. Weave addresses this issue by exposing a discovery service that allows Weave application to announce themselves on the cluster and the client can discover and connect to running applications. Let's see how we can add this capability to the <code>EchoServer</code>. In order to do so, the <code>EchoServer</code> will have to start on a port that's available on the machine it is started on, and then announce it's presence via the Weave discovery service API. </p>
 
           <h4>WeaveRunnable with Discovery Announce</h4>
 
-          <pre>public class EchoServer extends AbstractWeaveRunnable {
+          <pre class="brush: java">public class EchoServer extends AbstractWeaveRunnable {
   private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
 
   @Override
@@ -185,7 +193,7 @@ runnerService.startAndWait();</pre>
 
           <h4>Client Discovery</h4>
 
-          <pre>...
+          <pre class="brush: java">...
 WeaveController controller = ....
 ...
 Iterable echoServices = controller.discoverService("echo");
@@ -202,7 +210,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h4>SLF4J logger for logging</h4>
 
-          <pre>public class EchoServer extends AbstractWeaveRunnable {
+          <pre class="brush: java">public class EchoServer extends AbstractWeaveRunnable {
   private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
   ...
   @Override
@@ -220,7 +228,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h4>Specifying Resource Constraints for Container</h4>
 
-          <pre>WeaveController controller = runnerService.prepare(new EchoServer(port),
+          <pre class="brush: java">WeaveController controller = runnerService.prepare(new EchoServer(port),
   ResourceSpecification().Builder().with()
     .setCores(1)
     .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
@@ -238,7 +246,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h4>Specifying WeaveApplication</h4>
 
-          <pre>public class WebApplication implements WeaveApplication {
+          <pre class="brush: java">public class WebApplication implements WeaveApplication {
   @Override
   public WeaveSpecification configure() {
     return WeaveSpecification().Builder.with()
@@ -258,7 +266,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h4>Ordering</h4>
 
-          <pre>public class WebApplication implements WeaveApplication {
+          <pre class="brush: java">public class WebApplication implements WeaveApplication {
   @Override
   public WeaveSpecification configure() {
     return WeaveSpecification().Builder.with()
@@ -350,6 +358,11 @@ for(Discoverable discoverable : echoServices) {
       </div>
     </div>
 
+    <!-- Activate syntax highlighter.-->
+    <script type="text/javascript">
+      SyntaxHighlighter.defaults["gutter"] = false;
+      SyntaxHighlighter.all()
+    </script>
 
   </body>
 </html>

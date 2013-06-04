@@ -100,7 +100,7 @@ header h2 {
 }
 
 #main-content {
-  width: 690px;
+  width: 800px;
   float: left;
 }
 
@@ -157,10 +157,10 @@ aside a.button {
 }
 
 code, pre {
-  font-family: Monaco, "Bitstream Vera Sans Mono", "Lucida Console", Terminal, monospace;
+  font-family: "Consolas", "Bitstream Vera Sans Mono", "Courier New", Courier, monospace !important;
   color: #222;
   margin-bottom: 30px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 code {
@@ -469,3 +469,9 @@ footer a:hover {
 
 /* Mobile Portrait Size to Mobile Landscape Size (devices and browsers) */
 @media only screen and (max-width: 479px) {}
+
+/* Syntax highlighter overwrites */
+.syntaxhighlighter {
+  padding: 10px;
+}
+
