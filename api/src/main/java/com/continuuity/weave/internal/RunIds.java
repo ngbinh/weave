@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal;
 
 import com.continuuity.weave.api.RunId;
+import com.google.common.base.Preconditions;
 
 import java.util.UUID;
 
@@ -40,6 +41,7 @@ public final class RunIds {
     final String id;
 
     private RunIdImpl(String id) {
+      Preconditions.checkArgument(id != null, "RunId cannot be null.");
       this.id = id;
     }
 
@@ -51,6 +53,22 @@ public final class RunIds {
     @Override
     public String toString() {
       return getId();
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      }
+      if (other == null || !(other instanceof RunId)) {
+        return false;
+      }
+      return id.equals(((RunId)other).getId());
+    }
+
+    @Override
+    public int hashCode() {
+      return id.hashCode();
     }
   }
 }
