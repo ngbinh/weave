@@ -123,7 +123,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   @Override
   public WeaveController lookup(String applicationName, RunId runId) {
     ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
-    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient,
+    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, null,
                                                              runId, ImmutableList.<LogHandler>of());
     controller.start();
     return controller;
@@ -270,7 +270,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
                 new Function<RunId, WeaveController>() {
                   @Override
                   public WeaveController apply(RunId runId) {
-                    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, runId,
+                    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, null, runId,
                                                                              ImmutableList.<LogHandler>of());
                     controller.start();
                     return controller;

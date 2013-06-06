@@ -215,8 +215,9 @@ public final class ApplicationMasterService implements Service {
 
     LOG.info("Stop application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
 
-    Set<ContainerId> ids = Sets.newHashSet(runningContainers.getContainerIds());
+    instanceChangeExecutor.shutdownNow();
 
+    Set<ContainerId> ids = Sets.newHashSet(runningContainers.getContainerIds());
     runningContainers.stopAll();
 
     int count = 0;
@@ -230,8 +231,6 @@ public final class ApplicationMasterService implements Service {
 
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
-
-    instanceChangeExecutor.shutdownNow();
 
     // App location cleanup
     cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
@@ -273,7 +272,19 @@ public final class ApplicationMasterService implements Service {
     return new LoggerContextListenerAdapter(true) {
       @Override
       public void onStop(LoggerContext context) {
-        kafkaServer.stopAndWait();
+        // Sleep a bit before stopping kafka to have chance for client to fetch the last log.
+        try {
+          TimeUnit.SECONDS.sleep(2);
+        } catch (InterruptedException e) {
+          // Ignored.
+        } finally {
+          try {
+            kafkaServer.stop().get(5, TimeUnit.SECONDS);
+          } catch (Exception e) {
+            // Cannot use logger here
+            e.printStackTrace(System.err);
+          }
+        }
       }
     };
   }
@@ -306,6 +317,11 @@ public final class ApplicationMasterService implements Service {
       // Assign runnable to container
       launchRunnable(amResponse.getAllocatedContainers(), provisioning);
       handleCompleted(amResponse.getCompletedContainersStatuses());
+
+      if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
+        LOG.info("All containers completed. Shutting down application master.");
+        break;
+      }
       TimeUnit.SECONDS.sleep(1);
     }
   }

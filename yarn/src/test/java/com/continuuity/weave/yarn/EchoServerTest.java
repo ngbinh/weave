@@ -1,24 +1,30 @@
+/*
+ * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
-import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.Discoverable;
-import com.continuuity.weave.filesystem.LocalLocationFactory;
-import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
 import com.google.common.base.Charsets;
-import com.google.common.base.Joiner;
-import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
-import com.google.common.io.Files;
 import com.google.common.io.LineReader;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.server.MiniYARNCluster;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -39,14 +45,16 @@ import java.util.concurrent.TimeUnit;
 /**
  *
  */
-public class EchoServerTest {
+public class EchoServerTest extends ClusterTestBase {
 
   private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
 
   @Test
   public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException {
-    WeaveController controller = runnerService.prepare(new EchoServer(),
-                                                       ResourceSpecification.Builder.with()
+    WeaveRunner runner = getWeaveRunner();
+
+    WeaveController controller = runner.prepare(new EchoServer(),
+                                                ResourceSpecification.Builder.with()
                                                          .setCores(1)
                                                          .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
                                                          .setInstances(2)
@@ -89,15 +97,18 @@ public class EchoServerTest {
     controller.changeInstances("EchoServer", 1);
     Assert.assertTrue(waitForSize(echoServices, 1, 60));
 
-    Assert.assertEquals(1, Iterables.size(runnerService.lookupLive()));
+    Assert.assertEquals(1, Iterables.size(runner.lookupLive()));
 
-    for (WeaveController c : runnerService.lookup("EchoServer")) {
+    for (WeaveController c : runner.lookup("EchoServer")) {
       LOG.info("Stopping application: " + c.getRunId());
       c.stop().get();
     }
 
-    Iterable<WeaveRunner.LiveInfo> apps = runnerService.lookupLive();
+    Iterable<WeaveRunner.LiveInfo> apps = runner.lookupLive();
     Assert.assertTrue(waitForSize(apps, 0, 60));
+
+    // Sleep a bit before exiting.
+    TimeUnit.SECONDS.sleep(2);
   }
 
   private <T> boolean waitForSize(Iterable<T> iterable, int count, int limit) throws InterruptedException {
@@ -111,38 +122,11 @@ public class EchoServerTest {
 
   @Before
   public void init() throws IOException {
-    // Starts Zookeeper
-    zkServer = InMemoryZKServer.builder().build();
-    zkServer.startAndWait();
-
-    // Start YARN mini cluster
-    YarnConfiguration config = new YarnConfiguration(new Configuration());
-
-    // TODO: Hack
-    config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
-      ".fifo.FifoScheduler");
-    config.set("yarn.minicluster.fixed.ports", "true");
-    config.set("yarn.application.classpath",
-               Joiner.on(',').join(
-                 Splitter.on(System.getProperty("path.separator")).split(System.getProperty("java.class.path"))));
-
-    cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
-    cluster.init(config);
-    cluster.start();
-
-    runnerService = new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
-                                               new LocalLocationFactory(Files.createTempDir()));
-    runnerService.startAndWait();
+    doInit();
   }
 
   @After
   public void finish() {
-    runnerService.stopAndWait();
-    cluster.stop();
-    zkServer.stopAndWait();
+    doFinish();
   }
-
-  private InMemoryZKServer zkServer;
-  private MiniYARNCluster cluster;
-  private WeaveRunnerService runnerService;
 }

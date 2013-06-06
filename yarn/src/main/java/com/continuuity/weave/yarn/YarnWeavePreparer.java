@@ -34,12 +34,14 @@ import com.continuuity.weave.internal.WeaveContainerMain;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
+import com.continuuity.weave.internal.utils.Dependencies;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Predicates;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
@@ -59,6 +61,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.LocalResource;
@@ -182,9 +185,10 @@ final class YarnWeavePreparer implements WeavePreparer {
     // TODO: Unify this with {@link ProcessLauncher}
     try {
       GetNewApplicationResponse response = yarnClient.getNewApplication();
+      ApplicationId applicationId = response.getApplicationId();
 
       ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
-      appSubmissionContext.setApplicationId(response.getApplicationId());
+      appSubmissionContext.setApplicationId(applicationId);
       appSubmissionContext.setApplicationName(weaveSpec.getName());
 
       Map<String, LocalResource> localResources = Maps.newHashMap();
@@ -224,14 +228,15 @@ final class YarnWeavePreparer implements WeavePreparer {
       ));
 
       containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
-        .put(EnvKeys.WEAVE_APP_ID, Integer.toString(response.getApplicationId().getId()))
-        .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME, Long.toString(response.getApplicationId().getClusterTimestamp()))
-        .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
-        .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-        .put(EnvKeys.WEAVE_APPLICATION_ARGS, encodeArguments(arguments))
-        .put(EnvKeys.WEAVE_RUNNABLE_ARGS, encodeRunnableArguments(runnableArgs))
-        .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-        .build()
+                                              .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
+                                              .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
+                                                   Long.toString(applicationId.getClusterTimestamp()))
+                                              .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+                                              .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+                                              .put(EnvKeys.WEAVE_APPLICATION_ARGS, encodeArguments(arguments))
+                                              .put(EnvKeys.WEAVE_RUNNABLE_ARGS, encodeRunnableArguments(runnableArgs))
+                                              .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+                                              .build()
       );
       Resource capability = Records.newRecord(Resource.class);
       capability.setMemory(APP_MASTER_MEMORY_MB);
@@ -241,14 +246,14 @@ final class YarnWeavePreparer implements WeavePreparer {
 
       yarnClient.submitApplication(appSubmissionContext);
 
-      return createController(runId, logHandlers);
+      return createController(applicationId, runId, logHandlers);
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
   }
 
-  private WeaveController createController(RunId runId, Iterable<LogHandler> logHandlers) {
-    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, runId, logHandlers);
+  private WeaveController createController(ApplicationId applicationId, RunId runId, Iterable<LogHandler> logHandlers) {
+    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, applicationId, runId, logHandlers);
     controller.start();
     return controller;
   }
@@ -378,18 +383,35 @@ final class YarnWeavePreparer implements WeavePreparer {
     LOG.debug("Create and copy launcher.jar");
     Location location = createTempLocation("launcher", ".jar");
 
-    // Create a jar file with the WeaveLauncher optionally a json serialized classpath.json in it.
-    String launcherName = WeaveLauncher.class.getName().replace('.', '/') + ".class";
-    JarOutputStream jarOut = new JarOutputStream(location.getOutputStream());
-    try {
-      jarOut.putNextEntry(new JarEntry(launcherName));
-      InputStream is = getClass().getClassLoader().getResourceAsStream(launcherName);
-      try {
-        ByteStreams.copy(is, jarOut);
-      } finally {
-        is.close();
-      }
+    final String launcherName = WeaveLauncher.class.getName();
 
+    // Create a jar file with the WeaveLauncher optionally a json serialized classpath.json in it.
+    final JarOutputStream jarOut = new JarOutputStream(location.getOutputStream());
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+    if (classLoader == null) {
+      classLoader = getClass().getClassLoader();
+    }
+    Dependencies.findClassDependencies(classLoader, new Dependencies.ClassAcceptor() {
+      @Override
+      public boolean accept(String className, URL classUrl, URL classPathUrl) {
+        Preconditions.checkArgument(className.startsWith(launcherName),
+                                    "Launcher jar should not have dependencies: %s", className);
+        try {
+          jarOut.putNextEntry(new JarEntry(className.replace('.', '/') + ".class"));
+          InputStream is = classUrl.openStream();
+          try {
+            ByteStreams.copy(is, jarOut);
+          } finally {
+            is.close();
+          }
+        } catch (IOException e) {
+          throw Throwables.propagate(e);
+        }
+        return true;
+      }
+    }, WeaveLauncher.class.getName());
+
+    try {
       if (!classPaths.isEmpty()) {
         jarOut.putNextEntry(new JarEntry("classpath"));
         jarOut.write(Joiner.on(':').join(classPaths).getBytes(Charsets.UTF_8));
