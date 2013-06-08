@@ -41,29 +41,6 @@
       <div class="inner clearfix">
         <section id="main-content" class="markdown-body entry-content" itemprop="mainContentOfPage">
 
-          <p>
-          At <a href="http://www.continuuity.com/">Continuuity</a>, we use <a href="http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html">Apache YARN</a> as an integral part of our products because of its vision to support a diverse set of applications and processing patterns. One such product is BigFlow, our realtime distributed stream-processing engine. Apache YARN is used to run and manage BigFlow applications including lifecycle and runtime elasticity. During our journey with YARN we have come to the realization that it is extremely powerful but its full capability is challenging to leverage.  It is difficult to get started, hard to test and debug, and complex to build new kinds of non-MapReduce applications and frameworks on.</p>
-
-          <h3><a name="what-is-weave-" class="anchor" href="#what-is-weave-"><span class="octicon octicon-link"></span></a>What is Weave?</h3>
-
-          <p>Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to running threads. Weave is <strong>NOT</strong> a replacement for Apache YARN.  It is instead a value-added framework that operates on top of Apache YARN.</p>
-
-          <h3><a name="why-do-i-need-weave-" class="anchor" href="#why-do-i-need-weave-"><span class="octicon octicon-link"></span></a>Why do I need Weave?</h3>
-
-          <p>Weave dramatically simplifies and reduces your development efforts, enabling you to quickly and easily manage your distributed applications through its simplified abstraction layer built on YARN. YARN can be quite difficult to use and requires a large ramp up effort since it is built specifically for MapReduce and is typically meant for managing batch jobs. YARN, however, can be used as a generalized custom resource management tool that can run any type of job.  In additon to running batch jobs, cluster can be used for running real time jobs and long running job. Unfortunately, YARN’s capabilities are too low level to allow you to quickly develop an application, requiring a great deal of boilerplate code even for simple applications.  Additionally, its logging output is not available until the application is finished. This becomes a serious challenge when managing long running jobs: since those jobs never finish you cannot view the logs, which makes it very difficult to develop and debug such applications. Finally, YARN does not provide standard support for application lifecycle management, communication between containers and the Application Master, and handling application level errors.</p>
-
-          <p>Continuuity Weave provides you with the following benefits:</p>
-
-          <ul>
-          <li>A simplified API for specifying, running and managing applications</li>
-          <li>A simplified way to specify and manage the stages of the application lifecycle</li>
-          <li>A generic Application Master to better support simple applications</li>
-          <li>Log &amp; metrics aggregation for application</li>
-          <li>Simplified archive management</li>
-          <li>Improved control over application logs, metrics and errors</li>
-          <li>Discovery service</li>
-          </ul>
-
           <h3><a name="getting-started" class="anchor" href="#getting-started"><span class="octicon octicon-link"></span></a>Getting Started</h3>
 
           <h4>Building the Weave Library</h4>
@@ -74,8 +51,8 @@ $ mvn install</pre>
 
           <h3><a name="quick-example" class="anchor" href="#quick-example"><span class="octicon octicon-link"></span></a>Quick Example</h3>
 
-          <p>Let's take a simple example of building an <code>EchoServer</code> in Weave. Traditionally, when you build a server as simple
-          as this, you add logic within a <code>Runnable</code> implementation to run it in within a <code>Thread</code> using appropriate <code>ExecutorService</code>.</p>
+          <p>Let's begin by building a basic <code>EchoServer</code> in Weave. Traditionally, when you build a server as simple
+          as this, you add logic within a <code>Runnable</code> implementation to run it in within a <code>Thread</code> using an appropriate <code>ExecutorService</code>:</p>
 
           <pre class="brush: java">public class EchoServer implements Runnable {
   private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
@@ -94,15 +71,15 @@ $ mvn install</pre>
   }
 }</pre>
 
-          <p>Defines an implementation of <code>Runnable</code> that implements method <code>run</code>. Now, the <code>EchoServer</code> which is a <code>Runnable</code> can be
-          executed by <code>ExecutorService</code> in a <code>Thread</code>.</p>
+          <p>Our example defines an implementation of <code>Runnable</code> that implements the <code>run</code> method. The <code>EchoServer</code> is now a <code>Runnable</code> that can be
+          executed by an <code>ExecutorService</code> in a <code>Thread</code>:</p>
 
           <pre class="brush: java">...
 ExecutorService service = Executors.newFixedThreadPool(2);
 service.submit(new EchoServer());
 ...</pre>
 
-          <p>The above model is something we are all accustomed to.  However, assume you want to run this on a YARN cluster. In order to run on the YARN cluster, you implement <code>WeaveRunnable</code> similar to implementing <code>Runnable</code>. </p>
+          <p>The above model is familiar, but now assume you want to run your EchoServer on a YARN cluster. To do this, all you need to do is implement the <code>WeaveRunnable</code> interface similarly to how you normally implement <code>Runnable</code>: </p>
 
           <h4>Implementing WeaveRunnable</h4>
 
@@ -124,7 +101,7 @@ service.submit(new EchoServer());
   }
 }</pre>
 
-          <p><code>AbstractWeaveRunnable</code> implements <code>WeaveRunnable</code> that implements <code>Runnable</code>.By doing this you can run a <code>WeaveRunnable</code> implementation within a <code>Thread</code> and also in a container on a YARN cluster. In order to run <code>EchoServer</code> on the YARN cluster, you must first create a <code>WeaveRunnerService</code> which is similar to <code>ExecutorService</code>. To run on the YARN cluster you need the YARN cluster configuration and connection string to a running instance of zookeeper service.</p>
+          <p>The <code>EchoServer</code> implements <code>WeaveRunnable</code>, which implements <code>Runnable</code>. By doing this you can run a <code>WeaveRunnable</code> implementation within a <code>Thread</code> and also in a container on a YARN cluster. In order to run <code>EchoServer</code> on the YARN cluster, you must first create a <code>WeaveRunnerService</code>, which is similar to <code>ExecutorService</code>. To run on the YARN cluster, specify the YARN cluster configuration and connection string to a running instance of a Zookeeper service:</p>
 
           <h4>Starting the YARN Runner Service</h4>
 
@@ -132,7 +109,7 @@ service.submit(new EchoServer());
   new YarnConfiguration(), zkServer.getConnectionString());
 runnerService.startAndWait();</pre>
 
-          <p>We have initialized <code>WeaveRunnerService</code> and now can prepare to run the <code>EchoServer</code> on the YARN cluster. In preparation to run <code>EchoServer</code> on the YARN cluster we will attach a log handler that ensures all logs generated by <code>EchoServer</code> across all nodes in the cluster are centralized on the client. </p>
+          <p>We have initialized <code>WeaveRunnerService</code>. We can now prepare to run the <code>EchoServer</code> on the YARN cluster, by attaching a log handler that ensures all logs generated by <code>EchoServer</code> across all nodes in the cluster are centralized on the client: </p>
 
           <h4>Preparing to Run WeaveRunnable</h4>
 
@@ -140,7 +117,7 @@ runnerService.startAndWait();</pre>
   .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
   .start();</pre>
 
-          <p>Now that you have started, prepared and launched <code>EchoServer</code> to run on the YARN cluster, you can attach listeners that allow you to observe state transitions in your application.</p>
+          <p>Now that we have started, prepared, and launched <code>EchoServer</code> to run on the YARN cluster, we can attach listeners that allow you to observe state transitions in your application.</p>
 
           <h4>Attaching Listeners for State Transitions</h4>
 
@@ -151,20 +128,20 @@ runnerService.startAndWait();</pre>
   }
 }</pre>
 
-          <p>In order to stop the running <code>EchoServer</code>, you use the controller returned during the start of the application to stop it, as follows:</p>
+          <p>To stop the running <code>EchoServer</code>, use the controller returned during the start of the application:</p>
 
           <h4>Stopping WeaveRunnable</h4>
 
           <pre class="brush: java">controller.stop().get();</pre>
 
-          <p>This will shutdown the application master and all the containers configured during prepare. Note, in the code above you do not need to specify the archives
-          that need to be shipped to remote machines on the YARN cluster (were the container will run). It's all taken care by Weave.</p>
+          <p>This will shut down the application master and all the configured containers. Note that you do not need to specify the archives
+          that must be shipped to remote machines on the YARN cluster (where the container will run). This is all taken care by Weave.</p>
 
           <h2><a name="advanced-examples" class="anchor" href="#advanced-examples"><span class="octicon octicon-link"></span></a>Advanced Examples</h2>
 
           <h3><a name="discovery-service" class="anchor" href="#discovery-service"><span class="octicon octicon-link"></span></a>Discovery Service</h3>
 
-          <p>What use is the <code>EchoServer</code> if it's not discoverable? Meaning, if clients who want to access the server running in the cluster are not able to connect to the service and talk to it, the purpose of the <code>EchoServer</code> is defeated. Weave addresses this issue by exposing a discovery service that allows Weave application to announce themselves on the cluster and the client can discover and connect to running applications. Let's see how we can add this capability to the <code>EchoServer</code>. In order to do so, the <code>EchoServer</code> will have to start on a port that's available on the machine it is started on, and then announce it's presence via the Weave discovery service API. </p>
+          <p>The <code>EchoServer</code> is useful only if it's discoverable. Clients who want to access the server running in the cluster must be able to connect to the service and talk to it. Weave helps you accomplish this important purpose by exposing a discovery service that allows your running Weave application to announce itself on the cluster, making it possible for the client to discover and connect to it. Let's see how we can add this capability to the <code>EchoServer</code>. The <code>EchoServer</code> will start on a port available on the machine on which it started, and then announce its presence via the Weave discovery service API. In this example, the class extends <code>AbstractWeaveRunnable</code>, which in turn implements the <code>WeaveRunnable</code>, which implements <code>Runnable</code>:</p>
 
           <h4>WeaveRunnable with Discovery Announce</h4>
 
@@ -189,7 +166,7 @@ runnerService.startAndWait();</pre>
   }
 }</pre>
 
-          <p>During the initialization phase of the container, using <code>WeaveContext</code> the port that <code>EchoServer</code> was started on is announced. Next, clients are be able to discover the <em>echo</em> service using a live iterator.</p>
+          <p>During the initialization phase of the container, <code>WeaveContext</code> uses the port on which <code>EchoServer</code> was started to announce its presence. This enables clients to discover the <em>echo</em> service using a live iterator:</p>
 
           <h4>Client Discovery</h4>
 
@@ -206,7 +183,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h3><a name="logging" class="anchor" href="#logging"><span class="octicon octicon-link"></span></a>Logging</h3>
 
-          <p>In the above examples we have seen that when preparing to run a implementation of <code>WeaveRunnable</code> we attach the log handler. It is used for collecting all logs emitted by the containers. Logs are returned to the client to take an action. This way, you don't have to leave your IDE to debug the application you are running on the YARN cluster. Within the container, you use a standard SLF4J logger to log message. The logs are hijacked and sent through the Kafka broker to the client. With every application that is launched, an Kafka broker is started within the Application Master.</p>
+          <p>In the above examples a log handler was attached when preparing to run a implementation of <code>WeaveRunnable</code>. It is used for collecting all logs emitted by the containers. Logs are returned to the client to take an action. This way, when you debug the application you don't have to leave your IDE running on the YARN cluster. Within the container, you use a standard SLF4J logger to log messages. The logs are hijacked and sent through the Kafka broker to the client. With every application that is launched, a Kafka broker is started within the Application Master.</p>
 
           <h4>SLF4J logger for logging</h4>
 
@@ -224,7 +201,7 @@ for(Discoverable discoverable : echoServices) {
 
           <h3><a name="resource-specification" class="anchor" href="#resource-specification"><span class="octicon octicon-link"></span></a>Resource Specification</h3>
 
-          <p>While you prepare implementation of <code>WeaveRunnable</code> to run on the YARN cluster, you provide specification of resources to be used to run the container. Assets like number of cores to be used, amount of memory and number of instances can be specified. This internally will use Cgroups to limit the amount of system resources used by the container.</p>
+          <p>While you prepare an implementation of <code>WeaveRunnable</code> to run on the YARN cluster, you must specify the resources used to run the container. Assets like the number of cores to be used, amount of memory, and number of instances can be specified. This internally uses Cgroups to limit the amount of system resources used by the container:</p>
 
           <h4>Specifying Resource Constraints for Container</h4>
 
@@ -238,11 +215,11 @@ for(Discoverable discoverable : echoServices) {
 
           <h3><a name="archive-management" class="anchor" href="#archive-management"><span class="octicon octicon-link"></span></a>Archive Management</h3>
 
-          <p>In order to run in a container on the YARN cluster, all the necessary jars have to be marshalled to the node the container is running on. This is all internally handled by Weave, but the APIs also allow you to specify additional files during prepare to be marshalled to the container where it's running.</p>
+          <p>In order to run in a container on the YARN cluster, all the necessary jars must be marshalled to the node on which the container is running. This is all internally handled by Weave, but the APIs also allow you to specify additional files to be marshalled to the container where it's running.</p>
 
           <h3><a name="application" class="anchor" href="#application"><span class="octicon octicon-link"></span></a>Application</h3>
 
-          <p>A <code>WeaveApplication</code> is a collection of distributed <code>WeaveRunnable</code> stiched together. It can be better described with an example. Let's say you have a web application that you would like to deploy on a cluster that's running YARN. In order to do so, you need instances of jetty server and all associated files to serve the application.</p>
+          <p>A <code>WeaveApplication</code> is a collection of distributed <code>WeaveRunnable</code> working together. For example, suppose you have a web application that you would like to deploy on a cluster running YARN. You will need instances of a jetty server and all associated files to serve the application:</p>
 
           <h4>Specifying WeaveApplication</h4>
 
@@ -262,7 +239,7 @@ for(Discoverable discoverable : echoServices) {
   }
 }</pre>
 
-          <p>Once you have defined an application in Weave, you can run it the same way you run <code>WeaveRunnable</code>. It's as simple as that. If you look at the above example closely, weave applications support the order in which the <code>WeaveRunnables</code> are started on the cluster. The above example specifies no order, so all the <code>WeaveRunnables</code> can start concurrently. But you can modify the behavior as follows:</p>
+          <p>Once you have defined an application in Weave, you can simply run it the same way you run <code>WeaveRunnable</code>. You might notice from the above example that Weave applications support the order in which the <code>WeaveRunnables</code> are started on the cluster. The example specifies no order, so all the <code>WeaveRunnables</code> can start concurrently. However, you can modify the behavior as follows:</p>
 
           <h4>Ordering</h4>
 
@@ -307,10 +284,10 @@ for(Discoverable discoverable : echoServices) {
 
           <h3><a name="how-to-contribute" class="anchor" href="#how-to-contribute"><span class="octicon octicon-link"></span></a>How to Contribute</h3>
 
-          <p>Are you interested in making Weave better? Our development model is a simple pull based model with a consensus
-          building phase - similar to the <a href="http://www.apache.org/foundation/voting.html" title="Apache Voting Process">Apache's voting process</a>. If you think that you help make Weave better, add new
+          <p>Are you interested in making Weave better? Our development model is a simple pull-based model with a consensus
+          building phase, similar to the <a href="http://www.apache.org/foundation/voting.html" title="Apache Voting Process">Apache's voting process</a>. If you think that you help make Weave better, add new
           features or fix bugs in Weave or even if you have an idea on how to improve something that's already there in Weave, here's
-          how you can do that. </p>
+          how you can do that: </p>
 
           <ul>
           <li>Fork <a href="https://github.com/continuuity/weave" title="weave">weave</a> into your own GitHub repository</li>
