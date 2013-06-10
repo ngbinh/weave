@@ -40,17 +40,28 @@
     <div id="content-wrapper">
       <div class="inner clearfix">
         <section id="main-content" class="markdown-body entry-content" itemprop="mainContentOfPage">
-         <p>
-            At <a href="http://www.continuuity.com/">Continuuity</a>, we use 
-            <a href="http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html">Apache YARN</a> as 
-            an integral part of our products, because of its support for our vision of providing you with a rich set 
-            of application and processing patterns. One such product is BigFlow, our realtime distributed 
-            stream-processing engine. Apache YARN is used to run and manage BigFlow applications with lifecycle and 
-            runtime elasticity. During our journey with YARN we have come to the realization that it is extremely 
-            powerful, but its full capability is challenging to leverage.  It is difficult to get started, hard to 
-            test and debug, and too complex to build new kinds of non-MapReduce applications and frameworks on it. 
-            To resolve this issue, we have developed Weave for you.
-          </p>
+<p>
+          At <a href="http://www.continuuity.com/">Continuuity</a>, we use <a href="http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html">Apache YARN</a> as an integral part of our products because of its vision to support a diverse set of applications and processing patterns. One such product is BigFlow, our realtime distributed stream-processing engine. Apache YARN is used to run and manage BigFlow applications including lifecycle and runtime elasticity. During our journey with YARN we have come to the realization that it is extremely powerful but its full capability is challenging to leverage.  It is difficult to get started, hard to test and debug, and complex to build new kinds of non-MapReduce applications and frameworks on.</p>
+
+          <h3><a name="what-is-weave-" class="anchor" href="#what-is-weave-"><span class="octicon octicon-link"></span></a>What is Weave?</h3>
+
+          <p>Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to running threads. Weave is <strong>NOT</strong> a replacement for Apache YARN.  It is instead a value-added framework that operates on top of Apache YARN.</p>
+
+          <h3><a name="why-do-i-need-weave-" class="anchor" href="#why-do-i-need-weave-"><span class="octicon octicon-link"></span></a>Why do I need Weave?</h3>
+
+          <p>Weave dramatically simplifies and reduces your development efforts, enabling you to quickly and easily manage your distributed applications through its simplified abstraction layer built on YARN. YARN can be quite difficult to use and requires a large ramp up effort since it is built specifically for MapReduce and is typically meant for managing batch jobs. YARN, however, can be used as a generalized custom resource management tool that can run any type of job.  In additon to running batch jobs, cluster can be used for running real time jobs and long running job. Unfortunately, YARN’s capabilities are too low level to allow you to quickly develop an application, requiring a great deal of boilerplate code even for simple applications.  Additionally, its logging output is not available until the application is finished. This becomes a serious challenge when managing long running jobs: since those jobs never finish you cannot view the logs, which makes it very difficult to develop and debug such applications. Finally, YARN does not provide standard support for application lifecycle management, communication between containers and the Application Master, and handling application level errors.</p>
+
+          <p>Continuuity Weave provides you with the following benefits:</p>
+
+          <ul>
+          <li>A simplified API for specifying, running and managing applications</li>
+          <li>A simplified way to specify and manage the stages of the application lifecycle</li>
+          <li>A generic Application Master to better support simple applications</li>
+          <li>Log &amp; metrics aggregation for application</li>
+          <li>Simplified archive management</li>
+          <li>Improved control over application logs, metrics and errors</li>
+          <li>Discovery service</li>
+          </ul>
 
 
           <h3><a name="getting-started" class="anchor" href="#getting-started"><span class="octicon octicon-link"></span></a>Getting Started</h3>
