@@ -1,9 +1,7 @@
-At <a href="http://www.continuuity.com/">Continuuity</a>, we use <a href="http://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/YARN.html">Apache YARN</a> as an integral part of our products, because of its support for our vision of providing you with a rich set of application and processing patterns. One such product is BigFlow, our realtime distributed stream-processing engine. Apache YARN is used to run and manage BigFlow applications with lifecycle and runtime elasticity. During our journey with YARN we have come to the realization that it is extremely powerful, but its full capability is challenging to leverage.  It is difficult to get started, hard to test and debug, and too complex to build new kinds of non-MapReduce applications and frameworks on it. To resolve this issue, we have developed Weave for you.
-
 What is Weave ?
 ===============
 
-Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer 
+Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer 
 built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to 
 running threads. Weave is **NOT** a replacement for Apache YARN.  It is instead a value-added framework that operates on top of Apache YARN.
 
