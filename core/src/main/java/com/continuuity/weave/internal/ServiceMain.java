@@ -43,7 +43,7 @@ public abstract class ServiceMain {
   protected final void doMain(final Service service) throws ExecutionException, InterruptedException {
     configureLogger();
 
-    final String serviceName = service.getClass().getName();
+    final String serviceName = service.toString();
 
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
@@ -51,7 +51,6 @@ public abstract class ServiceMain {
         if (service.isRunning()) {
           LOG.info("Shutdown hook triggered. Shutting down service " + serviceName);
           service.stopAndWait();
-          LOG.info("Service shutdown " + serviceName);
         }
       }
     });

@@ -18,6 +18,7 @@ package com.continuuity.weave.internal;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.zookeeper.ZKClientService;
+import com.google.common.base.Objects;
 import com.google.common.util.concurrent.AbstractService;
 import com.google.common.util.concurrent.Service;
 
@@ -100,5 +101,13 @@ public final class ZKServiceWrapper extends AbstractService {
   @Override
   protected void doStop() {
     delegateService.stop();
+  }
+
+  @Override
+  public String toString() {
+    return Objects.toStringHelper(this)
+                  .add("ZKClient", zkClientService.getConnectString())
+                  .add("Service", delegateService.getClass().getName())
+                  .toString();
   }
 }

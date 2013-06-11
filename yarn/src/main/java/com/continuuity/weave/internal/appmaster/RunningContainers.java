@@ -43,8 +43,9 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
-*
-*/
+ * A helper class for ApplicationMasterService to keep track of running containers and to interact
+ * with them.
+ */
 final class RunningContainers {
   private static final Logger LOG = LoggerFactory.getLogger(RunningContainers.class);
 
@@ -58,6 +59,18 @@ final class RunningContainers {
     startSequence = Lists.newLinkedList();
     containerLock = new ReentrantLock();
     containerChange = containerLock.newCondition();
+  }
+
+  /**
+   * Returns {@code true} if there is no live container.
+   */
+  boolean isEmpty() {
+    containerLock.lock();
+    try {
+      return containers.columnMap().isEmpty();
+    } finally {
+      containerLock.unlock();
+    }
   }
 
   void add(String runnableName, ContainerId container, WeaveContainerController controller) {

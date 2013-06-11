@@ -58,28 +58,33 @@ public final class WeaveLauncher {
     }
 
     File file = new File(args[0]);
-    File targetDir = createTempDir("weave.launcher");
+    final File targetDir = createTempDir("weave.launcher");
 
-    try {
-      System.out.println("UnJar " + file + " to " + targetDir);
-      unJar(file, targetDir);
+    Runtime.getRuntime().addShutdownHook(new Thread() {
+      @Override
+      public void run() {
+        System.out.println("Cleanup directory " + targetDir);
+        deleteDir(targetDir);
+      }
+    });
 
-      // Create ClassLoader
-      URLClassLoader classLoader = createClassLoader(targetDir, Boolean.parseBoolean(args[2]));
-      Thread.currentThread().setContextClassLoader(classLoader);
+    System.out.println("UnJar " + file + " to " + targetDir);
+    unJar(file, targetDir);
 
-      System.out.println("Launch class with classpath: " + Arrays.toString(classLoader.getURLs()));
+    // Create ClassLoader
+    URLClassLoader classLoader = createClassLoader(targetDir, Boolean.parseBoolean(args[2]));
+    Thread.currentThread().setContextClassLoader(classLoader);
 
-      Class<?> mainClass = classLoader.loadClass(args[1]);
-      Method mainMethod = mainClass.getMethod("main", String[].class);
-      String[] arguments = Arrays.copyOfRange(args, 3, args.length);
-      System.out.println("Launching main: " + mainMethod + " " + Arrays.toString(arguments));
-      mainMethod.invoke(mainClass, new Object[]{arguments});
-      System.out.println("Main class completed.");
-    } finally {
-      System.out.println("Cleanup directory " + targetDir);
-      deleteDir(targetDir);
-    }
+    System.out.println("Launch class with classpath: " + Arrays.toString(classLoader.getURLs()));
+
+    Class<?> mainClass = classLoader.loadClass(args[1]);
+    Method mainMethod = mainClass.getMethod("main", String[].class);
+    String[] arguments = Arrays.copyOfRange(args, 3, args.length);
+    System.out.println("Launching main: " + mainMethod + " " + Arrays.toString(arguments));
+    mainMethod.invoke(mainClass, new Object[]{arguments});
+    System.out.println("Main class completed.");
+
+    System.out.println("Launcher completed");
   }
 
   /**
