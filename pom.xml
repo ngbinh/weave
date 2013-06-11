@@ -65,6 +65,10 @@
             <id>gh-pages</id>
             <url>http://continuuity.github.com/weave/</url>
         </site>
+        <repository>
+            <id>continuuity-release</id>
+            <url>https://repository.continuuity.com/content/repositories/releases/</url>
+        </repository>
         <snapshotRepository>
             <id>continuuity</id>
             <url>https://repository.continuuity.com/content/repositories/snapshots/</url>
