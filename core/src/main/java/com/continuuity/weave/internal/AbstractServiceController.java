@@ -52,16 +52,16 @@ public abstract class AbstractServiceController implements ServiceController {
   private static final Logger LOG = LoggerFactory.getLogger(AbstractServiceController.class);
 
   private final RunId runId;
-  private final AtomicReference<State> state;
+  private final AtomicReference<StateNode> stateNode;
   private final ListenerExecutors listenerExecutors;
   private final AtomicReference<byte[]> liveNodeData;
-  private Cancellable watchCanceller;
+  private volatile Cancellable watchCanceller;
   protected final ZKClient zkClient;
 
   protected AbstractServiceController(ZKClient zkClient, RunId runId) {
     this.zkClient = zkClient;
     this.runId = runId;
-    this.state = new AtomicReference<State>();
+    this.stateNode = new AtomicReference<StateNode>(new StateNode(State.UNKNOWN, null));
     this.listenerExecutors = new ListenerExecutors();
     this.liveNodeData = new AtomicReference<byte[]>();
   }
@@ -72,10 +72,7 @@ public abstract class AbstractServiceController implements ServiceController {
                                                            new ZKOperations.DataCallback() {
       @Override
       public void updated(NodeData nodeData) {
-        StateNode stateNode = decode(nodeData);
-        if (state.getAndSet(stateNode.getState()) != stateNode.getState()) {
-          fireStateChange(stateNode);
-        }
+        fireStateChange(decode(nodeData));
       }
     });
     // Watch for instance node data
@@ -121,13 +118,13 @@ public abstract class AbstractServiceController implements ServiceController {
 
   @Override
   public State getState() {
-    return state.get();
+    return stateNode.get().getState();
   }
 
   @Override
   public ListenableFuture<State> stop() {
-    State oldState = state.getAndSet(State.STOPPING);
-    if (oldState == null || oldState == State.STARTING || oldState == State.RUNNING) {
+    State oldState = stateNode.get().getState();
+    if (oldState == State.UNKNOWN || oldState == State.STARTING || oldState == State.RUNNING) {
       watchCanceller.cancel();
       return Futures.transform(
         ZKMessages.sendMessage(zkClient, getMessagePrefix(), SystemMessages.stopApplication(),
@@ -140,7 +137,6 @@ public abstract class AbstractServiceController implements ServiceController {
                @Override
                public State apply(String input) {
                  LOG.info("Remote service stopped: " + runId.getId());
-                 state.set(State.TERMINATED);
                  fireStateChange(new StateNode(State.TERMINATED, null));
                  return State.TERMINATED;
                }
@@ -148,7 +144,6 @@ public abstract class AbstractServiceController implements ServiceController {
         }
       });
     }
-    state.set(oldState);
     return Futures.immediateFuture(getState());
   }
 
@@ -159,7 +154,10 @@ public abstract class AbstractServiceController implements ServiceController {
 
   @Override
   public Cancellable addListener(Listener listener, Executor executor) {
-    return listenerExecutors.addListener(listener, executor);
+    ListenerExecutor listenerExecutor = new ListenerExecutor(listener, executor);
+    Cancellable cancellable = listenerExecutors.addListener(listenerExecutor);
+    dispatchListener(stateNode.get(), listenerExecutor);
+    return cancellable;
   }
 
   protected final String getMessagePrefix() {
@@ -167,23 +165,13 @@ public abstract class AbstractServiceController implements ServiceController {
   }
 
   protected final void fireStateChange(StateNode state) {
+    stateNode.set(state);
     switch (state.getState()) {
-      case STARTING:
-        listenerExecutors.starting();
-        break;
-      case RUNNING:
-        listenerExecutors.running();
-        break;
-      case STOPPING:
-        listenerExecutors.stopping();
-        break;
       case TERMINATED:
-        listenerExecutors.terminated();
-        break;
       case FAILED:
-        listenerExecutors.failed(state.getStackTraces());
-        break;
+        watchCanceller.cancel();
     }
+    dispatchListener(state, listenerExecutors);
   }
 
   private StateNode decode(NodeData nodeData) {
@@ -205,26 +193,41 @@ public abstract class AbstractServiceController implements ServiceController {
     return String.format("/%s/%s", runId.getId(), path);
   }
 
+  private void dispatchListener(StateNode state, Listener listener) {
+    switch (state.getState()) {
+      case STARTING:
+        listener.starting();
+        break;
+      case RUNNING:
+        listener.running();
+        break;
+      case STOPPING:
+        listener.stopping();
+        break;
+      case TERMINATED:
+        listener.terminated();
+        break;
+      case FAILED:
+        listener.failed(state.getStackTraces());
+        break;
+    }
+  }
+
   private static final class ListenerExecutors implements Listener {
     private final Queue<ListenerExecutor> listeners = new ConcurrentLinkedQueue<ListenerExecutor>();
-    private final ConcurrentMap<State, Boolean> callStates = Maps.newConcurrentMap();
 
-    Cancellable addListener(Listener listener, Executor executor) {
-      final ListenerExecutor listenerExecutor = new ListenerExecutor(listener, executor);
-      listeners.add(listenerExecutor);
+    Cancellable addListener(final ListenerExecutor listener) {
+      listeners.add(listener);
       return new Cancellable() {
         @Override
         public void cancel() {
-          listeners.remove(listenerExecutor);
+          listeners.remove(listener);
         }
       };
     }
 
     @Override
     public void starting() {
-      if (hasCalled(State.STARTING)) {
-        return;
-      }
       for (ListenerExecutor listener : listeners) {
         listener.starting();
       }
@@ -232,9 +235,6 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void running() {
-      if (hasCalled(State.RUNNING)) {
-        return;
-      }
       for (ListenerExecutor listener : listeners) {
         listener.running();
       }
@@ -242,9 +242,6 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void stopping() {
-      if (hasCalled(State.STOPPING)) {
-        return;
-      }
       for (ListenerExecutor listener : listeners) {
         listener.stopping();
       }
@@ -252,9 +249,6 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void terminated() {
-      if (hasCalled(State.TERMINATED) || hasCalled(State.FAILED)) {
-        return;
-      }
       for (ListenerExecutor listener : listeners) {
         listener.terminated();
       }
@@ -262,16 +256,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void failed(StackTraceElement[] stackTraces) {
-      if (hasCalled(State.FAILED) || hasCalled(State.TERMINATED)) {
-        return;
-      }
       for (ListenerExecutor listener : listeners) {
         listener.failed(stackTraces);
       }
-    }
-
-    private boolean hasCalled(State state) {
-      return callStates.putIfAbsent(state, true) != null;
     }
   }
 
@@ -279,6 +266,7 @@ public abstract class AbstractServiceController implements ServiceController {
 
     private final Listener delegate;
     private final Executor executor;
+    private final ConcurrentMap<State, Boolean> callStates = Maps.newConcurrentMap();
 
     private ListenerExecutor(Listener delegate, Executor executor) {
       this.delegate = delegate;
@@ -287,6 +275,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void starting() {
+      if (hasCalled(State.STARTING)) {
+        return;
+      }
       executor.execute(new Runnable() {
         @Override
         public void run() {
@@ -301,6 +292,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void running() {
+      if (hasCalled(State.RUNNING)) {
+        return;
+      }
       executor.execute(new Runnable() {
         @Override
         public void run() {
@@ -315,6 +309,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void stopping() {
+      if (hasCalled(State.STOPPING)) {
+        return;
+      }
       executor.execute(new Runnable() {
         @Override
         public void run() {
@@ -329,6 +326,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void terminated() {
+      if (hasCalled(State.TERMINATED) || hasCalled(State.FAILED)) {
+        return;
+      }
       executor.execute(new Runnable() {
         @Override
         public void run() {
@@ -343,6 +343,9 @@ public abstract class AbstractServiceController implements ServiceController {
 
     @Override
     public void failed(final StackTraceElement[] stackTraces) {
+      if (hasCalled(State.FAILED) || hasCalled(State.TERMINATED)) {
+        return;
+      }
       executor.execute(new Runnable() {
         @Override
         public void run() {
@@ -353,6 +356,10 @@ public abstract class AbstractServiceController implements ServiceController {
           }
         }
       });
+    }
+
+    private boolean hasCalled(State state) {
+      return callStates.putIfAbsent(state, true) != null;
     }
   }
 }

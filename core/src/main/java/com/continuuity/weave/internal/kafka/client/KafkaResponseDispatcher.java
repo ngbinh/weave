@@ -22,6 +22,9 @@ import org.jboss.netty.channel.SimpleChannelHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.SocketException;
+import java.nio.channels.ClosedChannelException;
+
 /**
  *
  */
@@ -49,6 +52,10 @@ final class KafkaResponseDispatcher extends SimpleChannelHandler {
 
   @Override
   public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+    if (e.getCause() instanceof ClosedChannelException || e.getCause() instanceof SocketException) {
+      // No need to log for socket exception as the client has logic to retry.
+      return;
+    }
     LOG.warn("Exception caught in kafka client connection.", e.getCause());
   }
 }

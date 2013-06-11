@@ -82,6 +82,11 @@ public interface ServiceController {
   enum State {
 
     /**
+     * A service state is not known.
+     */
+    UNKNOWN,
+
+    /**
      * A service in this state is transitioning to {@link #RUNNING}.
      */
     STARTING,
