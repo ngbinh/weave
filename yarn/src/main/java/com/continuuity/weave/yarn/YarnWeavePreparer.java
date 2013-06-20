@@ -25,6 +25,7 @@ import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.ApplicationBundler;
+import com.continuuity.weave.internal.Arguments;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultRuntimeSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
@@ -32,6 +33,7 @@ import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerMain;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
+import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.utils.Dependencies;
@@ -57,7 +59,6 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
 import com.google.common.reflect.TypeToken;
-import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
@@ -202,10 +203,12 @@ final class YarnWeavePreparer implements WeavePreparer {
       saveLogback(localResources);
       saveLauncher(localResources);
       saveKafka(localResources);
+      saveArguments(arguments, runnableArgs, localResources);
       saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
                                                      "logback-template.xml",
                                                      "container.jar",
-                                                     "launcher.jar"));
+                                                     "launcher.jar",
+                                                     "arguments.json"));
 
       ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
       containerLaunchContext.setLocalResources(localResources);
@@ -233,8 +236,6 @@ final class YarnWeavePreparer implements WeavePreparer {
                                                    Long.toString(applicationId.getClusterTimestamp()))
                                               .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
                                               .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-                                              .put(EnvKeys.WEAVE_APPLICATION_ARGS, encodeArguments(arguments))
-                                              .put(EnvKeys.WEAVE_RUNNABLE_ARGS, encodeRunnableArguments(runnableArgs))
                                               .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
                                               .build()
       );
@@ -256,14 +257,6 @@ final class YarnWeavePreparer implements WeavePreparer {
     YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, applicationId, runId, logHandlers);
     controller.start();
     return controller;
-  }
-
-  private String encodeArguments(List<String> args) {
-    return new Gson().toJson(args);
-  }
-
-  private String encodeRunnableArguments(Multimap<String, String> args) {
-    return new Gson().toJson(args.asMap());
   }
 
   private ApplicationBundler createBundler() {
@@ -433,6 +426,21 @@ final class YarnWeavePreparer implements WeavePreparer {
     localResources.put("kafka.tgz", localResource);
   }
 
+  private void saveArguments(List<String> appArgs, Multimap<String, String> runnableArgs,
+                             Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Create and copy arguments.json");
+    Location location = createTempLocation("arguments", ".json");
+    Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
+    try {
+      new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
+        .create().toJson(new Arguments(appArgs, runnableArgs), writer);
+    } finally {
+      writer.close();
+    }
+
+    LOG.debug("Done arguments.json");
+    localResources.put("arguments.json", YarnUtils.createLocalResource(location));
+  }
 
   private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> keys) throws IOException {
     Map<String, LocalFile> localFiles = Maps.transformEntries(

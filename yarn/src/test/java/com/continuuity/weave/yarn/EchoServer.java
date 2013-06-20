@@ -37,7 +37,8 @@ public final class EchoServer extends AbstractWeaveRunnable {
       LOG.info("EchoServer started: " + serverSocket.getLocalSocketAddress() +
                ", id: " + context.getInstanceId() +
                ", count: " + context.getInstanceCount());
-      context.announce("echo", serverSocket.getLocalPort());
+      context.announce(context.getApplicationArguments()[0], serverSocket.getLocalPort());
+      context.announce(context.getArguments()[0], serverSocket.getLocalPort());
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
