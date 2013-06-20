@@ -37,6 +37,7 @@ import com.continuuity.weave.zookeeper.ZKClients;
 import com.continuuity.weave.zookeeper.ZKOperations;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -121,12 +122,13 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   @Override
-  public WeaveController lookup(String applicationName, RunId runId) {
-    ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + applicationName);
-    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, null,
-                                                             runId, ImmutableList.<LogHandler>of());
-    controller.start();
-    return controller;
+  public WeaveController lookup(String applicationName, final RunId runId) {
+    return Iterables.tryFind(controllerCache.getUnchecked(applicationName), new Predicate<WeaveController>() {
+      @Override
+      public boolean apply(WeaveController input) {
+        return runId.equals(input.getRunId());
+      }
+    }).orNull();
   }
 
   @Override

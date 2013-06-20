@@ -52,7 +52,7 @@ public interface WeaveRunner {
    * Gets a {@link WeaveController} for the given application and runId.
    * @param applicationName Name of the application.
    * @param runId The runId of the running application.
-   * @return A {@link WeaveController} to interact with the application.
+   * @return A {@link WeaveController} to interact with the application or null if no such runId is found.
    */
   WeaveController lookup(String applicationName, RunId runId);
 
