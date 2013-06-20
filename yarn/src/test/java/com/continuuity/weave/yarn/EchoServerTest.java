@@ -60,6 +60,8 @@ public class EchoServerTest extends ClusterTestBase {
                                                          .setInstances(2)
                                                          .build())
                                         .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+                                        .withApplicationArguments("echo")
+                                        .withArguments("EchoServer", "echo2")
                                         .start();
 
     final CountDownLatch running = new CountDownLatch(1);
@@ -93,6 +95,8 @@ public class EchoServerTest extends ClusterTestBase {
 
     controller.changeInstances("EchoServer", 3);
     Assert.assertTrue(waitForSize(echoServices, 3, 60));
+
+    echoServices = controller.discoverService("echo2");
 
     controller.changeInstances("EchoServer", 1);
     Assert.assertTrue(waitForSize(echoServices, 1, 60));
