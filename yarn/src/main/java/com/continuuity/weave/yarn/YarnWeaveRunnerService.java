@@ -181,6 +181,9 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
             }
           }));
         }
+        if (apps.isEmpty()) {
+          firstFetch.countDown();
+        }
         // Remove app watches for apps that are gone.
         lock.lock();
         try {
