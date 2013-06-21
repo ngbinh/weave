@@ -269,7 +269,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           @Override
           public void updated(NodeChildren nodeChildren) {
             // RunIdToWeaveController(stringToRunId(instanceNode))
-            controllers.set(
+            cancelControllers(controllers.getAndSet(
               Iterables.transform(
                 Iterables.transform(nodeChildren.getChildren(), STRING_TO_RUN_ID),
                 new Function<RunId, WeaveController>() {
@@ -280,7 +280,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
                     controller.start();
                     return controller;
                   }
-            }));
+                })));
             firstFetch.countDown();
           }
         });
@@ -299,6 +299,14 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
         };
       }
     };
+  }
+
+  private void cancelControllers(Iterable<WeaveController> controllers) {
+    for (WeaveController controller : controllers) {
+      if (controller instanceof Cancellable) {
+        ((Cancellable) controller).cancel();
+      }
+    }
   }
 
   private Iterable<LiveInfo> getLiveInfos(Multimap<String, RunId> liveInfos) {
