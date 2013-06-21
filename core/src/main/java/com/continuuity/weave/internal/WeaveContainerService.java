@@ -19,6 +19,7 @@ import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveRunnable;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
+import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
@@ -104,6 +105,17 @@ public final class WeaveContainerService implements Service {
   @Override
   public ListenableFuture<State> start() {
     commandExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("runnable-command-executor"));
+    addListener(new ServiceListenerAdapter() {
+      @Override
+      public void terminated(State from) {
+        commandExecutor.shutdownNow();
+      }
+
+      @Override
+      public void failed(State from, Throwable failure) {
+        commandExecutor.shutdownNow();
+      }
+    }, Threads.SAME_THREAD_EXECUTOR);
     return serviceDelegate.start();
   }
 
@@ -124,7 +136,6 @@ public final class WeaveContainerService implements Service {
 
   @Override
   public ListenableFuture<State> stop() {
-    commandExecutor.shutdownNow();
     return serviceDelegate.stop();
   }
 
@@ -152,11 +163,16 @@ public final class WeaveContainerService implements Service {
 
     @Override
     protected void triggerShutdown() {
-      try {
-        runnable.stop();
-      } catch (Throwable t) {
-        LOG.error("Exception when stopping runnable.", t);
-      }
+      commandExecutor.submit(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            runnable.stop();
+          } catch (Throwable t) {
+            LOG.error("Exception when stopping runnable.", t);
+          }
+        }
+      });
     }
 
     @Override
