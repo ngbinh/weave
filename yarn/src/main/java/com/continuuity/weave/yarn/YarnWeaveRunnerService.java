@@ -201,7 +201,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       @Override
       public Iterator<LiveInfo> iterator() {
         try {
-          firstFetch.await();
+          firstFetch.await(1, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
           LOG.debug("Interrupted exception while waiting for first fetch.", e);
         }
@@ -289,7 +289,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           @Override
           public Iterator<WeaveController> iterator() {
             try {
-              firstFetch.await();
+              firstFetch.await(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
               // OK to ignore.
               LOG.debug("Interrupted exception while waiting for first fetch.", e);
