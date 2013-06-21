@@ -26,6 +26,7 @@ import com.continuuity.weave.zookeeper.OperationFuture;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Charsets;
 import com.google.common.base.Supplier;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.AbstractService;
@@ -40,6 +41,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.data.Stat;
@@ -48,6 +50,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,16 +91,31 @@ public final class ZKServiceDecorator extends AbstractService {
 
     // Create nodes for states and messaging
     StateNode stateNode = new StateNode(ServiceController.State.STARTING, null);
-    final ListenableFuture<List<String>> createFuture = Futures.allAsList(ImmutableList.of(
+
+    final List<OperationFuture<String>> futures = ImmutableList.of(
       zkClient.create(getZKPath("messages"), null, CreateMode.PERSISTENT),
       zkClient.create(getZKPath("state"), encodeStateNode(stateNode), CreateMode.PERSISTENT)
-    ));
+    );
+    final ListenableFuture<List<String>> createFuture = Futures.successfulAsList(futures);
 
     createFuture.addListener(new Runnable() {
       @Override
       public void run() {
         try {
-          createFuture.get();
+          for (OperationFuture<String> future : futures) {
+            try {
+              future.get();
+            } catch (ExecutionException e) {
+              Throwable cause = e.getCause();
+              if (cause instanceof KeeperException
+                && ((KeeperException) cause).code() == KeeperException.Code.NODEEXISTS) {
+                LOG.warn("Node already exists: {}", future.getRequestPath());
+              } else {
+                throw Throwables.propagate(cause);
+              }
+            }
+          }
+
           // Starts the decorated service
           decoratedService.addListener(createListener(), Threads.SAME_THREAD_EXECUTOR);
           decoratedService.start();

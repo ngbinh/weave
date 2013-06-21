@@ -93,13 +93,19 @@ public class EchoServerTest extends ClusterTestBase {
       }
     }
 
+    // Increase number of instances
     controller.changeInstances("EchoServer", 3);
     Assert.assertTrue(waitForSize(echoServices, 3, 60));
 
     echoServices = controller.discoverService("echo2");
 
+    // Decrease number of instances
     controller.changeInstances("EchoServer", 1);
     Assert.assertTrue(waitForSize(echoServices, 1, 60));
+
+    // Increase number of instances again
+    controller.changeInstances("EchoServer", 2);
+    Assert.assertTrue(waitForSize(echoServices, 2, 60));
 
     Assert.assertEquals(1, Iterables.size(runner.lookupLive()));
 

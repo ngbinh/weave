@@ -143,7 +143,7 @@ public final class NamespaceZKClient implements ZKClient {
           String path = from.get();
           to.set(path.substring(namespace.length()));
         } catch (Exception e) {
-          to.setException(e);
+          to.setException(e.getCause());
         }
       }
     }, Threads.SAME_THREAD_EXECUTOR);
