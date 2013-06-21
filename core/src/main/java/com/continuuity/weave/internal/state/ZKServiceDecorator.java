@@ -130,6 +130,7 @@ public final class ZKServiceDecorator extends AbstractService {
   protected void doStop() {
     // Stops the decorated service
     decoratedService.stop();
+    callbackExecutor.shutdownNow();
   }
 
   private Watcher createConnectionWatcher() {
@@ -213,13 +214,18 @@ public final class ZKServiceDecorator extends AbstractService {
 
   private <V> boolean handleStopMessage(Message message, final Supplier<OperationFuture<V>> postHandleSupplier) {
     if (message.getType() == Message.Type.SYSTEM && "stop".equalsIgnoreCase(message.getCommand().getCommand())) {
-      decoratedService.stop().addListener(new Runnable() {
-
+      callbackExecutor.execute(new Runnable() {
         @Override
         public void run() {
-          stopServiceOnComplete(postHandleSupplier.get(), ZKServiceDecorator.this);
+          decoratedService.stop().addListener(new Runnable() {
+
+            @Override
+            public void run() {
+              stopServiceOnComplete(postHandleSupplier.get(), ZKServiceDecorator.this);
+            }
+          }, MoreExecutors.sameThreadExecutor());
         }
-      }, MoreExecutors.sameThreadExecutor());
+      });
       return true;
     }
     return false;
@@ -317,7 +323,7 @@ public final class ZKServiceDecorator extends AbstractService {
     }
   }
 
-  private class DecoratedServiceListener implements Listener {
+  private final class DecoratedServiceListener implements Listener {
     private volatile boolean zkFailure = false;
 
     @Override
