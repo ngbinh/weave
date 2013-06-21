@@ -362,11 +362,12 @@ public final class ApplicationMasterService implements Service {
       Priority priority = Records.newRecord(Priority.class);
       priority.setPriority(0);
 
-      int containerCount = instanceCounts.get(runtimeSpec.getName());
+      String name = runtimeSpec.getName();
+      int containerCount = instanceCounts.get(name) - runningContainers.count(name);
       AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
                                                                             priority, containerCount);
       LOG.info("Request for container: " + request);
-      requests.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(runtimeSpec.getName())));
+      requests.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
       amrmClient.addContainerRequest(request);
     }
     return requests;
