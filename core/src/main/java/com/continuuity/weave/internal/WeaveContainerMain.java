@@ -22,6 +22,7 @@ import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.discovery.DiscoveryService;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
+import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -32,11 +33,13 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
-import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -70,7 +73,7 @@ public final class WeaveContainerMain extends ServiceMain {
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
     ContainerInfo containerInfo = new ContainerInfo();
     BasicWeaveContext context = new BasicWeaveContext(runId, appRunId, containerInfo.getHost(), args,
-                                                  decodeArgs(System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS)),
+                                                  decodeArgs(),
                                                   runnableSpec, instanceId, discoveryService, instanceCount);
 
     Service service = new ZKServiceWrapper(
@@ -118,8 +121,15 @@ public final class WeaveContainerMain extends ServiceMain {
     }
   }
 
-  private static String[] decodeArgs(String args) {
-    return new Gson().fromJson(args, String[].class);
+  private static String[] decodeArgs() throws IOException {
+    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
+    try {
+      List<String> args = new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
+        .create().fromJson(reader, Arguments.class).getArguments();
+      return args.toArray(new String[args.size()]);
+    } finally {
+      reader.close();
+    }
   }
 
   @Override

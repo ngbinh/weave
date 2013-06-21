@@ -25,10 +25,12 @@ import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.internal.Arguments;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
+import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
@@ -47,14 +49,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
-import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.Files;
 import com.google.common.reflect.TypeToken;
@@ -63,7 +64,6 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
-import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -86,6 +86,7 @@ import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -112,7 +113,7 @@ public final class ApplicationMasterService implements Service {
   private final RunId runId;
   private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
-  private final ListMultimap<String, String> runnableArgs;
+  private final Multimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
   private final String masterContainerId;
   private final AMRMClient amrmClient;
@@ -147,16 +148,14 @@ public final class ApplicationMasterService implements Service {
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
   }
 
-  private ListMultimap<String, String> decodeRunnableArgs() throws IOException {
-    ListMultimap<String, String> result = ArrayListMultimap.create();
-
-    Map<String, Collection<String>> decoded = new Gson().fromJson(System.getenv(EnvKeys.WEAVE_RUNNABLE_ARGS),
-                                                                  new TypeToken<Map<String, Collection<String>>>() {
-                                                                  }.getType());
-    for (Map.Entry<String, Collection<String>> entry : decoded.entrySet()) {
-      result.putAll(entry.getKey(), entry.getValue());
+  private Multimap<String, String> decodeRunnableArgs() throws IOException {
+    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
+    try {
+      return new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
+        .create().fromJson(reader, Arguments.class).getRunnableArguments();
+    } finally {
+      reader.close();
     }
-    return result;
   }
 
   private Supplier<? extends JsonElement> createLiveNodeDataSupplier() {
@@ -395,7 +394,6 @@ public final class ApplicationMasterService implements Service {
         ImmutableMap.<String, String>builder()
          .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
          .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-         .put(EnvKeys.WEAVE_APPLICATION_ARGS, System.getenv(EnvKeys.WEAVE_APPLICATION_ARGS))
          .put(EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect())
          .build()
         );

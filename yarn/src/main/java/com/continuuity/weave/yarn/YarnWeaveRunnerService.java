@@ -62,6 +62,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -181,6 +182,9 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
             }
           }));
         }
+        if (apps.isEmpty()) {
+          firstFetch.countDown();
+        }
         // Remove app watches for apps that are gone.
         lock.lock();
         try {
@@ -198,7 +202,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       @Override
       public Iterator<LiveInfo> iterator() {
         try {
-          firstFetch.await();
+          firstFetch.await(1, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
           LOG.debug("Interrupted exception while waiting for first fetch.", e);
         }
@@ -266,18 +270,18 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           @Override
           public void updated(NodeChildren nodeChildren) {
             // RunIdToWeaveController(stringToRunId(instanceNode))
-            controllers.set(
-              Iterables.transform(
-                Iterables.transform(nodeChildren.getChildren(), STRING_TO_RUN_ID),
-                new Function<RunId, WeaveController>() {
-                  @Override
-                  public WeaveController apply(RunId runId) {
-                    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, null, runId,
-                                                                             ImmutableList.<LogHandler>of());
-                    controller.start();
-                    return controller;
-                  }
-            }));
+            List<WeaveController> newControllers = ImmutableList.copyOf(Iterables.transform(
+              Iterables.transform(nodeChildren.getChildren(), STRING_TO_RUN_ID),
+              new Function<RunId, WeaveController>() {
+                @Override
+                public WeaveController apply(RunId runId) {
+                  YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, null, runId,
+                                                                           ImmutableList.<LogHandler>of());
+                  controller.start();
+                  return controller;
+                }
+              }));
+            cancelControllers(controllers.getAndSet(newControllers));
             firstFetch.countDown();
           }
         });
@@ -286,7 +290,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           @Override
           public Iterator<WeaveController> iterator() {
             try {
-              firstFetch.await();
+              firstFetch.await(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
               // OK to ignore.
               LOG.debug("Interrupted exception while waiting for first fetch.", e);
@@ -296,6 +300,14 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
         };
       }
     };
+  }
+
+  private void cancelControllers(Iterable<WeaveController> controllers) {
+    for (WeaveController controller : controllers) {
+      if (controller instanceof Cancellable) {
+        ((Cancellable) controller).cancel();
+      }
+    }
   }
 
   private Iterable<LiveInfo> getLiveInfos(Multimap<String, RunId> liveInfos) {

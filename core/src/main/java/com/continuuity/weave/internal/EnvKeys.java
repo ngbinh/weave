@@ -34,8 +34,6 @@ public final class EnvKeys {
    */
   public static final String WEAVE_APP_DIR = "WEAVE_APP_DIR";
 
-  public static final String WEAVE_APPLICATION_ARGS = "WEAVE_APPLICATION_ARGS";
-  public static final String WEAVE_RUNNABLE_ARGS = "WEAVE_RUNNABLE_ARGS";
   public static final String WEAVE_RUNNABLE_NAME = "WEAVE_RUNNABLE_NAME";
 
   public static final String WEAVE_LOG_KAFKA_ZK = "WEAVE_LOG_KAFKA_ZK";

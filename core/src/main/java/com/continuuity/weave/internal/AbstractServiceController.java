@@ -47,7 +47,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Abstract base class for controlling remote service through ZooKeeper.
  */
-public abstract class AbstractServiceController implements ServiceController {
+public abstract class AbstractServiceController implements ServiceController, Cancellable {
 
   private static final Logger LOG = LoggerFactory.getLogger(AbstractServiceController.class);
 
@@ -90,6 +90,17 @@ public abstract class AbstractServiceController implements ServiceController {
         cancelInstance.cancel();
       }
     };
+  }
+
+  /**
+   * Caution. This method is for internal use only to release resources of this controller without stopping
+   * the running service. After this method is called, it is expected to discard that instance.
+   */
+  @Override
+  public void cancel() {
+    if (watchCanceller != null) {
+      watchCanceller.cancel();
+    }
   }
 
   protected byte[] getLiveNodeData() {

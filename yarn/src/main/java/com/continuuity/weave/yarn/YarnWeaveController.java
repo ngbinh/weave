@@ -39,6 +39,8 @@ import org.apache.hadoop.yarn.util.Records;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  *
  */
@@ -94,21 +96,26 @@ final class YarnWeaveController extends ZKWeaveController {
           stopWatch.start();
           stopWatch.split();
           // At most 5 seconds.
-          while (stopWatch.getSplitTime() < MAX_STOP_TIME) {
+          boolean done = false;
+          while (!done && stopWatch.getSplitTime() < MAX_STOP_TIME) {
             LOG.info("Fetching application report for " + appId);
             ApplicationReport report = yarnClient.getApplicationReport(appId);
             YarnApplicationState appState = report.getYarnApplicationState();
             switch (appState) {
               case FINISHED:
                 LOG.info("Application finished.");
+                done = true;
                 break;
               case FAILED:
                 LOG.warn("Application failed.");
+                done = true;
                 break;
               case KILLED:
                 LOG.warn("Application killed.");
+                done = true;
                 break;
             }
+            TimeUnit.SECONDS.sleep(1);
             stopWatch.split();
           }
         } catch (Exception e) {
