@@ -181,7 +181,7 @@ public class ControllerTest {
   }
 
   private WeaveController getController(ZKClient zkClient, RunId runId) {
-    ZKWeaveController controller = new ZKWeaveController(zkClient, runId, ImmutableList.<LogHandler>of()) {
+    AbstractWeaveController controller = new AbstractWeaveController(zkClient, runId, ImmutableList.<LogHandler>of()) {
 
       @Override
       public void kill() {
