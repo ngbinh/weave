@@ -107,14 +107,16 @@ public class EchoServerTest extends ClusterTestBase {
     controller.changeInstances("EchoServer", 2);
     Assert.assertTrue(waitForSize(echoServices, 2, 60));
 
-    Assert.assertTrue(waitForSize(runner.lookupLive(), 1, 60));
+    Iterable<WeaveRunner.LiveInfo> apps = runner.lookupLive();
+    Assert.assertTrue(waitForSize(apps, 1, 60));
+    Iterable<WeaveController> controllers = runner.lookup("EchoServer");
+    Assert.assertTrue(waitForSize(controllers, 1, 60));
 
-    for (WeaveController c : runner.lookup("EchoServer")) {
+    for (WeaveController c : controllers) {
       LOG.info("Stopping application: " + c.getRunId());
       c.stop().get();
     }
 
-    Iterable<WeaveRunner.LiveInfo> apps = runner.lookupLive();
     Assert.assertTrue(waitForSize(apps, 0, 60));
 
     // Sleep a bit before exiting.
