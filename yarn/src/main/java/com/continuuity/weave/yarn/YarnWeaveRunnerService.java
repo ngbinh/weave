@@ -65,7 +65,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -146,7 +145,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     final Lock lock = new ReentrantLock();
     final Map<String, Cancellable> watched = Maps.newHashMap();
     final Multimap<String, RunId> runIds = HashMultimap.create();
-    final CountDownLatch firstFetch = new CountDownLatch(1);
 
     // Watch child changes in the root, which gives all application names.
     ZKOperations.watchChildren(zkClientService, "/", new ZKOperations.ChildrenCallback() {
@@ -176,14 +174,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
               } finally {
                 lock.unlock();
               }
-              if (firstFetch.getCount() > 0 && count.decrementAndGet() == 0) {
-                firstFetch.countDown();
-              }
             }
           }));
-        }
-        if (apps.isEmpty()) {
-          firstFetch.countDown();
         }
         // Remove app watches for apps that are gone.
         lock.lock();
@@ -201,11 +193,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     liveApps = new Iterable <LiveInfo>() {
       @Override
       public Iterator<LiveInfo> iterator() {
-        try {
-          firstFetch.await(1, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-          LOG.debug("Interrupted exception while waiting for first fetch.", e);
-        }
         lock.lock();
         try {
           return getLiveInfos(ImmutableMultimap.copyOf(runIds)).iterator();
@@ -262,8 +249,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
         // For storing the live iterable.
         final AtomicReference<Iterable<WeaveController>> controllers =
                       new AtomicReference<Iterable<WeaveController>>(ImmutableList.<WeaveController>of());
-        // Latch for blocking until first time fetch completed
-        final CountDownLatch firstFetch = new CountDownLatch(1);
 
         // Watch for chanages under /instances, which container ephemeral nodes created by application master.
         ZKOperations.watchChildren(zkClient, "/instances", new ZKOperations.ChildrenCallback() {
@@ -282,19 +267,12 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
                 }
               }));
             cancelControllers(controllers.getAndSet(newControllers));
-            firstFetch.countDown();
           }
         });
 
         return new Iterable<WeaveController>() {
           @Override
           public Iterator<WeaveController> iterator() {
-            try {
-              firstFetch.await(1, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-              // OK to ignore.
-              LOG.debug("Interrupted exception while waiting for first fetch.", e);
-            }
             return controllers.get().iterator();
           }
         };
