@@ -22,6 +22,9 @@ public final class Constants {
 
   public static final String LOG_TOPIC = "log";
 
+  public static final int APPLICATION_MAX_START_SECONDS = 60;
+  public static final int APPLICATION_MAX_STOP_SECONDS = 30;
+
   private Constants() {
   }
 }

@@ -23,19 +23,26 @@ import com.google.common.io.Files;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.MiniYARNCluster;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.runner.RunWith;
+import org.junit.runners.Suite;
 
 import java.io.IOException;
 
 /**
- *
+ * Test suite for all tests with mini yarn cluster.
  */
-public abstract class ClusterTestBase {
+@RunWith(Suite.class)
+@Suite.SuiteClasses({EchoServerTestRun.class, TaskCompletedTestRun.class, DistributeShellTestRun.class})
+public class YarnTestSuite {
 
-  private InMemoryZKServer zkServer;
-  private MiniYARNCluster cluster;
-  private WeaveRunnerService runnerService;
+  private static InMemoryZKServer zkServer;
+  private static MiniYARNCluster cluster;
+  private static WeaveRunnerService runnerService;
 
-  protected final void doInit() throws IOException {
+  @BeforeClass
+  public static final void init() throws IOException {
     // Starts Zookeeper
     zkServer = InMemoryZKServer.builder().build();
     zkServer.startAndWait();
@@ -57,14 +64,14 @@ public abstract class ClusterTestBase {
     runnerService.startAndWait();
   }
 
-  protected final void doFinish() {
+  @AfterClass
+  public static final void finish() {
     runnerService.stopAndWait();
     cluster.stop();
     zkServer.stopAndWait();
   }
 
-
-  protected WeaveRunner getWeaveRunner() {
+  public static final WeaveRunner getWeaveRunner() {
     return runnerService;
   }
 }

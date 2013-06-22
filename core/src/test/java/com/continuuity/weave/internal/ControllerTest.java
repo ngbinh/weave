@@ -16,15 +16,15 @@
 package com.continuuity.weave.internal;
 
 import com.continuuity.weave.api.Command;
-import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.internal.state.ZKServiceDecorator;
+import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
+import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.google.common.base.Suppliers;
@@ -69,7 +69,7 @@ public class ControllerTest {
       controller.sendCommand(Command.Builder.of("test").build()).get(2, TimeUnit.SECONDS);
       controller.stop().get(2, TimeUnit.SECONDS);
 
-      Assert.assertEquals(ServiceController.State.TERMINATED, controller.getState());
+      Assert.assertEquals(ServiceController.State.TERMINATED, controller.state());
 
       final CountDownLatch terminateLatch = new CountDownLatch(1);
       service.addListener(new ServiceListenerAdapter() {
@@ -103,14 +103,14 @@ public class ControllerTest {
       final CountDownLatch runLatch = new CountDownLatch(1);
       final CountDownLatch stopLatch = new CountDownLatch(1);
       WeaveController controller = getController(zkClientService, runId);
-      controller.addListener(new ListenerAdapter() {
+      controller.addListener(new ServiceListenerAdapter() {
         @Override
         public void running() {
           runLatch.countDown();
         }
 
         @Override
-        public void terminated() {
+        public void terminated(Service.State from) {
           stopLatch.countDown();
         }
       }, Threads.SAME_THREAD_EXECUTOR);
@@ -147,7 +147,7 @@ public class ControllerTest {
 
       final CountDownLatch runLatch = new CountDownLatch(1);
       WeaveController controller = getController(zkClientService, runId);
-      controller.addListener(new ListenerAdapter() {
+      controller.addListener(new ServiceListenerAdapter() {
         @Override
         public void running() {
           runLatch.countDown();
@@ -181,10 +181,20 @@ public class ControllerTest {
   }
 
   private WeaveController getController(ZKClient zkClient, RunId runId) {
-    AbstractWeaveController controller = new AbstractWeaveController(zkClient, runId, ImmutableList.<LogHandler>of()) {
+    WeaveController controller = new AbstractWeaveController(runId, zkClient, ImmutableList.<LogHandler>of()) {
 
       @Override
       public void kill() {
+        // No-op
+      }
+
+      @Override
+      protected void instanceNodeUpdated(NodeData nodeData) {
+        // No-op
+      }
+
+      @Override
+      protected void stateNodeUpdated(StateNode stateNode) {
         // No-op
       }
     };

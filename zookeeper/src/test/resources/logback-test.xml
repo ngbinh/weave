@@ -8,9 +8,10 @@
         </encoder>
     </appender>
 
-    <logger name="com.continuuity" level="DEBUG" />
+    <logger name="org.apache.hadoop" level="WARN" />
+    <logger name="org.apache.zookeeper" level="WARN" />
 
-    <root level="WARN">
+    <root level="INFO">
         <appender-ref ref="STDOUT"/>
     </root>
 

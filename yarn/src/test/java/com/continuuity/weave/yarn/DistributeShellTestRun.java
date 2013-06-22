@@ -1,58 +1,47 @@
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
+import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
-import org.junit.After;
+import com.google.common.util.concurrent.Service;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- *
+ * This test is executed by {@link YarnTestSuite}.
  */
-public class DistributeShellTest extends ClusterTestBase {
+public class DistributeShellTestRun {
 
   @Ignore
   @Test
   public void testDistributedShell() throws InterruptedException {
-    WeaveRunner weaveRunner = getWeaveRunner();
+    WeaveRunner weaveRunner = YarnTestSuite.getWeaveRunner();
 
     WeaveController controller = weaveRunner.prepare(new DistributedShell("pwd", "ls -al"))
                                             .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
                                             .start();
 
     final CountDownLatch stopLatch = new CountDownLatch(1);
-    controller.addListener(new ListenerAdapter() {
+    controller.addListener(new ServiceListenerAdapter() {
+
       @Override
-      public void terminated() {
+      public void terminated(Service.State from) {
         stopLatch.countDown();
       }
 
       @Override
-      public void failed(StackTraceElement[] stackTraces) {
+      public void failed(Service.State from, Throwable failure) {
         stopLatch.countDown();
       }
     }, Threads.SAME_THREAD_EXECUTOR);
 
     Assert.assertTrue(stopLatch.await(10, TimeUnit.SECONDS));
-  }
-
-  @Before
-  public void init() throws IOException {
-    doInit();
-  }
-
-  @After
-  public void finish() {
-    doFinish();
   }
 }
