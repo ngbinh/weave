@@ -46,19 +46,19 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- *
+ * A abstract base class for {@link WeaveController} implementation that uses Zookeeper to controller a
+ * running weave application.
  */
-public abstract class ZKWeaveController extends AbstractServiceController implements WeaveController {
+public abstract class AbstractWeaveController extends AbstractServiceController implements WeaveController {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ZKWeaveController.class);
-  private static final String LOG_TOPIC = "log";
+  private static final Logger LOG = LoggerFactory.getLogger(AbstractWeaveController.class);
 
   private final Queue<LogHandler> logHandlers;
   private final KafkaClient kafkaClient;
   private final DiscoveryServiceClient discoveryServiceClient;
   private final Thread logPoller;
 
-  public ZKWeaveController(ZKClient zkClient, RunId runId, Iterable<LogHandler> logHandlers) {
+  public AbstractWeaveController(ZKClient zkClient, RunId runId, Iterable<LogHandler> logHandlers) {
     super(zkClient, runId);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
     this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
@@ -132,7 +132,7 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
         Gson gson = new GsonBuilder().registerTypeAdapter(LogEntry.class, new LogEntryDecoder())
                                      .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
                                      .create();
-        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(LOG_TOPIC, 0, 0, 1048576);
+        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(Constants.LOG_TOPIC, 0, 0, 1048576);
         while (messageIterator.hasNext()) {
           String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
           try {

@@ -41,6 +41,7 @@ import java.net.URISyntaxException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  *
@@ -50,7 +51,7 @@ public class EchoServerTest extends ClusterTestBase {
   private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
 
   @Test
-  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException {
+  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException, TimeoutException {
     WeaveRunner runner = getWeaveRunner();
 
     WeaveController controller = runner.prepare(new EchoServer(),
@@ -114,7 +115,7 @@ public class EchoServerTest extends ClusterTestBase {
 
     for (WeaveController c : controllers) {
       LOG.info("Stopping application: " + c.getRunId());
-      c.stop().get();
+      c.stop().get(10, TimeUnit.SECONDS);
     }
 
     Assert.assertTrue(waitForSize(apps, 0, 60));

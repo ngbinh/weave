@@ -19,7 +19,7 @@ import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.internal.ZKWeaveController;
+import com.continuuity.weave.internal.AbstractWeaveController;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Charsets;
 import com.google.common.base.Function;
@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit;
 /**
  *
  */
-final class YarnWeaveController extends ZKWeaveController {
+final class YarnWeaveController extends AbstractWeaveController {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeaveController.class);
 
