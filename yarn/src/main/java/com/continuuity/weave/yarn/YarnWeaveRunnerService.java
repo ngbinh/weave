@@ -176,6 +176,10 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
   @Override
   protected void shutDown() throws Exception {
+    // Shutdown shouldn't stop any controllers, as stopping this client service should let the remote containers
+    // running. However, this assumes that this WeaveRunnerService is a long running service and you only stop it
+    // when the JVM process is about to exit. Hence it is important that threads created in the controllers are
+    // daemon threads.
     watchCancellable.cancel();
     zkClientService.stopAndWait();
     yarnClient.stop();
