@@ -231,7 +231,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           }));
         }
 
-        // Remove app watches for apps that are gone.
+        // Remove app watches for apps that are gone. Removal of controller from controllers table is done
+        // in the state listener attached to the weave controller.
         for (String removeApp : Sets.difference(watched.keySet(), apps)) {
           watched.remove(removeApp).cancel();
         }

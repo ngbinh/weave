@@ -80,15 +80,15 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
       long maxTime = TimeUnit.MILLISECONDS.convert(Constants.APPLICATION_MAX_START_SECONDS, TimeUnit.SECONDS);
 
       LOG.info("Checking yarn application status");
-      while (!hasStarted(state) && stopWatch.getSplitTime() < maxTime) {
+      while (!hasRun(state) && stopWatch.getSplitTime() < maxTime) {
         state = yarnClient.getApplicationReport(applicationId).getYarnApplicationState();
         LOG.debug("Yarn application status: {}", state);
         TimeUnit.SECONDS.sleep(1);
         stopWatch.split();
       }
       LOG.info("Yarn application is in state {}", state);
-      if (!hasStarted(state)) {
-        LOG.info("Yarn application is not running after timeout of {} seconds.",
+      if (state != YarnApplicationState.RUNNING) {
+        LOG.info("Yarn application is not in running state. Shutting down controller.",
                  Constants.APPLICATION_MAX_START_SECONDS);
         forceShutDown();
       }
@@ -158,7 +158,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   }
 
-  private boolean hasStarted(YarnApplicationState state) {
+  private boolean hasRun(YarnApplicationState state) {
     switch (state) {
       case RUNNING:
       case FINISHED:
