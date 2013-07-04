@@ -1,16 +1,16 @@
 What is Weave ?
 ===============
 
-Weave is a simple set of libraries that allows you to easily manage distributed applications through an abstraction layer 
-built on Apache YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to 
-running threads. Weave is **NOT** a replacement for Apache YARN. Weave is a value-added framework that operates on top of Apache YARN.
+Weave is a simple set of libraries that lets you easily manage distributed applications through an abstraction layer 
+built on YARN. Weave allows you to use YARN’s distributed capabilities with a programming model that is similar to running threads. 
+Weave is **NOT** a replacement for YARN. Weave is a value-added framework that operates on top of YARN.
 
 Why Do I Need Weave?
 =====================
-Weave dramatically simplifies and reduces your development efforts, enabling you to quickly and easily manage 
-your distributed applications through its friendly abstraction layer built on YARN. YARN can normally be quite difficult to use and requires a big ramp up effort, especially since it's only built for MapReduce and is normally meant for managing batch jobs. YARN, however, can be used as a generalized custom resource management tool that can run any type of job including batch jobs, real-time jobs, and long-running jobs. 
+Weave dramatically simplifies and reduces development efforts, enabling you to quickly and easily manage 
+distributed applications through its friendly abstraction layer built on YARN. YARN can normally be quite difficult to use and requires a big ramp up effort, especially since it's only built for MapReduce and is normally meant for managing batch jobs. YARN, however, can be used as a generalized custom resource management tool that can run any type of job including batch jobs, real-time jobs and long-running jobs. 
 
-Unfortunately, YARN’s capabilities are too low level to allow you to quickly develop applications. YARN requires a great deal of boilerplate code even for simple applications, and its logging output does not become available until the application is finished. This becomes especially problamatic when managing long-running jobs. Because those jobs never finish you cannot view their logs, which makes it very difficult to develop and debug them. Finally, YARN does not provide standard support for application lifecycle management, communications between containers and the Application Master, and handling application level errors. 
+Unfortunately, YARN’s capabilities are too low level to allow you to quickly develop applications. YARN requires a great deal of boilerplate code even for simple applications, and its logging output does not become available until the application stops running. This becomes especially problematic when managing long-running jobs. Those jobs never finish so you can't view their logs, which makes it very difficult to develop and debug these apps. Finally, YARN does not provide standard support for application lifecycle management, communications between containers and the Application Master, and handling application level errors. 
 
 Weave allows you to manage your distributed applications with a much simpler programming model. You can quickly and easily build, test, run, and debug YARN applications, dramatically reducing your development efforts and simplifying the management of resources and jobs in your distributed applications.
 
