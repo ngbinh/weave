@@ -35,7 +35,7 @@ Interested in improving Weave? We have a simple pull-based development model wit
   * Fork weave into your own GitHub repository
   * Create a topic branch with an appropriate name
   * Work on the code to your heart's content
-  * Once you’re satisfied, create a pull request from your repo (it’s helpful if you fill in all of the description fields)
+  * Once you’re satisfied, create a pull request from your GitHub repo (it’s helpful if you fill in all of the description fields)
   * After we review and accept your request we’ll commit your code to the continuuity/weave repo
   * Thanks!
 
