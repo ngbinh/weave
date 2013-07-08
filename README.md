@@ -2,7 +2,7 @@ What is Weave ?
 ===============
 
 Weave is a simple set of libraries for easily managing distributed applications through an abstraction layer 
-built on YARN. This allows you to use YARN’s distributed capabilities with a programming model that's similar to running threads. 
+built on Apache&trade; Hadoop&reg; YARN. This allows you to use YARN’s distributed capabilities with a programming model that's similar to running threads. 
 Weave is **NOT** a replacement for YARN. Weave is a value-added framework that operates on top of YARN.
 
 Why Do I Need Weave?
