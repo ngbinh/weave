@@ -17,6 +17,7 @@ package com.continuuity.weave.api;
 
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.discovery.Discoverable;
+import com.google.common.util.concurrent.ListenableFuture;
 
 /**
  * For controller a running application.
@@ -39,11 +40,13 @@ public interface WeaveController extends ServiceController {
 
 
   /**
-   * Changes the number of running instances of a given runnable. This method would block until
-   * the command is completely executed.
+   * Changes the number of running instances of a given runnable.
    *
    * @param runnable The name of the runnable.
    * @param newCount Number of instances for the given runnable.
+   * @return A {@link ListenableFuture} that will be completed when the number running instances has been
+   *         successfully changed. The future will carry the new count as the result. If there is any error
+   *         while changing instances, it'll be reflected in the future.
    */
-  void changeInstances(String runnable, int newCount);
+  ListenableFuture<Integer> changeInstances(String runnable, int newCount);
 }

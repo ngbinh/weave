@@ -23,7 +23,7 @@ public interface WeaveRunner {
   interface LiveInfo {
     String getApplicationName();
 
-    Iterable<RunId> getRunIds();
+    Iterable<WeaveController> getControllers();
   }
 
   /**

@@ -102,6 +102,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final YarnClient yarnClient;
   private final ZKClient zkClient;
   private final LocationFactory locationFactory;
+  private final YarnWeaveControllerFactory controllerFactory;
   private final RunId runId;
 
   private final List<LogHandler> logHandlers = Lists.newArrayList();
@@ -112,12 +113,14 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
 
   YarnWeavePreparer(WeaveSpecification weaveSpec, YarnClient yarnClient,
-                    ZKClient zkClient, LocationFactory locationFactory) {
+                    ZKClient zkClient, LocationFactory locationFactory,
+                    YarnWeaveControllerFactory controllerFactory) {
     this.weaveSpec = weaveSpec;
     this.yarnClient = yarnClient;
     this.zkClient = ZKClients.namespace(zkClient, "/" + weaveSpec.getName());
     this.locationFactory = locationFactory;
     this.runId = RunIds.generate();
+    this.controllerFactory = controllerFactory;
   }
 
   @Override
@@ -186,82 +189,90 @@ final class YarnWeavePreparer implements WeavePreparer {
     // TODO: Unify this with {@link ProcessLauncher}
     try {
       GetNewApplicationResponse response = yarnClient.getNewApplication();
-      ApplicationId applicationId = response.getApplicationId();
+      final ApplicationId applicationId = response.getApplicationId();
 
-      ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
-      appSubmissionContext.setApplicationId(applicationId);
-      appSubmissionContext.setApplicationName(weaveSpec.getName());
+      Runnable submitTask  = new Runnable() {
+        @Override
+        public void run() {
+          try {
+            ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
+            appSubmissionContext.setApplicationId(applicationId);
+            appSubmissionContext.setApplicationName(weaveSpec.getName());
 
-      Map<String, LocalResource> localResources = Maps.newHashMap();
+            Map<String, LocalResource> localResources = Maps.newHashMap();
 
-      Multimap<String, LocalFile> transformedLocalFiles = HashMultimap.create();
+            Multimap<String, LocalFile> transformedLocalFiles = HashMultimap.create();
 
-      createAppMasterJar(createBundler(), localResources);
-      createContainerJar(createBundler(), localResources);
-      populateRunnableResources(weaveSpec, transformedLocalFiles);
-      saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
-      saveLogback(localResources);
-      saveLauncher(localResources);
-      saveKafka(localResources);
-      saveArguments(arguments, runnableArgs, localResources);
-      saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
-                                                     "logback-template.xml",
-                                                     "container.jar",
-                                                     "launcher.jar",
-                                                     "arguments.json"));
+            createAppMasterJar(createBundler(), localResources);
+            createContainerJar(createBundler(), localResources);
+            populateRunnableResources(weaveSpec, transformedLocalFiles);
+            saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
+            saveLogback(localResources);
+            saveLauncher(localResources);
+            saveKafka(localResources);
+            saveArguments(arguments, runnableArgs, localResources);
+            saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
+                                                           "logback-template.xml",
+                                                           "container.jar",
+                                                           "launcher.jar",
+                                                           "arguments.json"));
 
-      ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
-      containerLaunchContext.setLocalResources(localResources);
+            ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
+            containerLaunchContext.setLocalResources(localResources);
 
-      // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
-      //     com.continuuity.weave.internal.WeaveLauncher
-      //     appMaster.jar
-      //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
-      //     false
-      containerLaunchContext.setCommands(ImmutableList.of(
-        "java",
-        "-cp", "launcher.jar:$HADOOP_CONF_DIR",
-        "-Xmx" + APP_MASTER_MEMORY_MB + "m",
-        WeaveLauncher.class.getName(),
-        "appMaster.jar",
-        ApplicationMasterMain.class.getName(),
-        Boolean.FALSE.toString(),
-        " 1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
-        " 2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"
-      ));
+            // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
+            //     com.continuuity.weave.internal.WeaveLauncher
+            //     appMaster.jar
+            //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
+            //     false
+            containerLaunchContext.setCommands(ImmutableList.of(
+              "java",
+              "-cp", "launcher.jar:$HADOOP_CONF_DIR",
+              "-Xmx" + APP_MASTER_MEMORY_MB + "m",
+              WeaveLauncher.class.getName(),
+              "appMaster.jar",
+              ApplicationMasterMain.class.getName(),
+              Boolean.FALSE.toString(),
+              " 1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
+              " 2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"
+            ));
 
-      containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
-                                              .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
-                                              .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
-                                                   Long.toString(applicationId.getClusterTimestamp()))
-                                              .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
-                                              .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-                                              .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-                                              .build()
-      );
-      Resource capability = Records.newRecord(Resource.class);
-      capability.setMemory(APP_MASTER_MEMORY_MB);
-      containerLaunchContext.setResource(capability);
+            containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
+                                                    .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
+                                                    .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
+                                                         Long.toString(applicationId.getClusterTimestamp()))
+                                                    .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+                                                    .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+                                                    .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+                                                    .build()
+            );
+            Resource capability = Records.newRecord(Resource.class);
+            capability.setMemory(APP_MASTER_MEMORY_MB);
+            containerLaunchContext.setResource(capability);
 
-      appSubmissionContext.setAMContainerSpec(containerLaunchContext);
+            appSubmissionContext.setAMContainerSpec(containerLaunchContext);
 
-      yarnClient.submitApplication(appSubmissionContext);
+            LOG.debug("Submit AM container spec: {}", applicationId);
+            ApplicationId appId = yarnClient.submitApplication(appSubmissionContext);
+            LOG.debug("AM container spec submitted: {}", appId);
 
-      return createController(applicationId, runId, logHandlers);
+          } catch (Exception e) {
+            throw Throwables.propagate(e);
+          }
+        }
+      };
+
+      YarnWeaveController controller = controllerFactory.create(runId, logHandlers, applicationId, submitTask);
+      controller.start();
+      return controller;
+
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
   }
 
-  private WeaveController createController(ApplicationId applicationId, RunId runId, Iterable<LogHandler> logHandlers) {
-    YarnWeaveController controller = new YarnWeaveController(yarnClient, zkClient, applicationId, runId, logHandlers);
-    controller.start();
-    return controller;
-  }
-
   private ApplicationBundler createBundler() {
     return new ApplicationBundler(ImmutableList.<String>of());
-
   }
 
   private void createAppMasterJar(ApplicationBundler bundler,

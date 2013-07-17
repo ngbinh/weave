@@ -13,35 +13,16 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.api;
+package com.continuuity.weave.yarn;
+
+import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.api.logging.LogHandler;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 
 /**
- * A abstract base class to simplify implementation of {@link ServiceController.Listener}.
+ *
  */
-public abstract class ListenerAdapter implements ServiceController.Listener {
+interface YarnWeaveControllerFactory {
 
-  @Override
-  public void starting() {
-    // No-op.
-  }
-
-  @Override
-  public void running() {
-    // No-op.
-  }
-
-  @Override
-  public void stopping() {
-    // No-op.
-  }
-
-  @Override
-  public void terminated() {
-    // No-op.
-  }
-
-  @Override
-  public void failed(StackTraceElement[] stackTraces) {
-    // No-op.
-  }
+  YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers, ApplicationId appId, Runnable startUp);
 }

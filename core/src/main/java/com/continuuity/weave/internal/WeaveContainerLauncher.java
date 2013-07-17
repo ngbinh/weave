@@ -18,17 +18,13 @@ package com.continuuity.weave.internal;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
-import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.launcher.WeaveLauncher;
+import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.ListenableFuture;
-
-import java.util.Set;
-import java.util.concurrent.Future;
 
 /**
  * This class helps launching a container.
@@ -95,30 +91,35 @@ public final class WeaveContainerLauncher {
     return controller;
   }
 
-  private static final class WeaveContainerControllerImpl extends AbstractServiceController
+  private static final class WeaveContainerControllerImpl extends AbstractZKServiceController
                                                           implements WeaveContainerController {
 
     private final ProcessLauncher.ProcessController processController;
-    private final Set<ListenableFuture<?>> pendingFutures;
 
     protected WeaveContainerControllerImpl(ZKClient zkClient, RunId runId,
                                            ProcessLauncher.ProcessController processController) {
-      super(zkClient, runId);
+      super(runId, zkClient);
       this.processController = processController;
-      this.pendingFutures = Sets.newIdentityHashSet();
     }
 
     @Override
-    protected synchronized <V> ListenableFuture<V> sendMessage(Message message, V result) {
-      final ListenableFuture future = super.sendMessage(message, result);
-      pendingFutures.add(future);
-      future.addListener(new Runnable() {
-        @Override
-        public void run() {
-          pendingFutures.remove(future);
-        }
-      }, Threads.SAME_THREAD_EXECUTOR);
-      return future;
+    protected void doStartUp() {
+      // No-op
+    }
+
+    @Override
+    protected void doShutDown() {
+      // No-op
+    }
+
+    @Override
+    protected void instanceNodeUpdated(NodeData nodeData) {
+      // No-op
+    }
+
+    @Override
+    protected void stateNodeUpdated(StateNode stateNode) {
+      // No-op
     }
 
     @Override
@@ -128,12 +129,10 @@ public final class WeaveContainerLauncher {
 
     @Override
     public synchronized void completed(int exitStatus) {
-      for (Future<?> future : pendingFutures) {
-        future.cancel(true);
-      }
       if (exitStatus != 0) {  // If a container terminated with exit code != 0, treat it as error
-        fireStateChange(new StateNode(State.FAILED, new StackTraceElement[0]));
+//        fireStateChange(new StateNode(State.FAILED, new StackTraceElement[0]));
       }
+      forceShutDown();
     }
 
     @Override

@@ -7,9 +7,11 @@ import com.continuuity.weave.common.Cancellable;
 import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.ws.rs.QueryParam;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
