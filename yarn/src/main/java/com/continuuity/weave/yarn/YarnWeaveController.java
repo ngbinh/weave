@@ -49,7 +49,7 @@ final class YarnWeaveController extends ZKWeaveController {
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeaveController.class);
 
   /**
-   * Max time to wait for application status from yarn when stopping an application.
+   * Max time to wait for application status from YARN when stopping an application.
    */
   private static final long MAX_STOP_TIME = 5000;   // 5 seconds
 

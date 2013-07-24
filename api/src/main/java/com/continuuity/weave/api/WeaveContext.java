@@ -18,7 +18,7 @@ package com.continuuity.weave.api;
 import java.net.InetAddress;
 
 /**
- * Represents runtime context of a {@link WeaveRunnable}.
+ * Represents the runtime context of a {@link WeaveRunnable}.
  */
 public interface WeaveContext extends ServiceAnnouncer {
 

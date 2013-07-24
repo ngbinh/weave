@@ -31,7 +31,7 @@ import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.apache.hadoop.yarn.service.Service;
 
 /**
- * Ported from apache hadoop yarn.
+ * Ported from Apache Hadoop YARN.
  */
 public interface AMRMClient extends Service {
 
@@ -91,7 +91,7 @@ public interface AMRMClient extends Service {
    * <code>ResourceManager</code>. New containers assigned to the master are
    * retrieved. Status of completed containers and node health updates are
    * also retrieved.
-   * This also doubles up as a heartbeat to the ResourceManager and must be
+   * This also doubles as a heartbeat to the ResourceManager and must be
    * made periodically.
    * The call may not always return any new allocations of containers.
    * App should not make concurrent allocate requests. May cause request loss.
@@ -103,7 +103,7 @@ public interface AMRMClient extends Service {
     throws YarnRemoteException;
 
   /**
-   * Unregister the application master. This must be called in the end.
+   * Unregister the Application Master. This must be called in the end.
    * @param appStatus Success/Failure status of the master
    * @param appMessage Diagnostics message on failure
    * @param appTrackingUrl New URL to get master info
@@ -131,9 +131,9 @@ public interface AMRMClient extends Service {
 
   /**
    * Release containers assigned by the Resource Manager. If the app cannot use
-   * the container or wants to give up the container then it can release them.
+   * the container or wants to give up the container then it can release it.
    * The app needs to make new requests for the released resource capability if
-   * it still needs it. eg. it released non-local resources
+   * it still needs it. For example, if it released non-local resources
    * @param containerId
    */
   public void releaseAssignedContainer(ContainerId containerId);

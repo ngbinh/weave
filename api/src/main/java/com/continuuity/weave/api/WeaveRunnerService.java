@@ -18,8 +18,8 @@ package com.continuuity.weave.api;
 import com.google.common.util.concurrent.Service;
 
 /**
- * A {@link WeaveRunner} that extends from {@link Service} to provide lifecycle management functions.
- * The {@link #start()} method needed to be called before calling any other method on this interface.
+ * A {@link WeaveRunner} that extends {@link Service} to provide lifecycle management functions.
+ * The {@link #start()} method needs to be called before calling any other method of this interface.
  * When done with this service, call {@link #stop()} to release any resources that it holds.
  */
 public interface WeaveRunnerService extends WeaveRunner, Service {

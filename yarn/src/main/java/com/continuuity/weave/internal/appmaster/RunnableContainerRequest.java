@@ -28,7 +28,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Data structure for holding set of runnable specification based on resource capability.
+ * Data structure for holding set of runnable specifications based on resource capability.
  */
 final class RunnableContainerRequest {
   private final WeaveSpecification.Order.Type orderType;
@@ -45,7 +45,7 @@ final class RunnableContainerRequest {
   }
 
   /**
-   * Remove a resource request and returns it.
+   * Remove a resource request and return it.
    * @return The {@link Resource} and {@link Collection} of {@link RuntimeSpecification} or
    *         {@code null} if there is no more request.
    */

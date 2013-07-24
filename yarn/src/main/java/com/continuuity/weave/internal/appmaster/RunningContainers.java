@@ -102,7 +102,7 @@ final class RunningContainers {
   }
 
   /**
-   * Stops and remove the last running container of the given runnable.
+   * Stops and removes the last running container of the given runnable.
    */
   void removeLast(String runnableName) {
     containerLock.lock();
@@ -135,7 +135,7 @@ final class RunningContainers {
   }
 
   /**
-   * Blocks until there is changes in running containers.
+   * Blocks until there are changes in running containers.
    */
   void waitForChange() throws InterruptedException {
     containerLock.lock();
@@ -192,7 +192,7 @@ final class RunningContainers {
   }
 
   /**
-   * Stops all running services. Only called when the AppMaster stop.
+   * Stops all running services. Only called when the AppMaster stops.
    */
   void stopAll() {
     containerLock.lock();
@@ -209,7 +209,7 @@ final class RunningContainers {
         for (WeaveContainerController controller : containers.row(runnableName).values()) {
           futures.add(controller.stop());
         }
-        // Wait for containers to stop. Assuming the future returned by Futures.successfulAsList won't throw exception.
+        // Wait for containers to stop. Assumes the future returned by Futures.successfulAsList won't throw exception.
         Futures.getUnchecked(Futures.successfulAsList(futures));
 
         LOG.info("Terminated all instances of " + runnableName);
@@ -233,7 +233,7 @@ final class RunningContainers {
     try {
       Map<String, WeaveContainerController> lookup = containers.column(containerId);
       if (lookup.isEmpty()) {
-        // It's ok as if a container is stopped through the controller, this would be empty.
+        // It's OK because if a container is stopped through the controller this would be empty.
         return;
       }
 

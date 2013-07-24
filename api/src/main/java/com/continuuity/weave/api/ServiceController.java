@@ -64,7 +64,7 @@ public interface ServiceController {
   void stopAndWait();
 
   /**
-   * Requests to forcefully kills a running service.
+   * Requests to forcefully kill a running service.
    */
   void kill();
 

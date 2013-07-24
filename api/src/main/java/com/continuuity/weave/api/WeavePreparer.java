@@ -20,12 +20,12 @@ import com.continuuity.weave.api.logging.LogHandler;
 import java.net.URI;
 
 /**
- * This interface exposes methods to setup the weave runtime environment and to start weave application.
+ * This interface exposes methods to set up the Weave runtime environment and start a Weave application.
  */
 public interface WeavePreparer {
 
   /**
-   * Adds a {@link LogHandler} for receiving application log.
+   * Adds a {@link LogHandler} for receiving an application log.
    * @param handler The {@link LogHandler}.
    * @return This {@link WeavePreparer}.
    */
@@ -70,14 +70,14 @@ public interface WeavePreparer {
   WeavePreparer withArguments(String runnableName, Iterable<String> args);
 
   /**
-   * Adds extra classes that the application is depended on and is not traceable from the application itself.
+   * Adds extra classes that the application is dependent on and is not traceable from the application itself.
    * @see #withDependencies(Iterable)
    * @return This {@link WeavePreparer}.
    */
   WeavePreparer withDependencies(Class<?>...classes);
 
   /**
-   * Adds extra classes that the application is depended on and is not traceable from the application itself.
+   * Adds extra classes that the application is dependent on and is not traceable from the application itself.
    * E.g. Class name used in {@link Class#forName(String)}.
    * @param classes set of classes to add to dependency list for generating the deployment jar.
    * @return This {@link WeavePreparer}.
@@ -94,7 +94,7 @@ public interface WeavePreparer {
   /**
    * Adds resources that will be available through the ClassLoader of the {@link WeaveRunnable runnables}.
    * Useful for adding extra resource files or libraries that are not traceable from the application itself.
-   * If the URI is a jar file, classes inside would be loadable by the ClassLoader. If URI is a directory,
+   * If the URI is a jar file, classes inside would be loadable by the ClassLoader. If the URI is a directory,
    * everything underneath would be available.
    *
    * @param resources Set of URI to the resources.
@@ -103,14 +103,14 @@ public interface WeavePreparer {
   WeavePreparer withResources(Iterable<URI> resources);
 
   /**
-   * Adds the set of path to the classpath on the target machine for all runnables.
+   * Adds the set of paths to the classpath on the target machine for all runnables.
    * @see #withClassPaths(Iterable)
    * @return This {@link WeavePreparer}
    */
   WeavePreparer withClassPaths(String... classPaths);
 
   /**
-   * Adds the set of path to the classpath on the target machine for all runnables.
+   * Adds the set of paths to the classpath on the target machine for all runnables.
    * Note that the paths would be just added without verification.
    * @param classPaths Set of classpaths
    * @return This {@link WeavePreparer}

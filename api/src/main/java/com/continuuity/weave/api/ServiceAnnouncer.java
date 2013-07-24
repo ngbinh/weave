@@ -18,7 +18,7 @@ package com.continuuity.weave.api;
 import com.continuuity.weave.common.Cancellable;
 
 /**
- * This interface provides way to announce availability of a service.
+ * This interface provides a way to announce the availability of a service.
  */
 public interface ServiceAnnouncer {
 
