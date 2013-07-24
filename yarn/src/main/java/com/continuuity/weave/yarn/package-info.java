@@ -14,6 +14,6 @@
  * the License.
  */
 /**
- * Classes in this package implements Weave API for Hadoop YARN.
+ * Classes in this package implement the Weave API for Apache Hadoop YARN.
  */
 package com.continuuity.weave.yarn;

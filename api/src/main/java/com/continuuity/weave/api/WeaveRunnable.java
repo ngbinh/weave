@@ -22,7 +22,7 @@ package com.continuuity.weave.api;
 public interface WeaveRunnable extends Runnable {
 
   /**
-   * Called at the submission time. Executed on the client side.
+   * Called at submission time. Executed on the client side.
    * @return A {@link WeaveRunnableSpecification} built by {@link WeaveRunnableSpecification.Builder}.
    */
   WeaveRunnableSpecification configure();

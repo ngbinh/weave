@@ -72,7 +72,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * An implementation of {@link WeaveRunnerService} that runs application on Yarn cluster.
+ * An implementation of {@link WeaveRunnerService} that runs application on a YARN cluster.
  */
 public final class YarnWeaveRunnerService extends AbstractIdleService implements WeaveRunnerService {
 
@@ -212,7 +212,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       // Create the root node, so that the namespace root would get created if it is missing
       zkClientService.create("/", null, CreateMode.PERSISTENT).get();
     } catch (Exception e) {
-      // If the exception is caused by node exists, then it's ok. Otherwise propagate the exception.
+      // If the exception is caused by node exists, then it's OK. Otherwise propagate the exception.
       Throwable cause = e.getCause();
       if (!(cause instanceof KeeperException) || ((KeeperException) cause).code() != KeeperException.Code.NODEEXISTS) {
         throw Throwables.propagate(e);

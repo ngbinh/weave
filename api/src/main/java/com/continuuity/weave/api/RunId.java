@@ -16,7 +16,7 @@
 package com.continuuity.weave.api;
 
 /**
- * Represents an unique ID of a particular execution.
+ * Represents the unique ID of a particular execution.
  */
 public interface RunId {
 

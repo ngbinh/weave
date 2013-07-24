@@ -60,7 +60,7 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 /**
- * Ported from apache hadoop yarn.
+ * Ported from Apache Hadoop YARN.
  */
 public final class AMRMClientImpl extends AbstractService implements AMRMClient {
 
@@ -204,19 +204,19 @@ public final class AMRMClientImpl extends AbstractService implements AMRMClient 
         clusterAvailableResources = response.getAvailableResources();
       }
     } finally {
-      // TODO how to differentiate remote yarn exception vs error in rpc
+      // TODO how to differentiate remote YARN exception vs error in RPC
       if (allocateResponse == null) {
-        // we hit an exception in allocate()
-        // preserve ask and release for next call to allocate()
+        // We hit an exception in allocate()
+        // Preserve ask and release for next call to allocate()
         synchronized (this) {
           release.addAll(releaseList);
-          // requests could have been added or deleted during call to allocate
+          // Requests could have been added or deleted during call to allocate.
           // If requests were added/removed then there is nothing to do since
           // the ResourceRequest object in ask would have the actual new value.
           // If ask does not have this ResourceRequest then it was unchanged and
           // so we can add the value back safely.
           // This assumes that there will no concurrent calls to allocate() and
-          // so we dont have to worry about ask being changed in the
+          // so we don't have to worry about ask being changed in the
           // synchronized block at the beginning of this method.
           for (ResourceRequest oldAsk : askList) {
             if (!ask.contains(oldAsk)) {
@@ -260,7 +260,7 @@ public final class AMRMClientImpl extends AbstractService implements AMRMClient 
       }
     }
 
-    // Off-switch
+    // Off switch
     addResourceRequest(req.priority, ANY, req.capability, req.containerCount);
   }
 
@@ -386,12 +386,12 @@ public final class AMRMClientImpl extends AbstractService implements AMRMClient 
       // guard against spurious removals
       remoteRequest.setNumContainers(0);
     }
-    // send the ResourceRequest to RM even if is 0 because it needs to override
+    // Send the ResourceRequest to RM even if is 0 because it needs to override
     // a previously sent value. If ResourceRequest was not sent previously then
-    // sending 0 aught to be a no-op on RM
+    // sending 0 ought to be a no-op on RM.
     addResourceRequestToAsk(remoteRequest);
 
-    // delete entries from map if no longer needed
+    // Delete entries from map if no longer needed.
     if (remoteRequest.getNumContainers() == 0) {
       reqMap.remove(capability);
       if (reqMap.size() == 0) {

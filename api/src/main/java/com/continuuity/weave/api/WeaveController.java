@@ -19,7 +19,7 @@ import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.discovery.Discoverable;
 
 /**
- * For controller a running application.
+ * For controlling a running application.
  */
 public interface WeaveController extends ServiceController {
 
@@ -39,7 +39,7 @@ public interface WeaveController extends ServiceController {
 
 
   /**
-   * Changes the number of running instances of a given runnable. This method would block until
+   * Changes the number of running instances of a given runnable. This method blocks until
    * the command is completely executed.
    *
    * @param runnable The name of the runnable.

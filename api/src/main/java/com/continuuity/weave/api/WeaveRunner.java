@@ -59,14 +59,14 @@ public interface WeaveRunner {
   /**
    * Gets an {@link Iterable} of {@link WeaveController} for all running instances of the given application.
    * @param applicationName Name of the application.
-   * @return A live {@link Iterable} that givens the latest set of {@link WeaveController} for all running
+   * @return A live {@link Iterable} that gives the latest {@link WeaveController} set for all running
    *         instances of the application when {@link Iterable#iterator()} is invoked.
    */
   Iterable<WeaveController> lookup(String applicationName);
 
   /**
    * Gets an {@link Iterable} of {@link LiveInfo}.
-   * @return A live {@link Iterable} that gives the latest set of application informations that have running instances
+   * @return A live {@link Iterable} that gives the latest information on the set of applications that have running instances
    *         when {@link Iterable#iterator()}} is invoked.
    */
   Iterable<LiveInfo> lookupLive();

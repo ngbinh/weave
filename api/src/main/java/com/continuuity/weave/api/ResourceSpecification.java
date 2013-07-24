@@ -18,7 +18,7 @@ package com.continuuity.weave.api;
 import com.continuuity.weave.internal.DefaultResourceSpecification;
 
 /**
- * This interface provides specification for resource requirements.
+ * This interface provides specifications for resource requirements including set and get methods for number of cores, amount of memory, and number of instances.
  */
 public interface ResourceSpecification {
 

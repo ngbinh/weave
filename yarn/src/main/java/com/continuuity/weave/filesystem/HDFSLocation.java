@@ -45,7 +45,7 @@ final class HDFSLocation implements Location {
   }
 
   /**
-   * Checks if the this location exists on HDFS.
+   * Checks if this location exists on HDFS.
    *
    * @return true if found; false otherwise.
    * @throws IOException
@@ -121,7 +121,7 @@ final class HDFSLocation implements Location {
    * pathname denotes a directory, then the directory must be empty in order
    * to be deleted.
    *
-   * @return true if and only if the file or directory is successfully delete; false otherwise.
+   * @return true if and only if the file or directory is successfully deleted; false otherwise.
    */
   @Override
   public boolean delete() throws IOException {
@@ -135,7 +135,7 @@ final class HDFSLocation implements Location {
 
   @Override
   public Location renameTo(Location destination) throws IOException {
-    // destination will always be of the same type as this location
+    // Destination will always be of the same type as this location.
     boolean success;
     if (fs instanceof DistributedFileSystem) {
       ((DistributedFileSystem)fs).rename(path, ((HDFSLocation) destination).path, Options.Rename.OVERWRITE);
