@@ -21,7 +21,7 @@
 
     <groupId>com.continuuity.weave</groupId>
     <artifactId>weave-parent</artifactId>
-    <version>0.0.1-rc7</version>
+    <version>1.0.0-rc2</version>
     <packaging>pom</packaging>
     <name>Weave library parent project</name>
 
@@ -143,6 +143,12 @@
                     <systemPropertyVariables>
                         <java.io.tmpdir>${project.build.directory}</java.io.tmpdir>
                     </systemPropertyVariables>
+                    <includes>
+                        <include>**/*TestSuite.java</include>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*TestCase.java</include>
+                    </includes>
                 </configuration>
             </plugin>
         </plugins>

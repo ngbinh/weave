@@ -1,8 +1,3 @@
-/*
- * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
- */
-package com.continuuity.weave.internal.yarn.ports;
-
 /**
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -20,6 +15,7 @@ package com.continuuity.weave.internal.yarn.ports;
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.continuuity.weave.internal.yarn.ports;
 
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;

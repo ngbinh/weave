@@ -20,7 +20,7 @@
     <parent>
         <artifactId>weave-parent</artifactId>
         <groupId>com.continuuity.weave</groupId>
-        <version>0.0.1-rc7</version>
+        <version>1.0.0-rc2</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -48,6 +48,14 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
         </dependency>
         <dependency>
             <groupId>junit</groupId>

@@ -3,11 +3,15 @@ package com.continuuity.weave.yarn;
 import com.continuuity.weave.api.AbstractWeaveRunnable;
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.WeaveContext;
+import com.continuuity.weave.common.Cancellable;
 import com.google.common.base.Charsets;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+import org.jboss.netty.handler.codec.http.HttpRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.ws.rs.QueryParam;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -16,6 +20,7 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.List;
 
 /**
  *
@@ -27,6 +32,7 @@ public final class EchoServer extends AbstractWeaveRunnable {
   private volatile boolean running;
   private volatile Thread runThread;
   private ServerSocket serverSocket;
+  private Cancellable canceller;
 
   @Override
   public void initialize(WeaveContext context) {
@@ -37,8 +43,19 @@ public final class EchoServer extends AbstractWeaveRunnable {
       LOG.info("EchoServer started: " + serverSocket.getLocalSocketAddress() +
                ", id: " + context.getInstanceId() +
                ", count: " + context.getInstanceCount());
-      context.announce(context.getApplicationArguments()[0], serverSocket.getLocalPort());
-      context.announce(context.getArguments()[0], serverSocket.getLocalPort());
+
+      final List<Cancellable> cancellables = ImmutableList.of(
+        context.announce(context.getApplicationArguments()[0], serverSocket.getLocalPort()),
+        context.announce(context.getArguments()[0], serverSocket.getLocalPort())
+      );
+      canceller = new Cancellable() {
+        @Override
+        public void cancel() {
+          for (Cancellable c : cancellables) {
+            c.cancel();
+          }
+        }
+      };
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
@@ -74,6 +91,7 @@ public final class EchoServer extends AbstractWeaveRunnable {
   @Override
   public void stop() {
     LOG.info("Stopping echo server");
+    canceller.cancel();
     running = false;
     Thread t = runThread;
     if (t != null) {

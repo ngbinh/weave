@@ -16,19 +16,17 @@
 package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.AbstractWeaveRunnable;
-import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
+import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.google.common.base.Throwables;
-import org.junit.After;
+import com.google.common.util.concurrent.Service;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
@@ -36,8 +34,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Testing application master will shutdown itself when all tasks are completed.
+ * This test is executed by {@link YarnTestSuite}.
  */
-public class TaskCompletedTest extends ClusterTestBase {
+public class TaskCompletedTestRun {
 
   public static final class SleepTask extends AbstractWeaveRunnable {
 
@@ -59,7 +58,7 @@ public class TaskCompletedTest extends ClusterTestBase {
 
   @Test
   public void testTaskCompleted() throws InterruptedException {
-    WeaveRunner weaveRunner = getWeaveRunner();
+    WeaveRunner weaveRunner = YarnTestSuite.getWeaveRunner();
     WeaveController controller = weaveRunner.prepare(new SleepTask(),
                                                 ResourceSpecification.Builder.with()
                                                   .setCores(1)
@@ -70,7 +69,7 @@ public class TaskCompletedTest extends ClusterTestBase {
 
     final CountDownLatch runLatch = new CountDownLatch(1);
     final CountDownLatch stopLatch = new CountDownLatch(1);
-    controller.addListener(new ListenerAdapter() {
+    controller.addListener(new ServiceListenerAdapter() {
 
       @Override
       public void running() {
@@ -78,7 +77,7 @@ public class TaskCompletedTest extends ClusterTestBase {
       }
 
       @Override
-      public void terminated() {
+      public void terminated(Service.State from) {
         stopLatch.countDown();
       }
     }, Threads.SAME_THREAD_EXECUTOR);
@@ -88,15 +87,5 @@ public class TaskCompletedTest extends ClusterTestBase {
     Assert.assertTrue(stopLatch.await(1, TimeUnit.MINUTES));
 
     TimeUnit.SECONDS.sleep(2);
-  }
-
-  @Before
-  public void init() throws IOException {
-    doInit();
-  }
-
-  @After
-  public void finish() {
-    doFinish();
   }
 }

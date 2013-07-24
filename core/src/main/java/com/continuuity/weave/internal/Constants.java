@@ -13,36 +13,20 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.common;
-
-import com.google.common.util.concurrent.Service;
+package com.continuuity.weave.internal;
 
 /**
- * An adapter for implementing {@link Service.Listener} with all method default to no-op.
+ * This class contains collection of common constants used in Weave.
  */
-public abstract class ServiceListenerAdapter implements Service.Listener {
-  @Override
-  public void starting() {
-    // No-op
-  }
+public final class Constants {
 
-  @Override
-  public void running() {
-    // No-op
-  }
+  public static final String LOG_TOPIC = "log";
 
-  @Override
-  public void stopping(Service.State from) {
-    // No-op
-  }
+  /** Maximum number of seconds for AM to start. */
+  public static final int APPLICATION_MAX_START_SECONDS = 60;
+  /** Maximum number of seconds for AM to stop. */
+  public static final int APPLICATION_MAX_STOP_SECONDS = 30;
 
-  @Override
-  public void terminated(Service.State from) {
-    // No-op
-  }
-
-  @Override
-  public void failed(Service.State from, Throwable failure) {
-    // No-op
+  private Constants() {
   }
 }

@@ -15,157 +15,157 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.logging.LogHandler;
-import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.internal.ZKWeaveController;
+import com.continuuity.weave.internal.AbstractWeaveController;
+import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.state.StateNode;
+import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
-import com.google.common.base.Charsets;
-import com.google.common.base.Function;
 import com.google.common.base.Throwables;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.gson.Gson;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import com.google.common.collect.ImmutableList;
+import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang.time.StopWatch;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
+import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.client.YarnClient;
 import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
-import org.apache.hadoop.yarn.util.Records;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.TimeUnit;
 
 /**
- *
+ * A {@link WeaveController} that controllers application running on Hadoop YARN.
  */
-final class YarnWeaveController extends ZKWeaveController {
+final class YarnWeaveController extends AbstractWeaveController implements WeaveController {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeaveController.class);
 
-  /**
-   * Max time to wait for application status from YARN when stopping an application.
-   */
-  private static final long MAX_STOP_TIME = 5000;   // 5 seconds
-
   private final YarnClient yarnClient;
-  private volatile ApplicationId applicationId;
+  private final ApplicationId applicationId;
+  private final Runnable startUp;
 
-  YarnWeaveController(YarnClient yarnClient, ZKClient zkClient,
-                      ApplicationId appId, RunId runId, Iterable<LogHandler> logHandlers) {
-    super(zkClient, runId, logHandlers);
-    this.yarnClient = yarnClient;
-    this.applicationId = appId;
-  }
-
-  @Override
-  public void start() {
-    super.start();
-
-    // Add a listener for setting application Id
-    addListener(new ListenerAdapter() {
+  YarnWeaveController(RunId runId, ZKClient zkClient, YarnClient yarnClient, ApplicationId appId) {
+    this(runId, zkClient, ImmutableList.<LogHandler>of(), yarnClient, appId, new Runnable() {
       @Override
-      public void running() {
-        // Set only if it is not passed in.
-        if (applicationId != null) {
-          return;
-        }
-        applicationId = fetchApplicationId();
-      }
-    }, Threads.SAME_THREAD_EXECUTOR);
-  }
-
-  @Override
-  public ListenableFuture<State> stop() {
-    final ApplicationId appId = applicationId == null ? fetchApplicationId() : applicationId;
-
-    return Futures.transform(super.stop(), new Function<State, State>() {
-      @Override
-      public State apply(State state) {
-        if (appId == null) {
-          LOG.warn("ApplicationId unknown.");
-          return state;
-        }
-        try {
-          StopWatch stopWatch = new StopWatch();
-          stopWatch.start();
-          stopWatch.split();
-          // At most 5 seconds.
-          boolean done = false;
-          while (!done && stopWatch.getSplitTime() < MAX_STOP_TIME) {
-            LOG.info("Fetching application report for " + appId);
-            ApplicationReport report = yarnClient.getApplicationReport(appId);
-            YarnApplicationState appState = report.getYarnApplicationState();
-            switch (appState) {
-              case FINISHED:
-                LOG.info("Application finished.");
-                done = true;
-                break;
-              case FAILED:
-                LOG.warn("Application failed.");
-                done = true;
-                break;
-              case KILLED:
-                LOG.warn("Application killed.");
-                done = true;
-                break;
-            }
-            TimeUnit.SECONDS.sleep(1);
-            stopWatch.split();
-          }
-        } catch (Exception e) {
-          LOG.warn("Exception while waiting for application report: {}", e.getMessage(), e);
-        }
-        return state;
+      public void run() {
+        // No-op
       }
     });
   }
 
+
+  YarnWeaveController(RunId runId, ZKClient zkClient, Iterable<LogHandler> logHandlers,
+                      YarnClient yarnClient, ApplicationId appId, Runnable startUp) {
+    super(runId, zkClient, logHandlers);
+    this.yarnClient = yarnClient;
+    this.applicationId = appId;
+    this.startUp = startUp;
+  }
+
   @Override
-  public void kill() {
-    ApplicationId appId = applicationId == null ? fetchApplicationId() : applicationId;
-    if (appId == null) {
-      LOG.warn("ApplicationId unknown. Kill ignored.");
-      return;
+  protected void doStartUp() {
+    super.doStartUp();
+    startUp.run();
+
+    // Poll the status of the yarn application
+    try {
+      YarnApplicationState state = yarnClient.getApplicationReport(applicationId).getYarnApplicationState();
+      StopWatch stopWatch = new StopWatch();
+      stopWatch.start();
+      stopWatch.split();
+      long maxTime = TimeUnit.MILLISECONDS.convert(Constants.APPLICATION_MAX_START_SECONDS, TimeUnit.SECONDS);
+
+      LOG.info("Checking yarn application status");
+      while (!hasRun(state) && stopWatch.getSplitTime() < maxTime) {
+        state = yarnClient.getApplicationReport(applicationId).getYarnApplicationState();
+        LOG.debug("Yarn application status: {}", state);
+        TimeUnit.SECONDS.sleep(1);
+        stopWatch.split();
+      }
+      LOG.info("Yarn application is in state {}", state);
+      if (state != YarnApplicationState.RUNNING) {
+        LOG.info("Yarn application is not in running state. Shutting down controller.",
+                 Constants.APPLICATION_MAX_START_SECONDS);
+        forceShutDown();
+      }
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
+  }
+
+  @Override
+  protected void doShutDown() {
+    // Wait for the stop message being processed
+    try {
+      Uninterruptibles.getUninterruptibly(getStopMessageFuture(),
+                                          Constants.APPLICATION_MAX_STOP_SECONDS, TimeUnit.SECONDS);
+    } catch (Exception e) {
+      LOG.error("Failed to wait for stop message being processed.", e);
+      // Kill the application through yarn
+      kill();
     }
 
+    // Poll application status from yarn
     try {
-      yarnClient.killApplication(appId);
+      StopWatch stopWatch = new StopWatch();
+      stopWatch.start();
+      stopWatch.split();
+      long maxTime = TimeUnit.MILLISECONDS.convert(Constants.APPLICATION_MAX_STOP_SECONDS, TimeUnit.SECONDS);
+
+      LOG.info("Fetching yarn application report for {}", applicationId);
+      FinalApplicationStatus finalStatus = yarnClient.getApplicationReport(applicationId).getFinalApplicationStatus();
+      while (finalStatus == FinalApplicationStatus.UNDEFINED && stopWatch.getSplitTime() < maxTime) {
+        LOG.debug("Yarn application final status for {} {}", applicationId, finalStatus);
+        TimeUnit.SECONDS.sleep(1);
+        stopWatch.split();
+        finalStatus = yarnClient.getApplicationReport(applicationId).getFinalApplicationStatus();
+      }
+      LOG.debug("Yarn application final status is {}", finalStatus);
+
+      // Application not finished after max stop time, kill the application
+      if (finalStatus == FinalApplicationStatus.UNDEFINED) {
+        kill();
+      }
+    } catch (Exception e) {
+      LOG.warn("Exception while waiting for application report: {}", e.getMessage(), e);
+      kill();
+    }
+
+    super.doShutDown();
+  }
+
+  @Override
+  public void kill() {
+    try {
+      LOG.info("Killing application {}", applicationId);
+      yarnClient.killApplication(applicationId);
     } catch (YarnRemoteException e) {
       throw Throwables.propagate(e);
     }
   }
 
-  /**
-   * Fetches applicationId from the ZK instance node.
-   */
-  private ApplicationId fetchApplicationId() {
-    byte[] data = getLiveNodeData();
-    if (data == null) {
-      LOG.warn("No live data node.");
-      return null;
-    }
-    JsonElement json = new Gson().fromJson(new String(data, Charsets.UTF_8), JsonElement.class);
-    if (!json.isJsonObject()) {
-      LOG.warn("Unable to decode live data node.");
-      return null;
-    }
-    JsonObject jsonObj = json.getAsJsonObject();
-    json = jsonObj.get("data");
-    if (!json.isJsonObject()) {
-      LOG.warn("Property data not found in live data node.");
-      return null;
-    }
-    jsonObj = json.getAsJsonObject();
-    ApplicationId appId = Records.newRecord(ApplicationId.class);
-    appId.setId(jsonObj.get("appId").getAsInt());
-    appId.setClusterTimestamp(jsonObj.get("appIdClusterTime").getAsLong());
+  @Override
+  protected void instanceNodeUpdated(NodeData nodeData) {
 
-    return appId;
+  }
+
+  @Override
+  protected void stateNodeUpdated(StateNode stateNode) {
+
+  }
+
+  private boolean hasRun(YarnApplicationState state) {
+    switch (state) {
+      case RUNNING:
+      case FINISHED:
+      case FAILED:
+      case KILLED:
+        return true;
+    }
+    return false;
   }
 }

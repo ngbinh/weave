@@ -31,10 +31,7 @@ import com.continuuity.weave.kafka.client.KafkaClient;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
-import com.google.common.base.Function;
-import com.google.common.base.Throwables;
 import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -46,20 +43,21 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- *
+ * A abstract base class for {@link WeaveController} implementation that uses Zookeeper to controller a
+ * running weave application.
  */
-public abstract class ZKWeaveController extends AbstractServiceController implements WeaveController {
+public abstract class AbstractWeaveController extends AbstractZKServiceController implements WeaveController {
 
-  private static final Logger LOG = LoggerFactory.getLogger(ZKWeaveController.class);
-  private static final String LOG_TOPIC = "log";
+  private static final Logger LOG = LoggerFactory.getLogger(AbstractWeaveController.class);
+  private static final long SHUTDOWN_TIMEOUT_MS = 2000;
 
   private final Queue<LogHandler> logHandlers;
   private final KafkaClient kafkaClient;
   private final DiscoveryServiceClient discoveryServiceClient;
   private final Thread logPoller;
 
-  public ZKWeaveController(ZKClient zkClient, RunId runId, Iterable<LogHandler> logHandlers) {
-    super(zkClient, runId);
+  public AbstractWeaveController(RunId runId, ZKClient zkClient, Iterable<LogHandler> logHandlers) {
+    super(runId, zkClient);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
     this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
     this.discoveryServiceClient = new ZKDiscoveryService(zkClient);
@@ -68,32 +66,25 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   }
 
   @Override
-  public void start() {
+  protected void doStartUp() {
     if (!logHandlers.isEmpty()) {
       logPoller.start();
     }
-    super.start();
   }
 
   @Override
-  public synchronized void cancel() {
-    super.cancel();
-    doCancel();
+  protected void doShutDown() {
+    logPoller.interrupt();
+    try {
+      // Wait for the poller thread to stop.
+      logPoller.join(SHUTDOWN_TIMEOUT_MS);
+    } catch (InterruptedException e) {
+      LOG.warn("Joining of log poller thread interrupted.", e);
+    }
   }
 
   @Override
-  public ListenableFuture<State> stop() {
-    return Futures.transform(super.stop(), new Function<State, State>() {
-      @Override
-      public State apply(State input) {
-        doCancel();
-        return input;
-      }
-    });
-  }
-
-  @Override
-  public synchronized void addLogHandler(LogHandler handler) {
+  public final synchronized void addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
     if (!logPoller.isAlive()) {
       logPoller.start();
@@ -101,26 +92,13 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
   }
 
   @Override
-  public Iterable<Discoverable> discoverService(String serviceName) {
+  public final Iterable<Discoverable> discoverService(String serviceName) {
     return discoveryServiceClient.discover(serviceName);
   }
 
   @Override
-  public void changeInstances(String runnable, int newCount) {
-    try {
-      sendMessage(SystemMessages.setInstances(runnable, newCount), runnable).get();
-    } catch (Exception e) {
-      throw Throwables.propagate(e);
-    }
-  }
-
-  private void doCancel() {
-    logPoller.interrupt();
-    try {
-      logPoller.join();
-    } catch (InterruptedException e) {
-      LOG.warn("Joining of log poller thread interrupted.", e);
-    }
+  public final ListenableFuture<Integer> changeInstances(String runnable, int newCount) {
+    return sendMessage(SystemMessages.setInstances(runnable, newCount), newCount);
   }
 
   private Thread createLogPoller() {
@@ -132,7 +110,7 @@ public abstract class ZKWeaveController extends AbstractServiceController implem
         Gson gson = new GsonBuilder().registerTypeAdapter(LogEntry.class, new LogEntryDecoder())
                                      .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
                                      .create();
-        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(LOG_TOPIC, 0, 0, 1048576);
+        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(Constants.LOG_TOPIC, 0, 0, 1048576);
         while (messageIterator.hasNext()) {
           String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
           try {

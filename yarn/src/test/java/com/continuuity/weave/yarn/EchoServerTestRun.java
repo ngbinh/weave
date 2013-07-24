@@ -15,19 +15,17 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.ListenerAdapter;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
+import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.Discoverable;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Iterables;
 import com.google.common.io.LineReader;
-import org.junit.After;
 import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,17 +39,19 @@ import java.net.URISyntaxException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
- *
+ * Using echo server to test various behavior of YarnWeaveService.
+ * This test is executed by {@link YarnTestSuite}.
  */
-public class EchoServerTest extends ClusterTestBase {
+public class EchoServerTestRun {
 
-  private static final Logger LOG = LoggerFactory.getLogger(EchoServerTest.class);
+  private static final Logger LOG = LoggerFactory.getLogger(EchoServerTestRun.class);
 
   @Test
-  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException {
-    WeaveRunner runner = getWeaveRunner();
+  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException, TimeoutException {
+    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
 
     WeaveController controller = runner.prepare(new EchoServer(),
                                                 ResourceSpecification.Builder.with()
@@ -65,7 +65,7 @@ public class EchoServerTest extends ClusterTestBase {
                                         .start();
 
     final CountDownLatch running = new CountDownLatch(1);
-    controller.addListener(new ListenerAdapter() {
+    controller.addListener(new ServiceListenerAdapter() {
       @Override
       public void running() {
         running.countDown();
@@ -114,7 +114,7 @@ public class EchoServerTest extends ClusterTestBase {
 
     for (WeaveController c : controllers) {
       LOG.info("Stopping application: " + c.getRunId());
-      c.stop().get();
+      c.stop().get(10, TimeUnit.SECONDS);
     }
 
     Assert.assertTrue(waitForSize(apps, 0, 60));
@@ -125,20 +125,13 @@ public class EchoServerTest extends ClusterTestBase {
 
   private <T> boolean waitForSize(Iterable<T> iterable, int count, int limit) throws InterruptedException {
     int trial = 0;
-    while (Iterables.size(iterable) != count && trial < limit) {
+    int size = Iterables.size(iterable);
+    while (size != count && trial < limit) {
+      LOG.info("Waiting for {} size {} == {}", iterable, size, count);
       TimeUnit.SECONDS.sleep(1);
       trial++;
+      size = Iterables.size(iterable);
     }
     return trial < limit;
-  }
-
-  @Before
-  public void init() throws IOException {
-    doInit();
-  }
-
-  @After
-  public void finish() {
-    doFinish();
   }
 }

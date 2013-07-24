@@ -22,7 +22,7 @@
     <parent>
         <groupId>com.continuuity.weave</groupId>
         <artifactId>weave-parent</artifactId>
-        <version>0.0.1-rc7</version>
+        <version>1.0.0-rc2</version>
     </parent>
 
     <artifactId>weave-api</artifactId>

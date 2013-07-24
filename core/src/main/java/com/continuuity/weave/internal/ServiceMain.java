@@ -141,7 +141,7 @@ public abstract class ServiceMain {
       "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
       "<configuration>\n" +
       "    <appender name=\"KAFKA\" class=\"" + KafkaAppender.class.getName() + "\">\n" +
-      "        <topic>log</topic>\n" +
+      "        <topic>" + Constants.LOG_TOPIC + "</topic>\n" +
       "        <hostname>" + getHostname() + "</hostname>\n" +
       "        <zookeeper>" + getKafkaZKConnect() + "</zookeeper>\n" +
       "    </appender>\n" +
