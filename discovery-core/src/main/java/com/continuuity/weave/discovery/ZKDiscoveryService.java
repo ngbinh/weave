@@ -329,11 +329,19 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
       this.cancelled = new AtomicBoolean();
     }
 
+    /**
+     * Set the zk node path representing the ephemeral sequence node of this registered discoverable.
+     * Called from ZK event thread when creating of the node completed, either from normal registration or
+     * re-registration due to session expiration.
+     *
+     * @param path The path to ephemeral sequence node.
+     */
     void setPath(String path) {
       this.path = path;
       if (cancelled.get() && path != null) {
         // Simply delete the path if it's already cancelled
         // It's for the case when session expire happened and re-registration completed after this has been cancelled.
+        // Not bother with the result as if there is error, nothing much we could do.
         zkClient.delete(path);
       }
     }
@@ -345,13 +353,16 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
       }
 
       // Take a snapshot of the volatile path.
-      // If it is null, excepted the setPath will be called in future (through zk callback) so that
-      // deletion will be done in setPath.
       String path = this.path;
+
+      // If it is null, meaning cancel() is called before the ephemeral node is created, hence
+      // setPath() will be called in future (through zk callback when creation is completed)
+      // so that deletion will be done in setPath().
       if (path == null) {
         return;
       }
 
+      // Remove this Cancellable from the map so that upon session expiration won't try to register.
       lock.lock();
       try {
         discoverables.remove(discoverable, this);
