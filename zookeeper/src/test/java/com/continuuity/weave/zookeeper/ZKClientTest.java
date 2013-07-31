@@ -16,6 +16,7 @@
 package com.continuuity.weave.zookeeper;
 
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
+import com.continuuity.weave.internal.zookeeper.KillZKSession;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
