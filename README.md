@@ -40,7 +40,7 @@ Let's begin by building a basic EchoServer in Weave. Traditionally, when you bui
   public class EchoServer implements Runnable {
     private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
     private final ServerSocket serverSocket;
- 
+    
     public EchoServer() {
       ...
     }
@@ -250,17 +250,17 @@ Code Samples
 =========
 Here are some automated Weave tests that we use at Continuuity. They may provide some value. We hope to post one or more static examples that might be easier to follow, hopefully by the end of August 2013 as time allows.
 
-[EchoServer](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServer.java)
-[EchoServerTestRun](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServerTestRun.java)
+[EchoServer](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServer.java) 
+[EchoServerTestRun](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServerTestRun.java) 
 
 APIs
 =========
-[Weave Doc Index](http://continuuity.github.io/weave/apidocs/index.html)
-[Weave API](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/api/package-summary.html)
-[Weave Yarn](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/yarn/package-summary.html)
-[Weave Common](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/common/package-summary.html)
-[Weave Discovery](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/discovery/package-summary.html)
-[Weave Zookeeper](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/zookeeper/package-summary.html)
+[Weave Doc Index](http://continuuity.github.io/weave/apidocs/index.html) 
+[Weave API](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/api/package-summary.html) 
+[Weave Yarn](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/yarn/package-summary.html) 
+[Weave Common](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/common/package-summary.html) 
+[Weave Discovery](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/discovery/package-summary.html) 
+[Weave Zookeeper](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/zookeeper/package-summary.html) 
 
 Community
 =========
