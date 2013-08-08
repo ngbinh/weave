@@ -248,7 +248,9 @@ The example above specifies no order via the anyOrder() method, so all the Weave
 
 Code Samples
 =========
-Here are some automated Weave tests that we use at Continuuity. There are additional tests in the [yarn](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn).
+Here are some [automated Weave tests](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn) that we use at Continuuity. 
+
+Consider starting with these:
 
 * [EchoServer](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServer.java) 
 * [EchoServerTestRun](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServerTestRun.java) 
