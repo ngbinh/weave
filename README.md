@@ -29,9 +29,9 @@ This section will help you understand how to run your apps on a YARN cluster usi
 
 Build the Weave Library
 ------------------
-$ git clone http://github.com/continuuity/weave.git
-$ cd weave
-$ mvn install
+    $ git clone http://github.com/continuuity/weave.git
+    $ cd weave
+    $ mvn install
 
 Quick Example
 =========
@@ -56,10 +56,10 @@ Let's begin by building a basic EchoServer in Weave. Traditionally, when you bui
 
 The example above defines an implementation of Runnable that implements the run method. The EchoServer is now a Runnable that can be executed by an ExecutorService in a Thread:
 
-...
-ExecutorService service = Executors.newFixedThreadPool(2);
-service.submit(new EchoServer());
-...
+    ...
+    ExecutorService service = Executors.newFixedThreadPool(2);
+    service.submit(new EchoServer());
+    ...
 
 
 Implement WeaveRunnable
@@ -68,31 +68,30 @@ This EchoServer model above is familiar, but what if you want to run your EchoSe
 
 All you need to do is implement the WeaveRunnable interface, similar to how you would normally implement Runnable. In this model, the EchoServer implements WeaveRunnable, which in turn implements Runnable. This allows you to run a WeaveRunnable implementation within a Thread and also in a container on a YARN cluster:
 
-public class EchoServer implements WeaveRunnable {
-  private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
-  private final ServerSocket serverSocket;
-  
- 
-  public EchoServer() {
-    ...
-  }
- 
-  @Override
-  public void run() {
-    while ( isRunning() ) {
-      Socket socket = serverSocket.accept();
-      ...
+    public class EchoServer implements WeaveRunnable {
+        private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
+        private final ServerSocket serverSocket;
+    
+        public EchoServer() {
+            ...
+        }
+         
+        @Override
+        public void run() {
+            while ( isRunning() ) {
+                Socket socket = serverSocket.accept();
+                ...
+            }
+        }
     }
-  }
-}
 
 Start the Weave Runner Service
 ------------------
 In order to run EchoServer on the YARN cluster we must first create a WeaveRunnerService, which is similar to ExecutorService. Then we specify the YARN cluster configuration and a connection string to a running instance of a Zookeeper service:
 
-WeaveRunnerService runnerService = new YarnWeaveRunnerService(
-  new YarnConfiguration(), zkServer.getConnectionString());
-runnerService.startAndWait();
+    WeaveRunnerService runnerService = new YarnWeaveRunnerService(
+        new YarnConfiguration(), zkServer.getConnectionString());
+    runnerService.startAndWait();
 
 Start the Weave Controller and Add a Log Handler
 ------------------
@@ -100,26 +99,25 @@ Now that we have initialized WeaveRunnerService, we can prepare to run the EchoS
 
 Note that you do not need to specify the archives that must be shipped to remote machines on the YARN cluster (where the container will run). This is all taken care of by Weave.
 
-
-WeaveController controller = runnerService.prepare(new EchoServer())
-  .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
-  .start();
+    WeaveController controller = runnerService.prepare(new EchoServer())
+        .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
+    .start();
 
 Add a Listener for State Transitions
 ------------------
 Now that we have started, prepared, and launched an EchoServer on the YARN cluster, we can attach a listener that allows us to observe state transitions in our application:
 
-controller.addListener(new ListenerAdapter() {
-  @Override
-  public void running() {
-    LOG.info('Echo Server Started');
-  }
-}
+    controller.addListener(new ListenerAdapter() {
+        @Override
+        public void running() {
+            LOG.info('Echo Server Started');
+        }
+    }
 
 Stop WeaveRunnable
 ------------------
 To stop the running EchoServer, use the controller object reference returned during the start of the application. This shuts down the Application Master and all of the configured containers. 
-controller.stop().get();
+    controller.stop().get();
 
 Advanced Weave Examples
 =========
@@ -133,68 +131,71 @@ Let's see how we can add this capability to the EchoServer. The EchoServer start
 
 WeaveRunnable with Discovery Announce
 --------------
-public class EchoServer extends AbstractWeaveRunnable {
-  private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
- 
-  @Override
-  public void initialize(WeaveContext context) {
-    super.initialize(context);
-    ...
-    try {
-      serverSocket = new ServerSocket(0); // start on any available port
-      context.announce("echo", serverSocket.getLocalPort());
-    } catch (IOException e) {
-      throw Throwables.propogate(e);
+    public class EchoServer extends AbstractWeaveRunnable {
+        private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
+         
+        @Override
+        public void initialize(WeaveContext context) {
+            super.initialize(context);
+            ...
+            try {
+                serverSocket = new ServerSocket(0); // start on any available port
+                context.announce("echo", serverSocket.getLocalPort());
+            } catch (IOException e) {
+                throw Throwables.propogate(e);
+            }
+        }
+     
+        @Override
+        public void run() {
+            ...
+        }
     }
-  }
- 
-  @Override
-  public void run() {
-    ...
-  }
-}
 
 During the initialization phase of the container, WeaveContext used the port on which EchoServer was started to announce the EchoServer’s presence. This allows clients to discover the echo service using an iterator:
-...
-WeaveController controller = ... 
-...
-Iterable echoServices = controller.discoverService("echo");
-...
-for(Discoverable discoverable : echoServices) {
-  Socket socket = new Socket(discoverable.getSocketAddress().getAddress(),
-                             discoverable.getSocketAddress().getPort());
-  ...
-}
+
+    ...
+    WeaveController controller = ... 
+    ...
+    Iterable echoServices = controller.discoverService("echo");
+    ...
+    for(Discoverable discoverable : echoServices) {
+        Socket socket = new Socket(discoverable.getSocketAddress().getAddress(),
+                                   discoverable.getSocketAddress().getPort());
+    ...
+    }
 
 Logging with SLF4J
 ------------------
 In the earlier examples a log handler was attached when we were preparing to run an implementation of WeaveRunnable. It is used for collecting all logs emitted by the containers, and these logs are returned to the client. This means that you don't have to run your IDE on the YARN cluster, just use a standard SLF4J logger to log messages within the container. The logs are hijacked and sent through a Kafka broker to the client. (A Kafka broker is started within the Application Master when each application is launched.)
 
-public class EchoServer extends AbstractWeaveRunnable {
-  private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
-  ...
-  @Override
-  public void run() {
-    ...
-    LOG.info('New client accepted');
-    ...
-  }
-  ...
-}
+    public class EchoServer extends AbstractWeaveRunnable {
+        private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
+        ...
+        @Override
+        public void run() {
+            ...
+            LOG.info('New client accepted');
+            ...
+        }
+        ...
+    }
 
 Resource Specification
 ------------------
-When you prepare an implementation of WeaveRunnable to run on a YARN cluster, you must specify the resources used to run the container, like the number of cores to be used, the amount of memory, and the number of instances. Internally Weave uses cgroups to limit the amount of system resources used by the container:
+When you prepare an implementation of WeaveRunnable to run on a YARN cluster, you must specify the resources used to run the container.
 
 Specifying Resource Constraints for a Container
 --------------
-WeaveController controller = runnerService.prepare(new EchoServer(port),
-  ResourceSpecification().Builder().with()
-    .setCores(1)
-    .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
-    .setInstances(2).build())
-    .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
-    .start();
+You can specify assets like the number of cores to be used, the amount of memory, and the number of instances. Internally Weave uses cgroups to limit the amount of system resources used by the container:
+
+    WeaveController controller = runnerService.prepare(new EchoServer(port),
+        ResourceSpecification().Builder().with()
+            .setCores(1)
+            .setMemory(1, ResourceSpecification.SizeUnit.GIGA)
+            .setInstances(2).build())
+            .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))
+            .start();
 
 Archive Management
 ------------------
@@ -204,23 +205,23 @@ Applications
 ------------------
 A WeaveApplication is a collection of distributed WeaveRunnable instances working together. For example, suppose you have a web application that you would like to deploy on a cluster running YARN. You will need instances of a Jetty server and all associated files to serve the application:
 
-Specifying WeaveApplication
+Specifying the Weave Application
 --------------
-public class WebApplication implements WeaveApplication {
-  @Override
-  public WeaveSpecification configure() {
-    return WeaveSpecification().Builder.with()
-      .setName("My Web Application")
-      .withRunnables()
-         .add(new JettyWebServer())
-         .withLocalFiles()
-            .add("html-pages.tgz", pages, true)
-         .apply()
-         .add(new LogsCollector())
-      .anyOrder()
-      .build();
-  }
-}
+    public class WebApplication implements WeaveApplication {
+        @Override
+        public WeaveSpecification configure() {
+            return WeaveSpecification().Builder.with()
+                .setName("My Web Application")
+                .withRunnables()
+                .add(new JettyWebServer())
+                .withLocalFiles()
+                .add("html-pages.tgz", pages, true)
+                .apply()
+                .add(new LogsCollector())
+                .anyOrder()
+                .build();
+        }
+    }
 
 Once you define an application in Weave, you can simply run it the same way you run WeaveRunnable. You might notice from the example above that Weave applications support the order in which WeaveRunnable instances are started on the cluster. 
 
@@ -228,23 +229,23 @@ Ordering
 --------------
 The example above specifies no order via the anyOrder() method, so all the WeaveRunnables can start concurrently. However, you can specify the order as follows:
 
-public class WebApplication implements WeaveApplication {
-  @Override
-  public WeaveSpecification configure() {
-    return WeaveSpecification().Builder.with()
-      .setName("My Web Application")
-      .withRunnables()
-         .add("jetty", new JettyWebServer())
-         .withLocalFiles()
-            .add("html-pages.tgz", pages, true)
-         .apply()
-         .add("log", new LogsCollector())
-      .order()
-         .first("log")
-         .next("jetty")
-      .build();
-  }
-}
+    public class WebApplication implements WeaveApplication {
+        @Override
+        WeaveSpecification configure() {
+            return WeaveSpecification().Builder.with()
+                .setName("My Web Application")
+                .withRunnables()
+                .add("jetty", new JettyWebServer())
+                .withLocalFiles()
+                .add("html-pages.tgz", pages, true)
+                .apply()
+                .add("log", new LogsCollector())
+                .order()
+                .first("log")
+                .next("jetty")
+                .build();
+        }
+    }
 
 Code Samples
 =========
@@ -277,7 +278,7 @@ Interested in improving Weave? We have a simple pull-based development model wit
 
 Groups
 ------
-User Group: https://groups.google.com/d/forum/weave-user
+* User Group: [weave-user](https://groups.google.com/d/forum/weave-user)
 
 License
 =======
