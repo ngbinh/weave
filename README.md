@@ -168,7 +168,7 @@ During the initialization phase of the container, WeaveContext used the port on 
 
 Logging with SLF4J
 ------------------
-In the earlier examples a log handler was attached when we were preparing to run an implementation of WeaveRunnable. It is used for collecting all logs emitted by the containers, and these logs are returned to the client. This means that you don't have to run your IDE on the YARN cluster, just use a standard SLF4J logger to log messages within the container. The logs are hijacked and sent through a Kafka broker to the client. (A Kafka broker is started within the Application Master when each application is launched.)
+In the earlier examples a log handler was attached when we were preparing to run an implementation of WeaveRunnable. It is used for collecting all logs emitted by the containers, and these logs are returned to the client. We use a standard SLF4J logger to log messages within the container. The logs are hijacked and sent through a Kafka broker to the client. (A Kafka broker is started within the Application Master when each application is launched.)
 
     public class EchoServer extends AbstractWeaveRunnable {
         private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
