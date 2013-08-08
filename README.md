@@ -37,22 +37,22 @@ Quick Example
 =========
 Let's begin by building a basic EchoServer in Weave. Traditionally, when you build a server as simple as this, you add logic within a Runnable implementation to run it in a Thread using an appropriate ExecutorService:
 
-  public class EchoServer implements Runnable {
-    private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
-    private final ServerSocket serverSocket;
+    public class EchoServer implements Runnable {
+        private static Logger LOG = LoggerFactory.getLogger(EchoServer.class);
+        private final ServerSocket serverSocket;
+        
+        public EchoServer() {
+            ...
+        }
     
-    public EchoServer() {
-      ...
+        @Override
+        public void run() {
+            while ( isRunning() ) {
+                Socket socket = serverSocket.accept();
+                    ...
+            }
+        }
     }
-
-    @Override
-    public void run() {
-      while ( isRunning() ) {
-        Socket socket = serverSocket.accept();
-        ...
-      }
-    }
-  }
 
 The example above defines an implementation of Runnable that implements the run method. The EchoServer is now a Runnable that can be executed by an ExecutorService in a Thread:
 
@@ -250,17 +250,17 @@ Code Samples
 =========
 Here are some automated Weave tests that we use at Continuuity. They may provide some value. We hope to post one or more static examples that might be easier to follow, hopefully by the end of August 2013 as time allows.
 
-[EchoServer](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServer.java) 
-[EchoServerTestRun](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServerTestRun.java) 
+* [EchoServer](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServer.java) 
+* [EchoServerTestRun](https://github.com/continuuity/weave/blob/master/yarn/src/test/java/com/continuuity/weave/yarn/EchoServerTestRun.java) 
 
 APIs
 =========
-[Weave Doc Index](http://continuuity.github.io/weave/apidocs/index.html) 
-[Weave API](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/api/package-summary.html) 
-[Weave Yarn](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/yarn/package-summary.html) 
-[Weave Common](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/common/package-summary.html) 
-[Weave Discovery](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/discovery/package-summary.html) 
-[Weave Zookeeper](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/zookeeper/package-summary.html) 
+* [Weave Doc Index](http://continuuity.github.io/weave/apidocs/index.html) 
+* [Weave API](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/api/package-summary.html) 
+* [Weave Yarn](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/yarn/package-summary.html) 
+* [Weave Common](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/common/package-summary.html) 
+* [Weave Discovery](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/discovery/package-summary.html) 
+* [Weave Zookeeper](http://continuuity.github.io/weave/apidocs/com/continuuity/weave/zookeeper/package-summary.html) 
 
 Community
 =========
