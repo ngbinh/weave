@@ -1,4 +1,4 @@
-What is Weave ?
+What is Weave?
 ===============
 
 Weave is a simple set of libraries for easily managing distributed applications through an abstraction layer built on Apache Hadoop&reg; YARN. 
