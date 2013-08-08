@@ -109,7 +109,6 @@
                         <link>http://download.oracle.com/javase/6/docs/api/</link>
                     </links>
                     <detectLinks>true</detectLinks>
-                    <footer></footer>
                 </configuration>
                 <executions>
                     <execution>
