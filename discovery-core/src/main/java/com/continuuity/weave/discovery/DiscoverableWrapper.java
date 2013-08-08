@@ -38,4 +38,30 @@ final class DiscoverableWrapper implements Discoverable {
   public InetSocketAddress getSocketAddress() {
     return address;
   }
+
+  @Override
+  public String toString() {
+    return "{name=" + name + ", address=" + address;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    Discoverable other = (Discoverable) o;
+
+    return name.equals(other.getName()) && address.equals(other.getSocketAddress());
+  }
+
+  @Override
+  public int hashCode() {
+    int result = name.hashCode();
+    result = 31 * result + address.hashCode();
+    return result;
+  }
 }

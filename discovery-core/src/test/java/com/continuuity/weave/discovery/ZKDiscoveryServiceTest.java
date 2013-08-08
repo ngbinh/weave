@@ -18,6 +18,7 @@ package com.continuuity.weave.discovery;
 import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.common.Services;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
+import com.continuuity.weave.internal.zookeeper.KillZKSession;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
@@ -82,6 +83,33 @@ public class ZKDiscoveryServiceTest {
       }
     }
     return (Iterables.size(discoverables) == expected);
+  }
+
+  @Test
+  public void testSessionExpires() throws Exception {
+    ZKDiscoveryService discoveryService = new ZKDiscoveryService(zkClient);
+    DiscoveryServiceClient discoveryServiceClient = discoveryService;
+
+    Cancellable cancellable = register(discoveryService, "test_expires", "localhost", 54321);
+
+    Iterable<Discoverable> discoverables = discoveryServiceClient.discover("test_expires");
+
+    // Discover that registered host:port.
+    Assert.assertTrue(waitTillExpected(1, discoverables));
+
+    KillZKSession.kill(zkClient.getZooKeeperSupplier().get(), zkServer.getConnectionStr(), 5000);
+
+    // Register one more endpoint to make sure state has been reflected after reconnection
+    Cancellable cancellable2 = register(discoveryService, "test_expires", "localhost", 54322);
+
+    // Reconnection would trigger re-registration.
+    Assert.assertTrue(waitTillExpected(2, discoverables));
+
+    cancellable.cancel();
+    cancellable2.cancel();
+
+    // Verify that both are now gone.
+    Assert.assertTrue(waitTillExpected(0, discoverables));
   }
 
   @Test

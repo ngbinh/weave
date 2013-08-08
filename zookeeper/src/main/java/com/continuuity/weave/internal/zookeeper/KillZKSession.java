@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.zookeeper;
+package com.continuuity.weave.internal.zookeeper;
 
 import com.google.common.base.Preconditions;
 import org.apache.zookeeper.WatchedEvent;
@@ -25,7 +25,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Utility class for killing ZK client to similate failures during testing.
+ * Utility class for killing ZK client to simulate failures during testing.
  */
 public final class KillZKSession {
 
