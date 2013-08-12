@@ -377,8 +377,8 @@ public final class ApplicationMasterService implements Service {
 
       // Check if the cluster has enough capacity.
       Resource availableResources = amrmClient.getClusterAvailableResources();
-      if (capability.getMemory() * containerCount > availableResources.getMemory() ||
-        capability.getVirtualCores() * containerCount > availableResources.getVirtualCores()) {
+      if (capability.getMemory() * containerCount > availableResources.getMemory()
+            || getVirtualCores(capability) * containerCount > getVirtualCores(availableResources)) {
         LOG.warn("Not enough cluster capacity for {} memory and {} cores for {} containers. " +
                  "Only {} memory and {} cores available.",
                  capability.getMemory(), capability.getVirtualCores(), containerCount,
@@ -628,11 +628,10 @@ public final class ApplicationMasterService implements Service {
 //                         minCapability.getVirtualCores());
 //    capability.setVirtualCores(cores);
     try {
-      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
       Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
 
-      cores = Math.max(Math.min(cores, (Integer) getVirtualCores.invoke(maxCapability)),
-                       (Integer) getVirtualCores.invoke(minCapability));
+      cores = Math.max(Math.min(cores, getVirtualCores(maxCapability)),
+                       getVirtualCores(minCapability));
       setVirtualCores.invoke(capability, cores);
     } catch (Exception e) {
       // It's ok to ignore this exception, as it's using older version of API.
@@ -644,6 +643,15 @@ public final class ApplicationMasterService implements Service {
     capability.setMemory(memory);
 
     return capability;
+  }
+
+  private int getVirtualCores(Resource resource) {
+    try {
+      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
+      return (Integer) getVirtualCores.invoke(resource);
+    } catch (Exception e) {
+      return 0;
+    }
   }
 
   @Override
