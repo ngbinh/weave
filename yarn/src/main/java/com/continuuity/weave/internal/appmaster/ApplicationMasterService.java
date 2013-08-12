@@ -30,13 +30,13 @@ import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
+import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
-import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
@@ -64,9 +64,9 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
@@ -115,8 +115,8 @@ public final class ApplicationMasterService implements Service {
   private final WeaveSpecification weaveSpec;
   private final Multimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
-  private final String masterContainerId;
   private final AMRMClient amrmClient;
+  private final ApplicationMasterLiveNodeData amLiveNode;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
   private final Map<String, Integer> instanceCounts;
@@ -137,11 +137,13 @@ public final class ApplicationMasterService implements Service {
     this.zkClient = zkClient;
 
     // Get the container ID and convert it to ApplicationAttemptId
-    masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
+    String masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
     Preconditions.checkArgument(masterContainerId != null,
                                 "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
     amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
-
+    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
+                                                   Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
+                                                   masterContainerId);
     runningContainers = new RunningContainers();
 
     serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
@@ -162,11 +164,7 @@ public final class ApplicationMasterService implements Service {
     return new Supplier<JsonElement>() {
       @Override
       public JsonElement get() {
-        JsonObject jsonObj = new JsonObject();
-        jsonObj.addProperty("appId", Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)));
-        jsonObj.addProperty("appIdClusterTime", Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)));
-        jsonObj.addProperty("containerId", masterContainerId);
-        return jsonObj;
+        return new Gson().toJsonTree(amLiveNode);
       }
     };
   }
@@ -252,7 +250,7 @@ public final class ApplicationMasterService implements Service {
     } else if ("hdfs".equals(appDir.getScheme())) {
       location = new HDFSLocationFactory(yarnConf).create(appDir);
     } else {
-      LOG.warn("Unsupport location type {}. Cleanup not performed.", appDir);
+      LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
       return;
     }
 
@@ -520,19 +518,34 @@ public final class ApplicationMasterService implements Service {
     final int newCount = Integer.parseInt(options.get("count"));
     final int oldCount = instanceCounts.get(runnableName);
 
-    if (newCount == oldCount) {   // Nothing to do
+    LOG.info("Received change instances request. From {} to {}.", oldCount, newCount);
+
+    if (newCount == oldCount) {   // Nothing to do, simply complete the request.
+      completion.run();
       return true;
     }
 
-    LOG.info("Received change instances request. From {} to {}.", oldCount, newCount);
+    instanceChangeExecutor.execute(createSetInstanceRunnable(message, completion, oldCount, newCount));
+    return true;
+  }
 
-    instanceChangeExecutor.execute(new Runnable() {
+  /**
+   * Creates a Runnable for execution of change instance request.
+   */
+  private Runnable createSetInstanceRunnable(final Message message, final Runnable completion,
+                                             final int oldCount, final int newCount) {
+    return new Runnable() {
       @Override
       public void run() {
+        final String runnableName = message.getRunnableName();
         try {
           // Wait until running container count is the same as old count
-          while (isRunning() && oldCount != runningContainers.count(runnableName)) {
+          int runningCount = runningContainers.count(runnableName);
+          while (isRunning() && oldCount != runningCount) {
+            LOG.info("Waits for {} containers for {} before changing instances to {}. Currently with {} containers.",
+                     oldCount, runnableName, newCount, runningCount);
             runningContainers.waitForChange();
+            runningCount = runningContainers.count(runnableName);
           }
           instanceCounts.put(runnableName, newCount);
 
@@ -543,6 +556,8 @@ public final class ApplicationMasterService implements Service {
                 runningContainers.removeLast(runnableName);
               }
             } else {
+              // Increase the number of instances
+              // Find the current order of the given runnable in order to create a RunnableContainerRequest.
               WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(),
                                                               new Predicate<WeaveSpecification.Order>() {
                 @Override
@@ -565,8 +580,7 @@ public final class ApplicationMasterService implements Service {
           completion.run();
         }
       }
-    });
-    return true;
+    };
   }
 
   private Runnable getMessageCompletion(final String messageId, final SettableFuture<String> future) {

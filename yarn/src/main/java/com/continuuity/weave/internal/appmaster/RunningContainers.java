@@ -242,7 +242,7 @@ final class RunningContainers {
       }
 
       if (exitStatus != 0) {
-        LOG.warn("Container exited abnormally with exit code {}", exitStatus);
+        LOG.warn("Container exited abnormally with exit code {}. {}", exitStatus, containerId);
       }
 
       for (WeaveContainerController controller : lookup.values()) {
