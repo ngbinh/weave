@@ -137,10 +137,12 @@ final class RunningContainers {
   /**
    * Blocks until there are changes in running containers.
    */
-  void waitForChange() throws InterruptedException {
+  void waitForCount(String runnableName, int count) throws InterruptedException {
     containerLock.lock();
     try {
-      containerChange.await();
+      while (containers.row(runnableName).size() != count) {
+        containerChange.await();
+      }
     } finally {
       containerLock.unlock();
     }

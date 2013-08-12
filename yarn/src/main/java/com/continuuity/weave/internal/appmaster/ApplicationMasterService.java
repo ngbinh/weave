@@ -566,13 +566,7 @@ public final class ApplicationMasterService implements Service {
         final String runnableName = message.getRunnableName();
         try {
           // Wait until running container count is the same as old count
-          int runningCount = runningContainers.count(runnableName);
-          while (isRunning() && oldCount != runningCount) {
-            LOG.info("Waits for {} containers for {} before changing instances to {}. Currently with {} containers.",
-                     oldCount, runnableName, newCount, runningCount);
-            runningContainers.waitForChange();
-            runningCount = runningContainers.count(runnableName);
-          }
+          runningContainers.waitForCount(runnableName, oldCount);
           instanceCounts.put(runnableName, newCount);
 
           try {
@@ -598,7 +592,7 @@ public final class ApplicationMasterService implements Service {
                 new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec)));
             }
           } finally {
-            LOG.info("Change instances completed. From {} to {}.", oldCount, newCount);
+            LOG.info("Change instances request completed. From {} to {}.", oldCount, newCount);
             runningContainers.sendToRunnable(runnableName, message, completion);
           }
         } catch (InterruptedException e) {
