@@ -23,11 +23,14 @@ import com.continuuity.weave.internal.state.Message;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multiset;
 import com.google.common.collect.Table;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.hadoop.yarn.api.records.ContainerId;
+import org.apache.hadoop.yarn.api.records.ContainerState;
+import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +52,7 @@ import java.util.concurrent.locks.ReentrantLock;
 final class RunningContainers {
   private static final Logger LOG = LoggerFactory.getLogger(RunningContainers.class);
 
+  // Table of <runnableName, containerId, controller>
   private final Table<String, ContainerId, WeaveContainerController> containers;
   private final Deque<String> startSequence;
   private final Lock containerLock;
@@ -230,8 +234,17 @@ final class RunningContainers {
     }
   }
 
-  void handleCompleted(ContainerId containerId, int exitStatus) {
+  /**
+   * Handle completion of container.
+   * @param status The completion status.
+   * @param restartRunnables Set of runnable names that requires restart.
+   */
+  void handleCompleted(ContainerStatus status, Multiset<String> restartRunnables) {
     containerLock.lock();
+    ContainerId containerId = status.getContainerId();
+    int exitStatus = status.getExitStatus();
+    ContainerState state = status.getState();
+
     try {
       Map<String, WeaveContainerController> lookup = containers.column(containerId);
       if (lookup.isEmpty()) {
@@ -244,7 +257,13 @@ final class RunningContainers {
       }
 
       if (exitStatus != 0) {
-        LOG.warn("Container exited abnormally with exit code {}. {}", exitStatus, containerId);
+        if (exitStatus == -100) {
+          LOG.warn("Container {} exited abnormally with state {}, exit code {}.", containerId, state, exitStatus);
+        } else {
+          LOG.warn("Container {} exited unexpected with state{}, exit code{}. Re-request the container.",
+                   containerId, state, exitStatus);
+          restartRunnables.add(lookup.keySet().iterator().next());
+        }
       }
 
       for (WeaveContainerController controller : lookup.values()) {

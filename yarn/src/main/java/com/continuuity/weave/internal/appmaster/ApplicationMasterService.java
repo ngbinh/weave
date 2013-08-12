@@ -49,6 +49,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
+import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
@@ -56,6 +57,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
 import com.google.common.io.Files;
 import com.google.common.reflect.TypeToken;
@@ -339,8 +341,16 @@ public final class ApplicationMasterService implements Service {
    * Handling containers that are completed.
    */
   private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+    Multiset<String> restartRunnables = HashMultiset.create();
     for (ContainerStatus status : completedContainersStatuses) {
-      runningContainers.handleCompleted(status.getContainerId(), status.getExitStatus());
+      runningContainers.handleCompleted(status, restartRunnables);
+    }
+
+    for (Multiset.Entry<String> entry : restartRunnables.entrySet()) {
+      LOG.info("Re-request container for {} with {} instances.", entry.getElement(), entry.getCount());
+      for (int i = 0; i < entry.getCount(); i++) {
+        runnableContainerRequests.add(createRunnableContainerRequest(entry.getElement()));
+      }
     }
   }
 
@@ -544,7 +554,7 @@ public final class ApplicationMasterService implements Service {
     final int newCount = Integer.parseInt(options.get("count"));
     final int oldCount = instanceCounts.get(runnableName);
 
-    LOG.info("Received change instances request. From {} to {}.", oldCount, newCount);
+    LOG.info("Received change instances request for {}, from {} to {}.", runnableName, oldCount, newCount);
 
     if (newCount == oldCount) {   // Nothing to do, simply complete the request.
       completion.run();
@@ -564,9 +574,13 @@ public final class ApplicationMasterService implements Service {
       @Override
       public void run() {
         final String runnableName = message.getRunnableName();
+
+        LOG.info("Processing change instance request for {}, from {} to {}.", runnableName, oldCount, newCount);
         try {
           // Wait until running container count is the same as old count
           runningContainers.waitForCount(runnableName, oldCount);
+          LOG.info("Confirmed {} containers running for {}.", oldCount, runnableName);
+
           instanceCounts.put(runnableName, newCount);
 
           try {
@@ -577,23 +591,11 @@ public final class ApplicationMasterService implements Service {
               }
             } else {
               // Increase the number of instances
-              // Find the current order of the given runnable in order to create a RunnableContainerRequest.
-              WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(),
-                                                              new Predicate<WeaveSpecification.Order>() {
-                @Override
-                public boolean apply(WeaveSpecification.Order input) {
-                  return (input.getNames().contains(runnableName));
-                }
-              });
-
-              RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
-              Resource capability = createCapability(runtimeSpec.getResourceSpecification());
-              runnableContainerRequests.add(
-                new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec)));
+              runnableContainerRequests.add(createRunnableContainerRequest(runnableName));
             }
           } finally {
-            LOG.info("Change instances request completed. From {} to {}.", oldCount, newCount);
             runningContainers.sendToRunnable(runnableName, message, completion);
+            LOG.info("Change instances request completed. From {} to {}.", oldCount, newCount);
           }
         } catch (InterruptedException e) {
           // If the wait is being interrupted, discard the message.
@@ -601,6 +603,20 @@ public final class ApplicationMasterService implements Service {
         }
       }
     };
+  }
+
+  private RunnableContainerRequest createRunnableContainerRequest(final String runnableName) {
+    // Find the current order of the given runnable in order to create a RunnableContainerRequest.
+    WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(), new Predicate<WeaveSpecification.Order>() {
+      @Override
+      public boolean apply(WeaveSpecification.Order input) {
+        return (input.getNames().contains(runnableName));
+      }
+    });
+
+    RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
+    Resource capability = createCapability(runtimeSpec.getResourceSpecification());
+    return new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec));
   }
 
   private Runnable getMessageCompletion(final String messageId, final SettableFuture<String> future) {
