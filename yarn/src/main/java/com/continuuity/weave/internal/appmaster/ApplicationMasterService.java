@@ -109,6 +109,7 @@ import java.util.concurrent.TimeUnit;
 public final class ApplicationMasterService implements Service {
 
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
+  private static final int CONTAINER_REQUEST_MAX_FAILURE = 30;
 
   private final RunId runId;
   private final ZKClient zkClient;
@@ -290,7 +291,24 @@ public final class ApplicationMasterService implements Service {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
     Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
+    int requestFailCount = 0;
+
     while (isRunning()) {
+      // Call allocate. It has to be made at first in order to be able to get cluster resource availability.
+      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
+      allocateResponse.getAMResponse().getResponseId();
+      AMResponse amResponse = allocateResponse.getAMResponse();
+
+      // Assign runnable to container
+      launchRunnable(amResponse.getAllocatedContainers(), provisioning);
+      handleCompleted(amResponse.getCompletedContainersStatuses());
+
+      // Looks for containers requests.
+      if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
+        LOG.info("All containers completed. Shutting down application master.");
+        break;
+      }
+
       // If nothing is in provisioning, and no pending request, move to next one
       while (provisioning.isEmpty() && currentRequest == null && !runnableContainerRequests.isEmpty()) {
         currentRequest = runnableContainerRequests.peek().takeRequest();
@@ -302,23 +320,17 @@ public final class ApplicationMasterService implements Service {
       }
       // Nothing in provision, makes the next batch of provision request
       if (provisioning.isEmpty() && currentRequest != null) {
-        provisioning.addAll(addContainerRequests(currentRequest.getKey(), currentRequest.getValue()));
-        currentRequest = null;
+        if (!addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning)) {
+          if (requestFailCount++ > CONTAINER_REQUEST_MAX_FAILURE) {
+            // TODO: Allow user decision.
+            LOG.warn("Failed to request for containers. Shutting down application.");
+            break;
+          }
+        } else {
+          currentRequest = null;
+        }
       }
 
-      // Now call allocate
-      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
-      allocateResponse.getAMResponse().getResponseId();
-      AMResponse amResponse = allocateResponse.getAMResponse();
-
-      // Assign runnable to container
-      launchRunnable(amResponse.getAllocatedContainers(), provisioning);
-      handleCompleted(amResponse.getCompletedContainersStatuses());
-
-      if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
-        LOG.info("All containers completed. Shutting down application master.");
-        break;
-      }
       TimeUnit.SECONDS.sleep(1);
     }
   }
@@ -352,9 +364,9 @@ public final class ApplicationMasterService implements Service {
   /**
    * Adds {@link AMRMClient.ContainerRequest}s with the given resource capability for each runtime.
    */
-  private Queue<ProvisionRequest> addContainerRequests(Resource capability,
-                                                       Collection<RuntimeSpecification> runtimeSpecs) {
-    Queue<ProvisionRequest> requests = Lists.newLinkedList();
+  private boolean addContainerRequests(Resource capability,
+                                       Collection<RuntimeSpecification> runtimeSpecs,
+                                       Queue<ProvisionRequest> provisioning) {
     for (RuntimeSpecification runtimeSpec : runtimeSpecs) {
       // TODO: Allow user to set priority?
       Priority priority = Records.newRecord(Priority.class);
@@ -362,13 +374,27 @@ public final class ApplicationMasterService implements Service {
 
       String name = runtimeSpec.getName();
       int containerCount = instanceCounts.get(name) - runningContainers.count(name);
+
+      // Check if the cluster has enough capacity.
+      Resource availableResources = amrmClient.getClusterAvailableResources();
+      if (capability.getMemory() * containerCount > availableResources.getMemory() ||
+        capability.getVirtualCores() * containerCount > availableResources.getVirtualCores()) {
+        LOG.warn("Not enough cluster capacity for {} memory and {} cores for {} containers. " +
+                 "Only {} memory and {} cores available.",
+                 capability.getMemory(), capability.getVirtualCores(), containerCount,
+                 availableResources.getMemory(), availableResources.getVirtualCores());
+        return false;
+      }
+
       AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
                                                                             priority, containerCount);
+
+
       LOG.info("Request for container: " + request);
-      requests.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
+      provisioning.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
       amrmClient.addContainerRequest(request);
     }
-    return requests;
+    return true;
   }
 
   /**
