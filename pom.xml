@@ -110,7 +110,7 @@
                     </links>
                     <detectLinks>true</detectLinks>
                     <additionalparam>
-                        -bottom "Copyright 2013 Continuuity, Inc. Licensed under the Apache License, Version 2.0"
+                        -bottom <![CDATA[Copyright 2013 Continuuity, Inc. <a href="http://www.apache.org/licenses/LICENSE-2.0">Licensed under the Apache License, Version 2.0</a>]]>"
                     </additionalparam>
                 </configuration>
                 <executions>
