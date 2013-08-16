@@ -59,6 +59,7 @@ public class YarnTestSuite {
     config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
+    config.set("yarn.nodemanager.vmem-check-enabled", "false");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);
