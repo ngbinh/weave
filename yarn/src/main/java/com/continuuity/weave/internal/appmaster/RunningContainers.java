@@ -52,6 +52,9 @@ import java.util.concurrent.locks.ReentrantLock;
 final class RunningContainers {
   private static final Logger LOG = LoggerFactory.getLogger(RunningContainers.class);
 
+  // Error status code if the container exit with an user error.
+  private static final int RUNNABLE_ERROR = -100;
+
   // Table of <runnableName, containerId, controller>
   private final Table<String, ContainerId, WeaveContainerController> containers;
   private final Deque<String> startSequence;
@@ -257,7 +260,7 @@ final class RunningContainers {
       }
 
       if (exitStatus != 0) {
-        if (exitStatus == -100) {
+        if (exitStatus == RUNNABLE_ERROR) {
           LOG.warn("Container {} exited abnormally with state {}, exit code {}.", containerId, state, exitStatus);
         } else {
           LOG.warn("Container {} exited unexpected with state{}, exit code{}. Re-request the container.",
