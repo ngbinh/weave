@@ -30,13 +30,13 @@ import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
+import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
-import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
@@ -49,6 +49,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
+import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
@@ -56,6 +57,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
 import com.google.common.io.Files;
 import com.google.common.reflect.TypeToken;
@@ -64,9 +66,9 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
@@ -109,14 +111,15 @@ import java.util.concurrent.TimeUnit;
 public final class ApplicationMasterService implements Service {
 
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
+  private static final int CONTAINER_REQUEST_MAX_FAILURE = 30;
 
   private final RunId runId;
   private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
   private final Multimap<String, String> runnableArgs;
   private final YarnConfiguration yarnConf;
-  private final String masterContainerId;
   private final AMRMClient amrmClient;
+  private final ApplicationMasterLiveNodeData amLiveNode;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
   private final Map<String, Integer> instanceCounts;
@@ -137,11 +140,13 @@ public final class ApplicationMasterService implements Service {
     this.zkClient = zkClient;
 
     // Get the container ID and convert it to ApplicationAttemptId
-    masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
+    String masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
     Preconditions.checkArgument(masterContainerId != null,
                                 "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
     amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
-
+    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
+                                                   Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
+                                                   masterContainerId);
     runningContainers = new RunningContainers();
 
     serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
@@ -162,11 +167,7 @@ public final class ApplicationMasterService implements Service {
     return new Supplier<JsonElement>() {
       @Override
       public JsonElement get() {
-        JsonObject jsonObj = new JsonObject();
-        jsonObj.addProperty("appId", Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)));
-        jsonObj.addProperty("appIdClusterTime", Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)));
-        jsonObj.addProperty("containerId", masterContainerId);
-        return jsonObj;
+        return new Gson().toJsonTree(amLiveNode);
       }
     };
   }
@@ -252,7 +253,7 @@ public final class ApplicationMasterService implements Service {
     } else if ("hdfs".equals(appDir.getScheme())) {
       location = new HDFSLocationFactory(yarnConf).create(appDir);
     } else {
-      LOG.warn("Unsupport location type {}. Cleanup not performed.", appDir);
+      LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
       return;
     }
 
@@ -292,7 +293,24 @@ public final class ApplicationMasterService implements Service {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
     Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
+    int requestFailCount = 0;
+
     while (isRunning()) {
+      // Call allocate. It has to be made at first in order to be able to get cluster resource availability.
+      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
+      allocateResponse.getAMResponse().getResponseId();
+      AMResponse amResponse = allocateResponse.getAMResponse();
+
+      // Assign runnable to container
+      launchRunnable(amResponse.getAllocatedContainers(), provisioning);
+      handleCompleted(amResponse.getCompletedContainersStatuses());
+
+      // Looks for containers requests.
+      if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
+        LOG.info("All containers completed. Shutting down application master.");
+        break;
+      }
+
       // If nothing is in provisioning, and no pending request, move to next one
       while (provisioning.isEmpty() && currentRequest == null && !runnableContainerRequests.isEmpty()) {
         currentRequest = runnableContainerRequests.peek().takeRequest();
@@ -304,23 +322,17 @@ public final class ApplicationMasterService implements Service {
       }
       // Nothing in provision, makes the next batch of provision request
       if (provisioning.isEmpty() && currentRequest != null) {
-        provisioning.addAll(addContainerRequests(currentRequest.getKey(), currentRequest.getValue()));
-        currentRequest = null;
+        if (!addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning)) {
+          if (requestFailCount++ > CONTAINER_REQUEST_MAX_FAILURE) {
+            // TODO: Allow user decision.
+            LOG.warn("Failed to request for containers. Shutting down application.");
+            break;
+          }
+        } else {
+          currentRequest = null;
+        }
       }
 
-      // Now call allocate
-      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
-      allocateResponse.getAMResponse().getResponseId();
-      AMResponse amResponse = allocateResponse.getAMResponse();
-
-      // Assign runnable to container
-      launchRunnable(amResponse.getAllocatedContainers(), provisioning);
-      handleCompleted(amResponse.getCompletedContainersStatuses());
-
-      if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
-        LOG.info("All containers completed. Shutting down application master.");
-        break;
-      }
       TimeUnit.SECONDS.sleep(1);
     }
   }
@@ -329,8 +341,16 @@ public final class ApplicationMasterService implements Service {
    * Handling containers that are completed.
    */
   private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+    Multiset<String> restartRunnables = HashMultiset.create();
     for (ContainerStatus status : completedContainersStatuses) {
-      runningContainers.handleCompleted(status.getContainerId(), status.getExitStatus());
+      runningContainers.handleCompleted(status, restartRunnables);
+    }
+
+    for (Multiset.Entry<String> entry : restartRunnables.entrySet()) {
+      LOG.info("Re-request container for {} with {} instances.", entry.getElement(), entry.getCount());
+      for (int i = 0; i < entry.getCount(); i++) {
+        runnableContainerRequests.add(createRunnableContainerRequest(entry.getElement()));
+      }
     }
   }
 
@@ -354,9 +374,9 @@ public final class ApplicationMasterService implements Service {
   /**
    * Adds {@link AMRMClient.ContainerRequest}s with the given resource capability for each runtime.
    */
-  private Queue<ProvisionRequest> addContainerRequests(Resource capability,
-                                                       Collection<RuntimeSpecification> runtimeSpecs) {
-    Queue<ProvisionRequest> requests = Lists.newLinkedList();
+  private boolean addContainerRequests(Resource capability,
+                                       Collection<RuntimeSpecification> runtimeSpecs,
+                                       Queue<ProvisionRequest> provisioning) {
     for (RuntimeSpecification runtimeSpec : runtimeSpecs) {
       // TODO: Allow user to set priority?
       Priority priority = Records.newRecord(Priority.class);
@@ -364,13 +384,27 @@ public final class ApplicationMasterService implements Service {
 
       String name = runtimeSpec.getName();
       int containerCount = instanceCounts.get(name) - runningContainers.count(name);
+
+      // Check if the cluster has enough capacity.
+      Resource availableResources = amrmClient.getClusterAvailableResources();
+      if (capability.getMemory() * containerCount > availableResources.getMemory()
+            || getVirtualCores(capability) * containerCount > getVirtualCores(availableResources)) {
+        LOG.warn("Not enough cluster capacity for {} memory and {} cores for {} containers. " +
+                 "Only {} memory and {} cores available.",
+                 capability.getMemory(), capability.getVirtualCores(), containerCount,
+                 availableResources.getMemory(), availableResources.getVirtualCores());
+        return false;
+      }
+
       AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
                                                                             priority, containerCount);
+
+
       LOG.info("Request for container: " + request);
-      requests.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
+      provisioning.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
       amrmClient.addContainerRequest(request);
     }
-    return requests;
+    return true;
   }
 
   /**
@@ -520,20 +554,33 @@ public final class ApplicationMasterService implements Service {
     final int newCount = Integer.parseInt(options.get("count"));
     final int oldCount = instanceCounts.get(runnableName);
 
-    if (newCount == oldCount) {   // Nothing to do
+    LOG.info("Received change instances request for {}, from {} to {}.", runnableName, oldCount, newCount);
+
+    if (newCount == oldCount) {   // Nothing to do, simply complete the request.
+      completion.run();
       return true;
     }
 
-    LOG.info("Received change instances request. From {} to {}.", oldCount, newCount);
+    instanceChangeExecutor.execute(createSetInstanceRunnable(message, completion, oldCount, newCount));
+    return true;
+  }
 
-    instanceChangeExecutor.execute(new Runnable() {
+  /**
+   * Creates a Runnable for execution of change instance request.
+   */
+  private Runnable createSetInstanceRunnable(final Message message, final Runnable completion,
+                                             final int oldCount, final int newCount) {
+    return new Runnable() {
       @Override
       public void run() {
+        final String runnableName = message.getRunnableName();
+
+        LOG.info("Processing change instance request for {}, from {} to {}.", runnableName, oldCount, newCount);
         try {
           // Wait until running container count is the same as old count
-          while (isRunning() && oldCount != runningContainers.count(runnableName)) {
-            runningContainers.waitForChange();
-          }
+          runningContainers.waitForCount(runnableName, oldCount);
+          LOG.info("Confirmed {} containers running for {}.", oldCount, runnableName);
+
           instanceCounts.put(runnableName, newCount);
 
           try {
@@ -543,30 +590,33 @@ public final class ApplicationMasterService implements Service {
                 runningContainers.removeLast(runnableName);
               }
             } else {
-              WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(),
-                                                              new Predicate<WeaveSpecification.Order>() {
-                @Override
-                public boolean apply(WeaveSpecification.Order input) {
-                  return (input.getNames().contains(runnableName));
-                }
-              });
-
-              RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
-              Resource capability = createCapability(runtimeSpec.getResourceSpecification());
-              runnableContainerRequests.add(
-                new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec)));
+              // Increase the number of instances
+              runnableContainerRequests.add(createRunnableContainerRequest(runnableName));
             }
           } finally {
-            LOG.info("Change instances completed. From {} to {}.", oldCount, newCount);
             runningContainers.sendToRunnable(runnableName, message, completion);
+            LOG.info("Change instances request completed. From {} to {}.", oldCount, newCount);
           }
         } catch (InterruptedException e) {
           // If the wait is being interrupted, discard the message.
           completion.run();
         }
       }
+    };
+  }
+
+  private RunnableContainerRequest createRunnableContainerRequest(final String runnableName) {
+    // Find the current order of the given runnable in order to create a RunnableContainerRequest.
+    WeaveSpecification.Order order = Iterables.find(weaveSpec.getOrders(), new Predicate<WeaveSpecification.Order>() {
+      @Override
+      public boolean apply(WeaveSpecification.Order input) {
+        return (input.getNames().contains(runnableName));
+      }
     });
-    return true;
+
+    RuntimeSpecification runtimeSpec = weaveSpec.getRunnables().get(runnableName);
+    Resource capability = createCapability(runtimeSpec.getResourceSpecification());
+    return new RunnableContainerRequest(order.getType(), ImmutableMultimap.of(capability, runtimeSpec));
   }
 
   private Runnable getMessageCompletion(final String messageId, final SettableFuture<String> future) {
@@ -588,11 +638,10 @@ public final class ApplicationMasterService implements Service {
 //                         minCapability.getVirtualCores());
 //    capability.setVirtualCores(cores);
     try {
-      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
       Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
 
-      cores = Math.max(Math.min(cores, (Integer) getVirtualCores.invoke(maxCapability)),
-                       (Integer) getVirtualCores.invoke(minCapability));
+      cores = Math.max(Math.min(cores, getVirtualCores(maxCapability)),
+                       getVirtualCores(minCapability));
       setVirtualCores.invoke(capability, cores);
     } catch (Exception e) {
       // It's ok to ignore this exception, as it's using older version of API.
@@ -604,6 +653,15 @@ public final class ApplicationMasterService implements Service {
     capability.setMemory(memory);
 
     return capability;
+  }
+
+  private int getVirtualCores(Resource resource) {
+    try {
+      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
+      return (Integer) getVirtualCores.invoke(resource);
+    } catch (Exception e) {
+      return 0;
+    }
   }
 
   @Override

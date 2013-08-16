@@ -18,6 +18,7 @@ package com.continuuity.weave.yarn;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
+import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
@@ -107,17 +108,27 @@ public class EchoServerTestRun {
     controller.changeInstances("EchoServer", 2);
     Assert.assertTrue(waitForSize(echoServices, 2, 60));
 
+    // Make sure still only one app is running
     Iterable<WeaveRunner.LiveInfo> apps = runner.lookupLive();
     Assert.assertTrue(waitForSize(apps, 1, 60));
-    Iterable<WeaveController> controllers = runner.lookup("EchoServer");
-    Assert.assertTrue(waitForSize(controllers, 1, 60));
 
-    for (WeaveController c : controllers) {
-      LOG.info("Stopping application: " + c.getRunId());
-      c.stop().get(10, TimeUnit.SECONDS);
+    // Creates a new runner service to check it can regain control over running app.
+    WeaveRunnerService runnerService = YarnTestSuite.createWeaveRunnerService();
+    runnerService.startAndWait();
+
+    try {
+      Iterable <WeaveController> controllers = runnerService.lookup("EchoServer");
+      Assert.assertTrue(waitForSize(controllers, 1, 60));
+
+      for (WeaveController c : controllers) {
+        LOG.info("Stopping application: " + c.getRunId());
+        c.stop().get(10, TimeUnit.SECONDS);
+      }
+
+      Assert.assertTrue(waitForSize(apps, 0, 60));
+    } finally {
+      runnerService.stopAndWait();
     }
-
-    Assert.assertTrue(waitForSize(apps, 0, 60));
 
     // Sleep a bit before exiting.
     TimeUnit.SECONDS.sleep(2);

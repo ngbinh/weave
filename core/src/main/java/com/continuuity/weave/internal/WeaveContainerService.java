@@ -31,8 +31,8 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +49,7 @@ public final class WeaveContainerService implements Service {
 
   private final WeaveRunnableSpecification specification;
   private final ClassLoader classLoader;
-  private final ContainerInfo containerInfo;
+  private final ContainerLiveNodeData containerLiveNode;
   private final BasicWeaveContext context;
   private final ZKServiceDecorator serviceDelegate;
   private ExecutorService commandExecutor;
@@ -61,7 +61,8 @@ public final class WeaveContainerService implements Service {
     this.classLoader = classLoader;
     this.serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeSupplier(), new ServiceDelegate());
     this.context = context;
-    this.containerInfo = containerInfo;
+    this.containerLiveNode = new ContainerLiveNodeData(containerInfo.getId(),
+                                                       containerInfo.getHost().getCanonicalHostName());
   }
 
   private ListenableFuture<String> processMessage(final String messageId, final Message message) {
@@ -92,10 +93,7 @@ public final class WeaveContainerService implements Service {
     return new Supplier<JsonElement>() {
       @Override
       public JsonElement get() {
-        JsonObject jsonObj = new JsonObject();
-        jsonObj.addProperty("containerId", containerInfo.getId());
-        jsonObj.addProperty("host", containerInfo.getHost().getCanonicalHostName());
-        return jsonObj;
+        return new Gson().toJsonTree(containerLiveNode);
       }
     };
   }

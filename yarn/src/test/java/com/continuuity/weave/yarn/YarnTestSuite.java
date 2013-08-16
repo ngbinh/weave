@@ -19,12 +19,13 @@ import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
-import com.google.common.io.Files;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.MiniYARNCluster;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
+import org.junit.ClassRule;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
@@ -37,9 +38,13 @@ import java.io.IOException;
 @Suite.SuiteClasses({EchoServerTestRun.class, TaskCompletedTestRun.class, DistributeShellTestRun.class})
 public class YarnTestSuite {
 
+  @ClassRule
+  public static TemporaryFolder tmpFolder = new TemporaryFolder();
+
   private static InMemoryZKServer zkServer;
   private static MiniYARNCluster cluster;
   private static WeaveRunnerService runnerService;
+  private static YarnConfiguration config;
 
   @BeforeClass
   public static final void init() throws IOException {
@@ -48,19 +53,19 @@ public class YarnTestSuite {
     zkServer.startAndWait();
 
     // Start YARN mini cluster
-    YarnConfiguration config = new YarnConfiguration(new Configuration());
+    config = new YarnConfiguration(new Configuration());
 
     // TODO: Hack
     config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
+    config.set("yarn.nodemanager.vmem-check-enabled", "false");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);
     cluster.start();
 
-    runnerService = new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
-                                               new LocalLocationFactory(Files.createTempDir()));
+    runnerService = createWeaveRunnerService();
     runnerService.startAndWait();
   }
 
@@ -73,5 +78,13 @@ public class YarnTestSuite {
 
   public static final WeaveRunner getWeaveRunner() {
     return runnerService;
+  }
+
+  /**
+   * Creates an unstarted instance of {@link WeaveRunnerService}.
+   */
+  public static final WeaveRunnerService createWeaveRunnerService() throws IOException {
+    return new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
+                                      new LocalLocationFactory(tmpFolder.newFolder()));
   }
 }

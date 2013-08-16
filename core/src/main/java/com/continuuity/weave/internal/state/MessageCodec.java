@@ -37,15 +37,10 @@ import java.util.Map;
 public final class MessageCodec {
 
   private static final Type OPTIONS_TYPE = new TypeToken<Map<String, String>>() {}.getType();
-  private static final ThreadLocal<Gson> GSON = new ThreadLocal<Gson>() {
-    @Override
-    protected Gson initialValue() {
-      return new GsonBuilder()
-        .registerTypeAdapter(Message.class, new MessageAdapter())
-        .registerTypeAdapter(Command.class, new CommandAdapter())
-        .create();
-    }
-  };
+  private static final Gson GSON = new GsonBuilder()
+                                        .registerTypeAdapter(Message.class, new MessageAdapter())
+                                        .registerTypeAdapter(Command.class, new CommandAdapter())
+                                        .create();
 
   /**
    * Decodes a {@link Message} from the given byte array.
@@ -57,7 +52,7 @@ public final class MessageCodec {
       return null;
     }
     String content = new String(bytes, Charsets.UTF_8);
-    return GSON.get().fromJson(content, Message.class);
+    return GSON.fromJson(content, Message.class);
   }
 
   /**
@@ -66,7 +61,7 @@ public final class MessageCodec {
    * @return byte array representing the encoded message.
    */
   public static byte[] encode(Message message) {
-    return GSON.get().toJson(message, Message.class).getBytes(Charsets.UTF_8);
+    return GSON.toJson(message, Message.class).getBytes(Charsets.UTF_8);
   }
 
   /**
