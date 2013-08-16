@@ -31,6 +31,7 @@ import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.SingleRunnableApplication;
+import com.continuuity.weave.internal.appmaster.ApplicationMasterLiveNodeData;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.RetryStrategies;
@@ -151,8 +152,15 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   @Override
-  public synchronized Iterable<WeaveController> lookup(String applicationName) {
-    return ImmutableList.copyOf(controllers.row(applicationName).values());
+  public Iterable<WeaveController> lookup(final String applicationName) {
+    return new Iterable<WeaveController>() {
+      @Override
+      public Iterator<WeaveController> iterator() {
+        synchronized (YarnWeaveRunnerService.this) {
+          return ImmutableList.copyOf(controllers.row(applicationName).values()).iterator();
+        }
+      }
+    };
   }
 
   @Override
@@ -190,7 +198,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
     final AtomicBoolean cancelled = new AtomicBoolean(false);
     // Watch child changes in the root, which gives all application names.
-    final Cancellable cancellable = ZKOperations.watchChildren(zkClientService, "/", new ZKOperations.ChildrenCallback() {
+    final Cancellable cancellable = ZKOperations.watchChildren(zkClientService, "/",
+                                                               new ZKOperations.ChildrenCallback() {
       @Override
       public void updated(NodeChildren nodeChildren) {
         if (cancelled.get()) {
@@ -362,7 +371,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       return null;
     }
 
-    JsonElement json = new Gson().fromJson(new String(data, Charsets.UTF_8), JsonElement.class);
+    Gson gson = new Gson();
+    JsonElement json = gson.fromJson(new String(data, Charsets.UTF_8), JsonElement.class);
     if (!json.isJsonObject()) {
       LOG.warn("Unable to decode live data node.");
       return null;
@@ -375,12 +385,17 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       return null;
     }
 
-    jsonObj = json.getAsJsonObject();
-    ApplicationId appId = Records.newRecord(ApplicationId.class);
-    appId.setId(jsonObj.get("appId").getAsInt());
-    appId.setClusterTimestamp(jsonObj.get("appIdClusterTime").getAsLong());
+    try {
+      ApplicationMasterLiveNodeData amLiveNode = gson.fromJson(json, ApplicationMasterLiveNodeData.class);
+      ApplicationId appId = Records.newRecord(ApplicationId.class);
+      appId.setId(amLiveNode.getAppId());
+      appId.setClusterTimestamp(amLiveNode.getAppIdClusterTime());
 
-    return appId;
+      return appId;
+    } catch (Exception e) {
+      LOG.warn("Failed to decode application live node data.", e);
+      return null;
+    }
   }
 
   private static FileSystem getFileSystem(YarnConfiguration configuration) {
