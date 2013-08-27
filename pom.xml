@@ -21,7 +21,7 @@
 
     <groupId>com.continuuity.weave</groupId>
     <artifactId>weave-parent</artifactId>
-    <version>1.0.0-rc4</version>
+    <version>1.0.0-rc5-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Weave library parent project</name>
 
