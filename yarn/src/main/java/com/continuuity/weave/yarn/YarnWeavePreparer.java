@@ -220,13 +220,14 @@ final class YarnWeavePreparer implements WeavePreparer {
             ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
             containerLaunchContext.setLocalResources(localResources);
 
-            // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
+            // java -Djava.io.tmpdir=tmp -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
             //     com.continuuity.weave.internal.WeaveLauncher
             //     appMaster.jar
             //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
             //     false
             containerLaunchContext.setCommands(ImmutableList.of(
               "java",
+              "-Djava.io.tmpdir=tmp",
               "-cp", "launcher.jar:$HADOOP_CONF_DIR",
               "-Xmx" + APP_MASTER_MEMORY_MB + "m",
               WeaveLauncher.class.getName(),

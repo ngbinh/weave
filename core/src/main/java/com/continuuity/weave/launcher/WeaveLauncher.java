@@ -92,6 +92,10 @@ public final class WeaveLauncher {
    */
   private static File createTempDir(String prefix) throws IOException {
     File baseDir = new File(System.getProperty("java.io.tmpdir"));
+    if (!baseDir.isDirectory() && !baseDir.mkdirs()) {
+      throw new IOException("Tmp directory not exists: " + baseDir.getAbsolutePath());
+    }
+
     String baseName = prefix + "-" + System.currentTimeMillis() + "-";
 
     for (int counter = 0; counter < TEMP_DIR_ATTEMPTS; counter++) {

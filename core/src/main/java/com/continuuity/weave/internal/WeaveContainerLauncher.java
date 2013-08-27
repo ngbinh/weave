@@ -76,6 +76,7 @@ public final class WeaveContainerLauncher {
       .withCommands()
         .add("java",
              ImmutableList.<String>builder()
+               .add("-Djava.io.tmpdir=tmp")
                .add("-cp").add("launcher.jar")
                .add("-Xmx" + memory + "m")
                .add(WeaveLauncher.class.getName())
