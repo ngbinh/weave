@@ -35,10 +35,10 @@ public final class StackTraceElementCodec implements JsonSerializer<StackTraceEl
   public StackTraceElement deserialize(JsonElement json, Type typeOfT,
                                        JsonDeserializationContext context) throws JsonParseException {
     JsonObject jsonObj = json.getAsJsonObject();
-    return new StackTraceElement(jsonObj.get("className").getAsString(),
-                                 jsonObj.get("method").getAsString(),
-                                 jsonObj.get("file").getAsString(),
-                                 jsonObj.get("line").getAsInt());
+    return new StackTraceElement(JsonUtils.getAsString(jsonObj, "className"),
+                                 JsonUtils.getAsString(jsonObj, "method"),
+                                 JsonUtils.getAsString(jsonObj, "file"),
+                                 JsonUtils.getAsInt(jsonObj, "line", -1));
   }
 
   @Override
