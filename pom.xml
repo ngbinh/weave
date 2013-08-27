@@ -67,7 +67,7 @@
         </site>
         <repository>
             <id>continuuity-release</id>
-            <url>https://repository.continuuity.com/content/repositories/releases/</url>
+            <url>https://repository.continuuity.com/content/repositories/releases-public/</url>
         </repository>
         <snapshotRepository>
             <id>continuuity</id>
