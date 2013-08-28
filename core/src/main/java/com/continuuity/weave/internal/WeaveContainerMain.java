@@ -33,9 +33,7 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
-import com.google.gson.GsonBuilder;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -53,7 +51,7 @@ public final class WeaveContainerMain extends ServiceMain {
    */
   public static void main(final String[] args) throws Exception {
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
-    File weaveSpecFile = new File("weaveSpec.json");
+    File weaveSpecFile = new File(Constants.Files.WEAVE_SPEC);
     RunId appRunId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_APP_RUN_ID));
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
     String runnableName = System.getenv(EnvKeys.WEAVE_RUNNABLE_NAME);
@@ -122,14 +120,9 @@ public final class WeaveContainerMain extends ServiceMain {
   }
 
   private static String[] decodeArgs() throws IOException {
-    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
-    try {
-      List<String> args = new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().fromJson(reader, Arguments.class).getArguments();
-      return args.toArray(new String[args.size()]);
-    } finally {
-      reader.close();
-    }
+    List<String> args = ArgumentsCodec.decode(Files.newReaderSupplier(new File(Constants.Files.ARGUMENTS),
+                                                                      Charsets.UTF_8)).getArguments();
+    return args.toArray(new String[args.size()]);
   }
 
   @Override

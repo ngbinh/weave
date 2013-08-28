@@ -25,7 +25,7 @@ import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
-import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
@@ -88,7 +88,6 @@ import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
@@ -154,13 +153,9 @@ public final class ApplicationMasterService implements Service {
   }
 
   private Multimap<String, String> decodeRunnableArgs() throws IOException {
-    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
-    try {
-      return new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().fromJson(reader, Arguments.class).getRunnableArguments();
-    } finally {
-      reader.close();
-    }
+    return ArgumentsCodec.decode(Files.newReaderSupplier(new File(Constants.Files.ARGUMENTS),
+                                                         Charsets.UTF_8))
+                         .getRunnableArguments();
   }
 
   private Supplier<? extends JsonElement> createLiveNodeDataSupplier() {
@@ -413,7 +408,7 @@ public final class ApplicationMasterService implements Service {
 
       RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
       ProcessLauncher processLauncher = new DefaultProcessLauncher(
-        container, yarnRPC, yarnConf, getLocalFiles(),
+        container, yarnRPC, yarnConf, getLocalizeFiles(),
         ImmutableMap.<String, String>builder()
          .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
          .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
@@ -443,9 +438,9 @@ public final class ApplicationMasterService implements Service {
     }
   }
 
-  private List<LocalFile> getLocalFiles() {
+  private List<LocalFile> getLocalizeFiles() {
     try {
-      Reader reader = Files.newReader(new File("localFiles.json"), Charsets.UTF_8);
+      Reader reader = Files.newReader(new File(Constants.Files.LOCALIZE_FILES), Charsets.UTF_8);
       try {
         return new GsonBuilder().registerTypeAdapter(LocalFile.class, new LocalFileCodec())
                                 .create().fromJson(reader, new TypeToken<List<LocalFile>>() {}.getType());

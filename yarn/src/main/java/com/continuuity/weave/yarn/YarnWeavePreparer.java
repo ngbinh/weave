@@ -26,6 +26,7 @@ import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.ApplicationBundler;
 import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultRuntimeSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
@@ -58,6 +59,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
+import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
@@ -210,12 +212,12 @@ final class YarnWeavePreparer implements WeavePreparer {
             saveLogback(localResources);
             saveLauncher(localResources);
             saveKafka(localResources);
-            saveArguments(arguments, runnableArgs, localResources);
-            saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
-                                                           "logback-template.xml",
-                                                           "container.jar",
-                                                           "launcher.jar",
-                                                           "arguments.json"));
+            saveArguments(new Arguments(arguments, runnableArgs), localResources);
+            saveLocalFiles(localResources, ImmutableSet.of(Constants.Files.WEAVE_SPEC,
+                                                           Constants.Files.LOGBACK_TEMPLATE,
+                                                           Constants.Files.CONTAINER_JAR,
+                                                           Constants.Files.LAUNCHER_JAR,
+                                                           Constants.Files.ARGUMENTS));
 
             ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
             containerLaunchContext.setLocalResources(localResources);
@@ -228,10 +230,10 @@ final class YarnWeavePreparer implements WeavePreparer {
             containerLaunchContext.setCommands(ImmutableList.of(
               "java",
               "-Djava.io.tmpdir=tmp",
-              "-cp", "launcher.jar:$HADOOP_CONF_DIR",
+              "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
               "-Xmx" + APP_MASTER_MEMORY_MB + "m",
               WeaveLauncher.class.getName(),
-              "appMaster.jar",
+              Constants.Files.APP_MASTER_JAR,
               ApplicationMasterMain.class.getName(),
               Boolean.FALSE.toString(),
               " 1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
@@ -278,12 +280,12 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private void createAppMasterJar(ApplicationBundler bundler,
                                   Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy appMaster.jar");
+    LOG.debug("Create and copy {}", Constants.Files.APP_MASTER_JAR);
     Location location = createTempLocation("appMaster", ".jar");
     bundler.createBundle(location, ApplicationMasterMain.class);
-    LOG.debug("Done appMaster.jar");
+    LOG.debug("Done {}", Constants.Files.APP_MASTER_JAR);
 
-    localResources.put("appMaster.jar", YarnUtils.createLocalResource(location));
+    localResources.put(Constants.Files.APP_MASTER_JAR, YarnUtils.createLocalResource(location));
   }
 
   private void createContainerJar(ApplicationBundler bundler,
@@ -298,12 +300,12 @@ final class YarnWeavePreparer implements WeavePreparer {
         classes.add(classLoader.loadClass(spec.getRunnableSpecification().getClassName()));
       }
 
-      LOG.debug("Create and copy container.jar");
+      LOG.debug("Create and copy {}", Constants.Files.CONTAINER_JAR);
       Location location = createTempLocation("container", ".jar");
       bundler.createBundle(location, classes, resources);
-      LOG.debug("Done container.jar");
+      LOG.debug("Done {}", Constants.Files.CONTAINER_JAR);
 
-      localResources.put("container.jar", YarnUtils.createLocalResource(location));
+      localResources.put(Constants.Files.CONTAINER_JAR, YarnUtils.createLocalResource(location));
 
     } catch (ClassNotFoundException e) {
       throw Throwables.propagate(e);
@@ -359,7 +361,7 @@ final class YarnWeavePreparer implements WeavePreparer {
     });
 
     // Serialize into a local temp file.
-    LOG.debug("Create and copy weaveSpec.json");
+    LOG.debug("Create and copy {}", Constants.Files.WEAVE_SPEC);
     Location location = createTempLocation("weaveSpec", ".json");
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
@@ -368,16 +370,16 @@ final class YarnWeavePreparer implements WeavePreparer {
     } finally {
       writer.close();
     }
-    LOG.debug("Done weaveSpec.json");
-    localResources.put("weaveSpec.json", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.WEAVE_SPEC);
+    localResources.put(Constants.Files.WEAVE_SPEC, YarnUtils.createLocalResource(location));
   }
 
   private void saveLogback(Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy logback-template.xml");
-    Location location = copyFromURL(getClass().getClassLoader().getResource("logback-template.xml"),
+    LOG.debug("Create and copy {}", Constants.Files.LOGBACK_TEMPLATE);
+    Location location = copyFromURL(getClass().getClassLoader().getResource(Constants.Files.LOGBACK_TEMPLATE),
                                     createTempLocation("logback-template", ".xml"));
-    LOG.debug("Done logback-template.xml");
-    localResources.put("logback-template.xml", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.LOGBACK_TEMPLATE);
+    localResources.put(Constants.Files.LOGBACK_TEMPLATE, YarnUtils.createLocalResource(location));
   }
 
   /**
@@ -385,7 +387,7 @@ final class YarnWeavePreparer implements WeavePreparer {
    */
   private void saveLauncher(Map<String, LocalResource> localResources) throws URISyntaxException, IOException {
 
-    LOG.debug("Create and copy launcher.jar");
+    LOG.debug("Create and copy {}", Constants.Files.LAUNCHER_JAR);
     Location location = createTempLocation("launcher", ".jar");
 
     final String launcherName = WeaveLauncher.class.getName();
@@ -424,8 +426,8 @@ final class YarnWeavePreparer implements WeavePreparer {
     } finally {
       jarOut.close();
     }
-    LOG.debug("Done launcher.jar");
-    localResources.put("launcher.jar", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.LAUNCHER_JAR);
+    localResources.put(Constants.Files.LAUNCHER_JAR, YarnUtils.createLocalResource(location));
   }
 
   private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
@@ -438,25 +440,25 @@ final class YarnWeavePreparer implements WeavePreparer {
     localResources.put("kafka.tgz", localResource);
   }
 
-  private void saveArguments(List<String> appArgs, Multimap<String, String> runnableArgs,
-                             Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy arguments.json");
-    Location location = createTempLocation("arguments", ".json");
-    Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
-    try {
-      new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().toJson(new Arguments(appArgs, runnableArgs), writer);
-    } finally {
-      writer.close();
-    }
-
-    LOG.debug("Done arguments.json");
-    localResources.put("arguments.json", YarnUtils.createLocalResource(location));
+  private void saveArguments(Arguments arguments, Map<String, LocalResource> localResources) throws IOException {
+    LOG.debug("Create and copy {}", Constants.Files.ARGUMENTS);
+    final Location location = createTempLocation("arguments", ".json");
+    ArgumentsCodec.encode(arguments, new OutputSupplier<Writer>() {
+      @Override
+      public Writer getOutput() throws IOException {
+        return new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
+      }
+    });
+    LOG.debug("Done {}", Constants.Files.ARGUMENTS);
+    localResources.put(Constants.Files.ARGUMENTS, YarnUtils.createLocalResource(location));
   }
 
-  private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> keys) throws IOException {
+  /**
+   * Serializes the list of files that needs to localize from AM to Container.
+   */
+  private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> includes) throws IOException {
     Map<String, LocalFile> localFiles = Maps.transformEntries(
-      Maps.filterKeys(localResources, Predicates.in(keys)),
+      Maps.filterKeys(localResources, Predicates.in(includes)),
       new Maps.EntryTransformer<String, LocalResource, LocalFile>() {
       @Override
       public LocalFile transformEntry(String key, LocalResource value) {
@@ -470,8 +472,8 @@ final class YarnWeavePreparer implements WeavePreparer {
       }
     });
 
-    LOG.debug("Create and copy localFiles.json");
-    Location location = createTempLocation("localFiles", ".json");
+    LOG.debug("Create and copy {}", Constants.Files.LOCALIZE_FILES);
+    Location location = createTempLocation("localizeFiles", ".json");
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
       new GsonBuilder().registerTypeAdapter(LocalFile.class, new LocalFileCodec())
@@ -480,8 +482,8 @@ final class YarnWeavePreparer implements WeavePreparer {
     } finally {
       writer.close();
     }
-    LOG.debug("Done localFiles.json");
-    localResources.put("localFiles.json", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.LOCALIZE_FILES);
+    localResources.put(Constants.Files.LOCALIZE_FILES, YarnUtils.createLocalResource(location));
   }
 
   private Location copyFromURL(URL url, Location target) throws IOException {

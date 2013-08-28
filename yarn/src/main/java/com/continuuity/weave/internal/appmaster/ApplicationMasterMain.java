@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.ServiceMain;
@@ -47,7 +48,7 @@ public final class ApplicationMasterMain extends ServiceMain {
    */
   public static void main(String[] args) throws Exception {
     String zkConnect = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
-    File weaveSpec = new File("weaveSpec.json");
+    File weaveSpec = new File(Constants.Files.WEAVE_SPEC);
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
 
     ZKClientService zkClientService =

@@ -17,7 +17,11 @@ package com.continuuity.weave.internal.json;
 
 import com.continuuity.weave.internal.Arguments;
 import com.google.common.collect.ImmutableMultimap;
+import com.google.common.io.InputSupplier;
+import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
@@ -26,6 +30,9 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
 import java.lang.reflect.Type;
 import java.util.Collection;
 import java.util.List;
@@ -35,6 +42,28 @@ import java.util.Map;
  *
  */
 public final class ArgumentsCodec implements JsonSerializer<Arguments>, JsonDeserializer<Arguments> {
+
+  private static final Gson GSON = new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
+                                                    .create();
+
+  public static void encode(Arguments arguments, OutputSupplier<? extends Writer> writerSupplier) throws IOException {
+    Writer writer = writerSupplier.getOutput();
+    try {
+      GSON.toJson(arguments, writer);
+    } finally {
+      writer.close();
+    }
+  }
+
+
+  public static Arguments decode(InputSupplier<? extends Reader> readerSupplier) throws IOException {
+    Reader reader = readerSupplier.getInput();
+    try {
+      return GSON.fromJson(reader, Arguments.class);
+    } finally {
+      reader.close();
+    }
+  }
 
   @Override
   public JsonElement serialize(Arguments src, Type typeOfSrc,

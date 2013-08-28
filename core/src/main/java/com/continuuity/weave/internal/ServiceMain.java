@@ -117,7 +117,7 @@ public abstract class ServiceMain {
     configurator.setContext(context);
 
     try {
-      File weaveLogback = new File("logback-template.xml");
+      File weaveLogback = new File(Constants.Files.LOGBACK_TEMPLATE);
       if (weaveLogback.exists()) {
         configurator.doConfigure(weaveLogback);
       }

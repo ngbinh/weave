@@ -27,6 +27,24 @@ public final class Constants {
   /** Maximum number of seconds for AM to stop. */
   public static final int APPLICATION_MAX_STOP_SECONDS = 30;
 
+  /**
+   * Constants for names of internal files that are shared between client, AM and containers.
+   */
+  public static final class Files {
+
+
+    public static final String LAUNCHER_JAR = "launcher.jar";
+    public static final String APP_MASTER_JAR = "appMaster.jar";
+    public static final String CONTAINER_JAR = "container.jar";
+    public static final String LOCALIZE_FILES = "localizeFiles.json";
+    public static final String WEAVE_SPEC = "weaveSpec.json";
+    public static final String ARGUMENTS = "arguments.json";
+    public static final String LOGBACK_TEMPLATE = "logback-template.xml";
+
+    private Files() {
+    }
+  }
+
   private Constants() {
   }
 }
