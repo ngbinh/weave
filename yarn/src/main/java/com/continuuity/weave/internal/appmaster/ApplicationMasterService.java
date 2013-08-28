@@ -384,18 +384,6 @@ public final class ApplicationMasterService implements Service {
 
       String name = runtimeSpec.getName();
       int containerCount = instanceCounts.get(name) - runningContainers.count(name);
-
-      // Check if the cluster has enough capacity.
-      Resource availableResources = amrmClient.getClusterAvailableResources();
-      if (capability.getMemory() * containerCount > availableResources.getMemory()
-            || getVirtualCores(capability) * containerCount > getVirtualCores(availableResources)) {
-        LOG.warn("Not enough cluster capacity for {} memory and {} cores for {} containers. " +
-                 "Only {} memory and {} cores available.",
-                 capability.getMemory(), capability.getVirtualCores(), containerCount,
-                 availableResources.getMemory(), availableResources.getVirtualCores());
-        return false;
-      }
-
       AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
                                                                             priority, containerCount);
 
@@ -493,7 +481,7 @@ public final class ApplicationMasterService implements Service {
     prop.setProperty("zk.connectiontimeout.ms", "1000000");
     prop.setProperty("socket.receive.buffer", "1048576");
     prop.setProperty("enable.zookeeper", "true");
-    prop.setProperty("log.retention.hours", "168");
+    prop.setProperty("log.retention.hours", "24");
     prop.setProperty("brokerid", "0");
     prop.setProperty("socket.send.buffer", "1048576");
     prop.setProperty("num.partitions", "1");
