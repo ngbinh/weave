@@ -32,7 +32,6 @@ public final class Constants {
    */
   public static final class Files {
 
-
     public static final String LAUNCHER_JAR = "launcher.jar";
     public static final String APP_MASTER_JAR = "appMaster.jar";
     public static final String CONTAINER_JAR = "container.jar";
@@ -40,6 +39,7 @@ public final class Constants {
     public static final String WEAVE_SPEC = "weaveSpec.json";
     public static final String ARGUMENTS = "arguments.json";
     public static final String LOGBACK_TEMPLATE = "logback-template.xml";
+    public static final String KAFKA = "kafka.tgz";
 
     private Files() {
     }

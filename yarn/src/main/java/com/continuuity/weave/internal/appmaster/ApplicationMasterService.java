@@ -198,7 +198,7 @@ public final class ApplicationMasterService implements Service {
 
     // Starts kafka server
     LOG.info("Starting kafka server");
-    kafkaServer = new EmbeddedKafkaServer(new File("kafka.tgz"), generateKafkaConfig());
+    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
     kafkaServer.startAndWait();
     LOG.info("Kafka server started");
 

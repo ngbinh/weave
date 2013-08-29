@@ -59,6 +59,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
+import com.google.common.io.Files;
 import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
@@ -281,7 +282,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private void createAppMasterJar(ApplicationBundler bundler,
                                   Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Create and copy {}", Constants.Files.APP_MASTER_JAR);
-    Location location = createTempLocation("appMaster", ".jar");
+    Location location = createTempLocation(Constants.Files.APP_MASTER_JAR);
     bundler.createBundle(location, ApplicationMasterMain.class);
     LOG.debug("Done {}", Constants.Files.APP_MASTER_JAR);
 
@@ -301,7 +302,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       }
 
       LOG.debug("Create and copy {}", Constants.Files.CONTAINER_JAR);
-      Location location = createTempLocation("container", ".jar");
+      Location location = createTempLocation(Constants.Files.CONTAINER_JAR);
       bundler.createBundle(location, classes, resources);
       LOG.debug("Done {}", Constants.Files.CONTAINER_JAR);
 
@@ -334,10 +335,12 @@ final class YarnWeavePreparer implements WeavePreparer {
         } else {
           URL url = uri.toURL();
           LOG.debug("Create and copy {} : {}", name, url);
-          // Temp file suffix is repeated with the file name to preserve original suffix for expansion.
-          String path = url.getFile();
-          location = copyFromURL(url, createTempLocation(localFile.getName(),
-                                                         path.substring(path.lastIndexOf('/') + 1)));
+          // Preserves original suffix for expansion.
+          String suffix = Files.getFileExtension(url.getFile());
+          if (!suffix.isEmpty()) {
+            suffix = '.' + suffix;
+          }
+          location = copyFromURL(url, createTempLocation(localFile.getName() + suffix));
           LOG.debug("Done {} : {}", name, url);
         }
 
@@ -362,7 +365,7 @@ final class YarnWeavePreparer implements WeavePreparer {
 
     // Serialize into a local temp file.
     LOG.debug("Create and copy {}", Constants.Files.WEAVE_SPEC);
-    Location location = createTempLocation("weaveSpec", ".json");
+    Location location = createTempLocation(Constants.Files.WEAVE_SPEC);
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
       WeaveSpecificationAdapter.create().toJson(new DefaultWeaveSpecification(spec.getName(), runtimeSpec,
@@ -377,7 +380,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private void saveLogback(Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Create and copy {}", Constants.Files.LOGBACK_TEMPLATE);
     Location location = copyFromURL(getClass().getClassLoader().getResource(Constants.Files.LOGBACK_TEMPLATE),
-                                    createTempLocation("logback-template", ".xml"));
+                                    createTempLocation(Constants.Files.LOGBACK_TEMPLATE));
     LOG.debug("Done {}", Constants.Files.LOGBACK_TEMPLATE);
     localResources.put(Constants.Files.LOGBACK_TEMPLATE, YarnUtils.createLocalResource(location));
   }
@@ -388,7 +391,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private void saveLauncher(Map<String, LocalResource> localResources) throws URISyntaxException, IOException {
 
     LOG.debug("Create and copy {}", Constants.Files.LAUNCHER_JAR);
-    Location location = createTempLocation("launcher", ".jar");
+    Location location = createTempLocation(Constants.Files.LAUNCHER_JAR);
 
     final String launcherName = WeaveLauncher.class.getName();
 
@@ -431,18 +434,18 @@ final class YarnWeavePreparer implements WeavePreparer {
   }
 
   private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Copy kafka.tgz");
+    LOG.debug("Copy {}", Constants.Files.KAFKA);
     Location location = copyFromURL(getClass().getClassLoader().getResource(KAFKA_ARCHIVE),
-                                    createTempLocation("kafka", ".tgz"));
-    LOG.debug("Done kafka.tgz");
+                                    createTempLocation(Constants.Files.KAFKA));
+    LOG.debug("Done {}", Constants.Files.KAFKA);
     LocalResource localResource = YarnUtils.createLocalResource(location);
     localResource.setType(LocalResourceType.ARCHIVE);
-    localResources.put("kafka.tgz", localResource);
+    localResources.put(Constants.Files.KAFKA, localResource);
   }
 
   private void saveArguments(Arguments arguments, Map<String, LocalResource> localResources) throws IOException {
     LOG.debug("Create and copy {}", Constants.Files.ARGUMENTS);
-    final Location location = createTempLocation("arguments", ".json");
+    final Location location = createTempLocation(Constants.Files.ARGUMENTS);
     ArgumentsCodec.encode(arguments, new OutputSupplier<Writer>() {
       @Override
       public Writer getOutput() throws IOException {
@@ -473,7 +476,7 @@ final class YarnWeavePreparer implements WeavePreparer {
     });
 
     LOG.debug("Create and copy {}", Constants.Files.LOCALIZE_FILES);
-    Location location = createTempLocation("localizeFiles", ".json");
+    Location location = createTempLocation(Constants.Files.LOCALIZE_FILES);
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
       new GsonBuilder().registerTypeAdapter(LocalFile.class, new LocalFileCodec())
@@ -501,9 +504,19 @@ final class YarnWeavePreparer implements WeavePreparer {
     return target;
   }
 
-  private Location createTempLocation(String path, String suffix) {
+  private Location createTempLocation(String fileName) {
+    String name;
+    String suffix;
+    int idx = fileName.lastIndexOf('.');
+    if (idx < 0) {
+      name = fileName;
+      suffix = "";
+    } else {
+      name = fileName.substring(0, idx);
+      suffix = fileName.substring(idx);
+    }
     try {
-      return getAppLocation().append(path).getTempFile(suffix);
+      return getAppLocation().append(name).getTempFile(suffix);
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
