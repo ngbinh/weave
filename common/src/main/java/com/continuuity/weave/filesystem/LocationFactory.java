@@ -36,4 +36,9 @@ public interface LocationFactory {
    * @return An instance of {@link Location}
    */
   Location create(URI uri);
+
+  /**
+   * Returns the home location.
+   */
+  Location getHomeLocation();
 }

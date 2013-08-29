@@ -69,6 +69,7 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
@@ -242,23 +243,28 @@ public final class ApplicationMasterService implements Service {
   private void cleanupDir(URI appDir) {
     // Cleanup based on the uri schema.
     // Note: It's a little bit hacky, refactor it later.
-    Location location;
-    if ("file".equals(appDir.getScheme())) {
-      location = new LocalLocationFactory().create(appDir);
-    } else if ("hdfs".equals(appDir.getScheme())) {
-      location = new HDFSLocationFactory(yarnConf).create(appDir);
-    } else {
-      LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
-      return;
-    }
-
     try {
+      Location location;
+      if ("file".equals(appDir.getScheme())) {
+        location = new LocalLocationFactory().create(appDir);
+      } else if ("hdfs".equals(appDir.getScheme())) {
+        String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
+        if (fsUser == null) {
+          fsUser = System.getProperty("user.name");
+        }
+        location = new HDFSLocationFactory(
+          FileSystem.get(FileSystem.getDefaultUri(yarnConf), yarnConf, fsUser)).create(appDir);
+      } else {
+        LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
+        return;
+      }
+
       if (location.delete(true)) {
         LOG.info("Application directory deleted: {}", appDir);
       } else {
         LOG.warn("Failed to cleanup directory {}.", appDir);
       }
-    } catch (IOException e) {
+    } catch (Exception e) {
       LOG.warn("Exception while cleanup directory {}.", appDir, e);
     }
   }
