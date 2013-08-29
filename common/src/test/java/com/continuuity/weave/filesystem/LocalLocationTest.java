@@ -20,6 +20,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 
 /**
  *
@@ -44,5 +45,18 @@ public class LocalLocationTest {
 
     Assert.assertTrue(base.delete(true));
     Assert.assertFalse(base.exists());
+  }
+
+  @Test
+  public void testHelper() {
+    LocationFactory factory = LocationFactories.namespace(
+                                new LocalLocationFactory(new File(System.getProperty("java.io.tmpdir"))),
+                                "testhelper");
+
+    Location location = factory.create("test");
+    Assert.assertTrue(location.toURI().getPath().endsWith("testhelper/test"));
+
+    location = factory.create(URI.create("test2"));
+    Assert.assertTrue(location.toURI().getPath().endsWith("testhelper/test2"));
   }
 }
