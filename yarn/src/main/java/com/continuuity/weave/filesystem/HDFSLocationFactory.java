@@ -53,6 +53,9 @@ public final class HDFSLocationFactory implements LocationFactory {
 
   @Override
   public Location create(String path) {
+    if (path.startsWith("/")) {
+      path = path.substring(1);
+    }
     return new HDFSLocation(fileSystem, new Path(fileSystem.getUri() + "/" + pathBase + "/" + path));
   }
 
