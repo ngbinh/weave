@@ -53,12 +53,27 @@ public final class HDFSLocationFactory implements LocationFactory {
 
   @Override
   public Location create(String path) {
+    if (path.startsWith("/")) {
+      path = path.substring(1);
+    }
     return new HDFSLocation(fileSystem, new Path(fileSystem.getUri() + "/" + pathBase + "/" + path));
   }
 
   @Override
   public Location create(URI uri) {
-    return new HDFSLocation(fileSystem, new Path(uri));
+    if (!uri.toString().startsWith(fileSystem.getUri().toString())) {
+      // It's a full URI
+      return new HDFSLocation(fileSystem, new Path(uri));
+    }
+    if (uri.isAbsolute()) {
+      return new HDFSLocation(fileSystem, new Path(fileSystem.getUri() + uri.getPath()));
+    }
+    return new HDFSLocation(fileSystem, new Path(fileSystem.getUri() + "/" + pathBase + "/" + uri.getPath()));
+  }
+
+  @Override
+  public Location getHomeLocation() {
+    return new HDFSLocation(fileSystem, fileSystem.getHomeDirectory());
   }
 
   private static FileSystem getFileSystem(Configuration configuration) {

@@ -43,6 +43,14 @@ public final class LocalLocationFactory implements LocationFactory {
 
   @Override
   public Location create(URI uri) {
-    return new LocalLocation(new File(uri));
+    if (uri.isAbsolute()) {
+      return new LocalLocation(new File(uri));
+    }
+    return new LocalLocation(new File(basePath, uri.getPath()));
+  }
+
+  @Override
+  public Location getHomeLocation() {
+    return new LocalLocation(new File(System.getProperty("user.home")));
   }
 }

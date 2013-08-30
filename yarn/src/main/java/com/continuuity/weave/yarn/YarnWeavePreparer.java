@@ -115,6 +115,8 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
 
+  private String user;
+
   YarnWeavePreparer(WeaveSpecification weaveSpec, YarnClient yarnClient,
                     ZKClient zkClient, LocationFactory locationFactory,
                     YarnWeaveControllerFactory controllerFactory) {
@@ -129,6 +131,12 @@ final class YarnWeavePreparer implements WeavePreparer {
   @Override
   public WeavePreparer addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
+    return this;
+  }
+
+  @Override
+  public WeavePreparer setUser(String user) {
+    this.user = user;
     return this;
   }
 
@@ -198,9 +206,15 @@ final class YarnWeavePreparer implements WeavePreparer {
         @Override
         public void run() {
           try {
+            if (user == null) {
+              user = System.getProperty("user.name");
+            }
+            String fsUser = locationFactory.getHomeLocation().getName();
+
             ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
             appSubmissionContext.setApplicationId(applicationId);
             appSubmissionContext.setApplicationName(weaveSpec.getName());
+            appSubmissionContext.setUser(user);
 
             Map<String, LocalResource> localResources = Maps.newHashMap();
 
@@ -221,6 +235,7 @@ final class YarnWeavePreparer implements WeavePreparer {
                                                            Constants.Files.ARGUMENTS));
 
             ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
+            containerLaunchContext.setUser(user);
             containerLaunchContext.setLocalResources(localResources);
 
             // java -Djava.io.tmpdir=tmp -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
@@ -241,14 +256,16 @@ final class YarnWeavePreparer implements WeavePreparer {
               " 2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"
             ));
 
-            containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
-                                                    .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
-                                                    .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
-                                                         Long.toString(applicationId.getClusterTimestamp()))
-                                                    .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
-                                                    .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-                                                    .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-                                                    .build()
+            containerLaunchContext.setEnvironment(
+              ImmutableMap.<String, String>builder()
+                          .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
+                          .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
+                               Long.toString(applicationId.getClusterTimestamp()))
+                          .put(EnvKeys.WEAVE_FS_USER, fsUser)
+                          .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+                          .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+                          .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+                          .build()
             );
             Resource capability = Records.newRecord(Resource.class);
             capability.setMemory(APP_MASTER_MEMORY_MB);

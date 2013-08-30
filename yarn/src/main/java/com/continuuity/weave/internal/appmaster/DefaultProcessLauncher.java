@@ -91,6 +91,9 @@ final class DefaultProcessLauncher implements ProcessLauncher {
 
     PrepareLaunchContextImpl() {
       this.launchContext = Records.newRecord(ContainerLaunchContext.class);
+      // Should be ok to get user from System properties as this class is only used by AM, where AM should be
+      // running with the user as being set in the WeavePreparer
+      launchContext.setUser(System.getProperty("user.name"));
       launchContext.setContainerId(container.getId());
       launchContext.setResource(container.getResource());
 
