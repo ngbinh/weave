@@ -45,7 +45,7 @@ public class ResourceReportClient {
   private static final String REPORT_PATH = "/resources";
 
   public ResourceReportClient(String host, int port) {
-    resourcesUrl = "http://" + host + ":" + port + "/resources";
+    resourcesUrl = "http://" + host + ":" + port + REPORT_PATH;
     this.reportAdapter = ResourceReportAdapter.create();
   }
 
@@ -55,9 +55,6 @@ public class ResourceReportClient {
       URL url = new URL(resourcesUrl);
       HttpURLConnection con = (HttpURLConnection) url.openConnection();
       con.setRequestMethod("GET");
-
-      //add request header
-      //con.setRequestProperty("User-Agent", USER_AGENT);
 
       int responseCode = con.getResponseCode();
       System.out.println("Response Code : " + responseCode);

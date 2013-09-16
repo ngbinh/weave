@@ -44,7 +44,7 @@ public final class ResourceReportCodec implements JsonSerializer<ResourceReport>
     json.addProperty("appMasterId", src.getApplicationId());
     json.add("appMasterResources", context.serialize(src.getAppMasterResources(),
                                                   new TypeToken<WeaveRunResources>(){}.getType()));
-    json.add("usedResources", context.serialize(src.getResources(),
+    json.add("runnableResources", context.serialize(src.getResources(),
                                                  new TypeToken<Map<String, Set<WeaveRunResources>>>(){}.getType()));
 
     return json;
@@ -58,7 +58,7 @@ public final class ResourceReportCodec implements JsonSerializer<ResourceReport>
     WeaveRunResources masterResources = context.deserialize(
       jsonObj.get("appMasterResources"), WeaveRunResources.class);
     Map<String, Set<WeaveRunResources>> resources = context.deserialize(
-      jsonObj.get("usedResources"), new TypeToken<Map<String, Set<WeaveRunResources>>>(){}.getType());
+      jsonObj.get("runnableResources"), new TypeToken<Map<String, Set<WeaveRunResources>>>(){}.getType());
 
     return new DefaultResourceReport(appMasterId, masterResources, resources);
   }
