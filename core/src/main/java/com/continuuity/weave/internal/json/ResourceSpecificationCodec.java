@@ -37,7 +37,7 @@ final class ResourceSpecificationCodec implements JsonSerializer<ResourceSpecifi
   public JsonElement serialize(ResourceSpecification src, Type typeOfSrc, JsonSerializationContext context) {
     JsonObject json = new JsonObject();
 
-    json.addProperty("cores", src.getCores());
+    json.addProperty("cores", src.getVirtualCores());
     json.addProperty("memorySize", src.getMemorySize());
     json.addProperty("instances", src.getInstances());
     json.addProperty("uplink", src.getUplink());

@@ -96,8 +96,6 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
-import java.lang.reflect.Method;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.util.Collection;
 import java.util.List;
@@ -129,7 +127,6 @@ public final class ApplicationMasterService implements Service {
   private final RunningContainers runningContainers;
   private final Map<String, Integer> instanceCounts;
   private final String appMasterHost;
-  private final int trackerPort;
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
@@ -160,10 +157,9 @@ public final class ApplicationMasterService implements Service {
     serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
     appMasterHost = System.getenv().get(ApplicationConstants.NM_HOST_ENV);
-    trackerPort = getRandomPort();
 
     runningContainers = initRunningContainers(appMasterContainerId, appMasterHost);
-    trackerService = new TrackerService(trackerPort, runningContainers.getResourceReport());
+    trackerService = new TrackerService(runningContainers.getResourceReport(), appMasterHost);
   }
 
   private Multimap<String, String> decodeRunnableArgs() throws IOException {
@@ -206,11 +202,16 @@ public final class ApplicationMasterService implements Service {
     instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
     yarnRPC = YarnRPC.create(yarnConf);
 
+    LOG.info("Starting application master tracker server");
+    trackerService.startAndWait();
+    String trackerUrl = trackerService.getUrl();
+    LOG.info("Started application master tracker server on " + trackerUrl);
+
     amrmClient.init(yarnConf);
     amrmClient.start();
-    // TODO: Have RPC host and port
+
     RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster(
-      appMasterHost, trackerPort, null);
+      appMasterHost, trackerService.getPort(), trackerUrl);
     maxCapability = response.getMaximumResourceCapability();
     minCapability = response.getMinimumResourceCapability();
 
@@ -230,16 +231,6 @@ public final class ApplicationMasterService implements Service {
     LOG.info("Kafka server started");
 
     runnableContainerRequests = initContainerRequests();
-
-    trackerService.startUp();
-    LOG.info("tracker service started on " + appMasterHost + ":" + trackerPort);
-  }
-
-  private int getRandomPort() throws IOException {
-    ServerSocket tmpSocket = new ServerSocket(0);
-    int port = tmpSocket.getLocalPort();
-    tmpSocket.close();
-    return port;
   }
 
   private void doStop() throws Exception {
@@ -261,9 +252,12 @@ public final class ApplicationMasterService implements Service {
       TimeUnit.SECONDS.sleep(1);
     }
 
-    trackerService.shutDown();
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
+
+    LOG.info("Stopping application master tracker server");
+    trackerService.stopAndWait();
+    LOG.info("Stopped application master tracker server");
 
     // App location cleanup
     cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
@@ -657,20 +651,12 @@ public final class ApplicationMasterService implements Service {
   private Resource createCapability(ResourceSpecification resourceSpec) {
     Resource capability = Records.newRecord(Resource.class);
 
-    int cores = resourceSpec.getCores();
-    // The following hack is to workaround the still unstable Resource interface.
-    // With the latest YARN API, it should be like this:
-//    int cores = Math.max(Math.min(resourceSpec.getCores(), maxCapability.getVirtualCores()),
-//                         minCapability.getVirtualCores());
-//    capability.setVirtualCores(cores);
-    try {
-      Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
-
-      cores = Math.max(Math.min(cores, YarnUtils.getVirtualCores(maxCapability)),
-                       YarnUtils.getVirtualCores(minCapability));
-      setVirtualCores.invoke(capability, cores);
-    } catch (Exception e) {
-      // It's ok to ignore this exception, as it's using older version of API.
+    int cores = resourceSpec.getVirtualCores();
+    cores = Math.max(Math.min(cores, YarnUtils.getVirtualCores(maxCapability)),
+                     YarnUtils.getVirtualCores(minCapability));
+    // Try and set the virtual cores, though older versions of YARN don't support this.
+    // Log a message if we're on an older version and could not set it.
+    if (!YarnUtils.setVirtualCores(capability, cores)) {
       LOG.info("Virtual cores limit not supported.");
     }
 

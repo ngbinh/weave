@@ -19,7 +19,7 @@ package com.continuuity.weave.api;
  * Information about the container the {@link com.continuuity.weave.api.WeaveRunnable}
  * is running in.
  */
-public interface WeaveRunResources extends Comparable {
+public interface WeaveRunResources {
 
   /**
    * @return instance id of the runnable.

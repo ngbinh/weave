@@ -15,11 +15,12 @@
  */
 package com.continuuity.weave.api;
 
+import java.util.Collection;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * This interface provides information on the resources runnables are using.
+ * This interface provides a snapshot of the resources an application is using
+ * broken down by each runnable.
  */
 public interface ResourceReport {
   /**
@@ -28,16 +29,26 @@ public interface ResourceReport {
    * @param runnableName the runnable name.
    * @return resources being used by all instances of the runnable.
    */
-  public Set<WeaveRunResources> getResourcesForRunnable(String runnableName);
+  public Collection<WeaveRunResources> getRunnableResources(String runnableName);
 
   /**
    * Get all the run resources being used across all runnables.
    *
    * @return all run resources used by all instances of all runnables.
    */
-  public Map<String, Set<WeaveRunResources>> getResources();
+  public Map<String, Collection<WeaveRunResources>> getResources();
 
+  /**
+   * Get the resources application master is using.
+   *
+   * @return resources being used by the application master.
+   */
   public WeaveRunResources getAppMasterResources();
 
+  /**
+   * Get the id of the application master.
+   *
+   * @return id of the application master.
+   */
   public String getApplicationId();
 }

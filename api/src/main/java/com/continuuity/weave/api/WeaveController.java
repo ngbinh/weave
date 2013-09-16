@@ -51,7 +51,7 @@ public interface WeaveController extends ServiceController {
   ListenableFuture<Integer> changeInstances(String runnable, int newCount);
 
   /**
-   * Get the resources used by the application, broken down by each runnable.
+   * Get a snapshot of the resources used by the application, broken down by each runnable.
    *
    * @return A {@link ResourceReport} containing information about resources used by the application.
    */

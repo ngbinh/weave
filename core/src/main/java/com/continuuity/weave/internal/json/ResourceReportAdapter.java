@@ -13,12 +13,10 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
+package com.continuuity.weave.internal.json;
 
 import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.WeaveRunResources;
-import com.continuuity.weave.internal.json.ResourceReportCodec;
-import com.continuuity.weave.internal.json.WeaveRunResourcesCodec;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 

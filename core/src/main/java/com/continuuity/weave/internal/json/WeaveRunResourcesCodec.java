@@ -28,7 +28,7 @@ import com.google.gson.JsonSerializer;
 import java.lang.reflect.Type;
 
 /**
- *
+ * Codec for serializing and deserializing a {@link WeaveRunResources} object using json.
  */
 public final class WeaveRunResourcesCodec implements JsonSerializer<WeaveRunResources>,
                                               JsonDeserializer<WeaveRunResources> {

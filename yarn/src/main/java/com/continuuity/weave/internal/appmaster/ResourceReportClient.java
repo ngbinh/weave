@@ -1,48 +1,26 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.ResourceReport;
-import org.jboss.netty.bootstrap.ClientBootstrap;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.channel.Channel;
-import org.jboss.netty.channel.ChannelFactory;
-import org.jboss.netty.channel.ChannelFuture;
-import org.jboss.netty.channel.ChannelHandlerContext;
-import org.jboss.netty.channel.ChannelPipeline;
-import org.jboss.netty.channel.ChannelPipelineFactory;
-import org.jboss.netty.channel.Channels;
-import org.jboss.netty.channel.ExceptionEvent;
-import org.jboss.netty.channel.MessageEvent;
-import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.handler.codec.http.DefaultHttpRequest;
-import org.jboss.netty.handler.codec.http.HttpChunkAggregator;
-import org.jboss.netty.handler.codec.http.HttpClientCodec;
-import org.jboss.netty.handler.codec.http.HttpContentDecompressor;
-import org.jboss.netty.handler.codec.http.HttpHeaders;
-import org.jboss.netty.handler.codec.http.HttpMethod;
-import org.jboss.netty.handler.codec.http.HttpRequest;
-import org.jboss.netty.handler.codec.http.HttpResponse;
-import org.jboss.netty.handler.codec.http.HttpResponseStatus;
-import org.jboss.netty.handler.codec.http.HttpVersion;
-import org.jboss.netty.util.CharsetUtil;
+import com.continuuity.weave.internal.json.ResourceReportAdapter;
+import com.google.common.base.Charsets;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
-import java.net.ProtocolException;
 import java.net.URL;
-import java.util.concurrent.Executors;
 
 /**
  * Client to get {@link ResourceReport} from the application master.
  */
 public class ResourceReportClient {
+  private static final Logger LOG = LoggerFactory.getLogger(ResourceReportClient.class);
+  private static final String REPORT_PATH = "/resources";
+
   private final ResourceReportAdapter reportAdapter;
   private final String resourcesUrl;
-  private static final String REPORT_PATH = "/resources";
 
   public ResourceReportClient(String host, int port) {
     resourcesUrl = "http://" + host + ":" + port + REPORT_PATH;
@@ -51,20 +29,28 @@ public class ResourceReportClient {
 
   public ResourceReport get() {
     ResourceReport report = null;
+    Reader reader = null;
+    HttpURLConnection conn = null;
     try {
       URL url = new URL(resourcesUrl);
-      HttpURLConnection con = (HttpURLConnection) url.openConnection();
-      con.setRequestMethod("GET");
+      conn = (HttpURLConnection) url.openConnection();
+      conn.setRequestMethod("GET");
 
-      int responseCode = con.getResponseCode();
-      System.out.println("Response Code : " + responseCode);
-
-      Reader reader = new InputStreamReader(con.getInputStream());
+      reader = new InputStreamReader(conn.getInputStream(), Charsets.UTF_8);
       report = reportAdapter.fromJson(reader);
-      reader.close();
-      con.disconnect();
     } catch (IOException e) {
-
+      LOG.error("Exception getting resource report from " + resourcesUrl, e);
+    } finally {
+      if (reader != null) {
+        try {
+          reader.close();
+        } catch (IOException e) {
+          LOG.error("Exception closing reader", e);
+        }
+      }
+      if (conn != null) {
+        conn.disconnect();
+      }
     }
     return report;
   }

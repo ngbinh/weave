@@ -33,7 +33,6 @@ import com.google.common.collect.Table;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerState;
@@ -99,7 +98,7 @@ final class RunningContainers {
                                                                  YarnUtils.getVirtualCores(container.getResource()),
                                                                  container.getResource().getMemory(),
                                                                  container.getNodeId().getHost());
-      resourceReport.addRunResource(runnableName, resources);
+      resourceReport.addRunResources(runnableName, resources);
 
       if (startSequence.isEmpty() || !runnableName.equals(startSequence.peekLast())) {
         startSequence.addLast(runnableName);
@@ -157,7 +156,7 @@ final class RunningContainers {
       LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
       lastController.stopAndWait();
       containers.remove(runnableName, containerId);
-      resourceReport.removeRunnableContext(runnableName, instanceId);
+      resourceReport.removeRunnableResources(runnableName, instanceId);
       containerChange.signalAll();
     } finally {
       containerLock.unlock();

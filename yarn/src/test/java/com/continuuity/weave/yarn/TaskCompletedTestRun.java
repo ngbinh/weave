@@ -61,7 +61,7 @@ public class TaskCompletedTestRun {
     WeaveRunner weaveRunner = YarnTestSuite.getWeaveRunner();
     WeaveController controller = weaveRunner.prepare(new SleepTask(),
                                                 ResourceSpecification.Builder.with()
-                                                  .setCores(1)
+                                                  .setVirtualCores(1)
                                                   .setMemory(512, ResourceSpecification.SizeUnit.MEGA)
                                                   .setInstances(3).build())
                                             .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))

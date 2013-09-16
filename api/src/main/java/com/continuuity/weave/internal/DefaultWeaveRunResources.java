@@ -77,28 +77,28 @@ public class DefaultWeaveRunResources implements WeaveRunResources {
     return host;
   }
 
-  /**
-   * Ordered first by instance id, then host, then container id, then memory, then cores.
-   * @param o object to compare this one to.
-   * @return negative, 0, or positive if this object is less than, equal to, or greater than the
-   *   object passed in.
-   */
   @Override
-  public int compareTo(Object o) {
+  public boolean equals(Object o) {
+    if (!(o instanceof WeaveRunResources)) {
+      return false;
+    }
     WeaveRunResources other = (WeaveRunResources) o;
-    int compare = compareInts(instanceId, other.getInstanceId());
-    if (compare != 0) return compare;
-    compare = this.getHost().compareTo(other.getHost());
-    if (compare != 0) return compare;
-    compare = containerId.compareTo(other.getContainerId());
-    if (compare != 0) return compare;
-    compare = compareInts(memoryMB, other.getMemoryMB());
-    if (compare != 0) return compare;
-    return compareInts(virtualCores, other.getVirtualCores());
+    return (instanceId == other.getInstanceId()) &&
+      containerId.equals(other.getContainerId()) &&
+      host.equals(other.getHost()) &&
+      (virtualCores == other.getVirtualCores()) &&
+      (memoryMB == other.getMemoryMB());
   }
 
-  private int compareInts(int a, int b) {
-    if (a == b) return 0;
-    return (a < b) ? -1 : 1;
+  @Override
+  public int hashCode() {
+    int hash = 17;
+    hash = 31 *  hash + containerId.hashCode();
+    hash = 31 *  hash + host.hashCode();
+    hash = 31 *  hash + (int) (instanceId ^ (instanceId >>> 32));
+    hash = 31 *  hash + (int) (virtualCores ^ (virtualCores >>> 32));
+    hash = 31 *  hash + (int) (memoryMB ^ (memoryMB >>> 32));
+    return hash;
   }
+
 }

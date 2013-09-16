@@ -70,6 +70,25 @@ public class YarnUtils {
     }
   }
 
+  /**
+   * Temporary workaround since older versions of hadoop don't have the setCores method.
+   *
+   * @param resource
+   * @param cores
+   * @return true if virtual cores was set, false if not.
+   */
+  public static boolean setVirtualCores(Resource resource, int cores) {
+    try {
+      Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
+      setVirtualCores.invoke(resource, cores);
+    } catch (Exception e) {
+      // It's ok to ignore this exception, as it's using older version of API.
+      return false;
+    }
+    return true;
+  }
+
+
   private static LocalResource setLocalResourceType(LocalResource localResource, LocalFile localFile) {
     if (localFile.isArchive()) {
       if (localFile.getPattern() == null) {

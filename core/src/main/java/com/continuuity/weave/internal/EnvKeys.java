@@ -31,6 +31,9 @@ public final class EnvKeys {
 
   public static final String WEAVE_FS_USER = "WEAVE_FS_USER";
 
+  /**
+   * Used to inform application master of its resource usage.
+   */
   public static final String WEAVE_VIRTUAL_CORES = "WEAVE_VIRTUAL_CORES";
   public static final String WEAVE_MEMORY_MB = "WEAVE_MEMORY_MB";
 

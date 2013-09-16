@@ -28,11 +28,12 @@ import com.google.gson.JsonSerializer;
 import com.google.gson.reflect.TypeToken;
 
 import java.lang.reflect.Type;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
 /**
- *
+ * Codec for serializing and deserializing a {@link ResourceReport} object using json.
  */
 public final class ResourceReportCodec implements JsonSerializer<ResourceReport>,
                                            JsonDeserializer<ResourceReport> {
@@ -42,10 +43,10 @@ public final class ResourceReportCodec implements JsonSerializer<ResourceReport>
     JsonObject json = new JsonObject();
 
     json.addProperty("appMasterId", src.getApplicationId());
-    json.add("appMasterResources", context.serialize(src.getAppMasterResources(),
-                                                  new TypeToken<WeaveRunResources>(){}.getType()));
-    json.add("runnableResources", context.serialize(src.getResources(),
-                                                 new TypeToken<Map<String, Set<WeaveRunResources>>>(){}.getType()));
+    json.add("appMasterResources", context.serialize(
+      src.getAppMasterResources(), new TypeToken<WeaveRunResources>(){}.getType()));
+    json.add("runnableResources", context.serialize(
+      src.getResources(), new TypeToken<Map<String, Collection<WeaveRunResources>>>(){}.getType()));
 
     return json;
   }
@@ -57,8 +58,8 @@ public final class ResourceReportCodec implements JsonSerializer<ResourceReport>
     String appMasterId = jsonObj.get("appMasterId").getAsString();
     WeaveRunResources masterResources = context.deserialize(
       jsonObj.get("appMasterResources"), WeaveRunResources.class);
-    Map<String, Set<WeaveRunResources>> resources = context.deserialize(
-      jsonObj.get("runnableResources"), new TypeToken<Map<String, Set<WeaveRunResources>>>(){}.getType());
+    Map<String, Collection<WeaveRunResources >> resources = context.deserialize(
+      jsonObj.get("runnableResources"), new TypeToken<Map<String, Collection<WeaveRunResources>>>(){}.getType());
 
     return new DefaultResourceReport(appMasterId, masterResources, resources);
   }

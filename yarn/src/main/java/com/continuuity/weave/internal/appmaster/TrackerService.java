@@ -1,10 +1,14 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.ResourceReport;
-import com.continuuity.weave.api.WeaveRunResources;
+import com.continuuity.weave.internal.json.ResourceReportAdapter;
 import com.google.common.util.concurrent.AbstractIdleService;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.jboss.netty.bootstrap.ServerBootstrap;
+import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBufferOutputStream;
 import org.jboss.netty.buffer.ChannelBuffers;
+import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFactory;
 import org.jboss.netty.channel.ChannelFuture;
 import org.jboss.netty.channel.ChannelFutureListener;
@@ -33,9 +37,11 @@ import org.jboss.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.net.InetSocketAddress;
-import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -47,28 +53,59 @@ import java.util.concurrent.TimeUnit;
 public final class TrackerService extends AbstractIdleService {
 
   private static final Logger LOG  = LoggerFactory.getLogger(TrackerService.class);
+  private static final int NUM_BOSS_THREADS = 1;
+  private static final int CLOSE_CHANNEL_TIMEOUT = 5;
+  private static final int MAX_INPUT_SIZE = 100 * 1024 * 1024;
+  public static final String PATH = "/resources";
 
   private ServerBootstrap bootstrap;
   private InetSocketAddress bindAddress;
+  private int port;
+  private String host;
+  private String url;
   private final ChannelGroup channelGroup;
   private final ResourceReport resourceReport;
 
-  private static final int CLOSE_CHANNEL_TIMEOUT = 5;
-  static final int MAX_INPUT_SIZE = 100 * 1024 * 1024;
-
   /**
-   * Initialize Service
+   * Initialize the service.
+   *
+   * @param resourceReport live report that the service will return to clients.
+   * @param appMasterHost the application master host.
    */
-  public TrackerService(int port, ResourceReport resourceReport) {
-    this.bindAddress = new InetSocketAddress(port);
+  public TrackerService(ResourceReport resourceReport, String appMasterHost) {
     this.channelGroup = new DefaultChannelGroup("appMasterTracker");
     this.resourceReport = resourceReport;
+    this.host = appMasterHost;
+  }
+
+  /**
+   * @return port the tracker service is bound to.
+   */
+  public int getPort() {
+    return port;
+  }
+
+  /**
+   * @return tracker url.
+   */
+  public String getUrl() {
+    return url;
   }
 
   @Override
   protected void startUp() throws Exception {
-    ChannelFactory factory = new NioServerSocketChannelFactory(
-      Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
+    Executor bossThreads = Executors.newFixedThreadPool(NUM_BOSS_THREADS,
+                                                        new ThreadFactoryBuilder()
+                                                          .setDaemon(true)
+                                                          .setNameFormat("boss-thread")
+                                                          .build());
+
+    Executor workerThreads = Executors.newCachedThreadPool(new ThreadFactoryBuilder()
+                                                             .setDaemon(true)
+                                                             .setNameFormat("worker-thread#%d")
+                                                             .build());
+
+    ChannelFactory factory = new NioServerSocketChannelFactory(bossThreads, workerThreads);
 
     bootstrap = new ServerBootstrap(factory);
 
@@ -86,7 +123,13 @@ public final class TrackerService extends AbstractIdleService {
       }
     });
 
-    channelGroup.add(bootstrap.bind(bindAddress));
+    bindAddress = new InetSocketAddress(0);
+    Channel channel = bootstrap.bind(bindAddress);
+    // need to do this because the bindAddress object does not get updated to return the
+    // actual ephemeral port it bound to.
+    port = ((InetSocketAddress) channel.getLocalAddress()).getPort();
+    url = host + ":" + port + PATH;
+    channelGroup.add(channel);
   }
 
   @Override
@@ -126,7 +169,7 @@ public final class TrackerService extends AbstractIdleService {
 
     // only accepts GET on /resources for now
     private boolean isValid(HttpRequest request) {
-      return (request.getMethod() == HttpMethod.GET) && "/resources".equals(request.getUri());
+      return (request.getMethod() == HttpMethod.GET) && PATH.equals(request.getUri());
     }
 
     private void write404(MessageEvent e) {
@@ -137,8 +180,17 @@ public final class TrackerService extends AbstractIdleService {
 
     private void writeResponse(MessageEvent e) {
       HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-      response.setContent(ChannelBuffers.copiedBuffer(reportAdapter.toJson(report), CharsetUtil.UTF_8));
-      response.setHeader(HttpHeaders.Names.CONTENT_TYPE, "text/plain; charset=UTF-8");
+      response.setHeader(HttpHeaders.Names.CONTENT_TYPE, "application/json; charset=UTF-8");
+
+      ChannelBuffer content = ChannelBuffers.dynamicBuffer();
+      Writer writer = new OutputStreamWriter(new ChannelBufferOutputStream(content), CharsetUtil.UTF_8);
+      reportAdapter.toJson(report, writer);
+      try {
+        writer.close();
+      } catch (IOException e1) {
+        LOG.error("error writing resource report", e1);
+      }
+      response.setContent(content);
       ChannelFuture future = e.getChannel().write(response);
       future.addListener(ChannelFutureListener.CLOSE);
     }
