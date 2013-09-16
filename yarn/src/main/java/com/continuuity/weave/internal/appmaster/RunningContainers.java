@@ -15,11 +15,16 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
+import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
+import com.continuuity.weave.api.WeaveRunResources;
+import com.continuuity.weave.internal.DefaultResourceReport;
+import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.state.Message;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -28,6 +33,8 @@ import com.google.common.collect.Table;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerState;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
@@ -57,15 +64,17 @@ final class RunningContainers {
 
   // Table of <runnableName, containerId, controller>
   private final Table<String, ContainerId, WeaveContainerController> containers;
+  private final DefaultResourceReport resourceReport;
   private final Deque<String> startSequence;
   private final Lock containerLock;
   private final Condition containerChange;
 
-  RunningContainers() {
+  RunningContainers(String appId, WeaveRunResources appMasterResources) {
     containers = HashBasedTable.create();
     startSequence = Lists.newLinkedList();
     containerLock = new ReentrantLock();
     containerChange = containerLock.newCondition();
+    resourceReport = new DefaultResourceReport(appId, appMasterResources);
   }
 
   /**
@@ -80,10 +89,18 @@ final class RunningContainers {
     }
   }
 
-  void add(String runnableName, ContainerId container, WeaveContainerController controller) {
+  void add(String runnableName, Container container, int instanceId, WeaveContainerController controller) {
     containerLock.lock();
     try {
-      containers.put(runnableName, container, controller);
+      ContainerId containerId = container.getId();
+      containers.put(runnableName, containerId, controller);
+      WeaveRunResources resources = new DefaultWeaveRunResources(instanceId,
+                                                                 containerId.toString(),
+                                                                 YarnUtils.getVirtualCores(container.getResource()),
+                                                                 container.getResource().getMemory(),
+                                                                 container.getNodeId().getHost());
+      resourceReport.addRunResource(runnableName, resources);
+
       if (startSequence.isEmpty() || !runnableName.equals(startSequence.peekLast())) {
         startSequence.addLast(runnableName);
       }
@@ -91,6 +108,10 @@ final class RunningContainers {
     } finally {
       containerLock.unlock();
     }
+  }
+
+  ResourceReport getResourceReport() {
+    return resourceReport;
   }
 
   RunId getBaseRunId(String runnableName) {
@@ -114,6 +135,7 @@ final class RunningContainers {
   void removeLast(String runnableName) {
     containerLock.lock();
     try {
+      int instanceId = -1;
       ContainerId containerId = null;
       WeaveContainerController lastController = null;
       int maxId = -1;
@@ -121,7 +143,7 @@ final class RunningContainers {
         // A bit hacky, as it knows the naming convention of RunId as (base-[instanceId]).
         // Could be more generic if using data structure other than a hashbased table.
         String id = entry.getValue().getRunId().getId();
-        int instanceId = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
+        instanceId = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
         if (instanceId > maxId) {
           maxId = instanceId;
           containerId = entry.getKey();
@@ -135,6 +157,7 @@ final class RunningContainers {
       LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
       lastController.stopAndWait();
       containers.remove(runnableName, containerId);
+      resourceReport.removeRunnableContext(runnableName, instanceId);
       containerChange.signalAll();
     } finally {
       containerLock.unlock();

@@ -22,10 +22,12 @@ import com.google.common.base.Throwables;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
+import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 
 /**
  * Collection of helper methods to simplify YARN calls.
@@ -56,6 +58,16 @@ public class YarnUtils {
     resource.setTimestamp(localFile.getLastModified());
     resource.setSize(localFile.getSize());
     return setLocalResourceType(resource, localFile);
+  }
+
+  // temporary workaround since older versions of hadoop don't have the getVirtualCores method.
+  public static int getVirtualCores(Resource resource) {
+    try {
+      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
+      return (Integer) getVirtualCores.invoke(resource);
+    } catch (Exception e) {
+      return 0;
+    }
   }
 
   private static LocalResource setLocalResourceType(LocalResource localResource, LocalFile localFile) {

@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal;
 
 import com.continuuity.weave.api.Command;
+import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.api.WeaveController;
@@ -196,6 +197,11 @@ public class ControllerTest {
       @Override
       protected void stateNodeUpdated(StateNode stateNode) {
         // No-op
+      }
+
+      @Override
+      public ResourceReport getResourceReport() {
+        return null;
       }
     };
     controller.start();

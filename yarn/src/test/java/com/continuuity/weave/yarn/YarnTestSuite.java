@@ -35,7 +35,8 @@ import java.io.IOException;
  * Test suite for all tests with mini yarn cluster.
  */
 @RunWith(Suite.class)
-@Suite.SuiteClasses({EchoServerTestRun.class, TaskCompletedTestRun.class, DistributeShellTestRun.class})
+@Suite.SuiteClasses({EchoServerTestRun.class, ResourceReportTestRun.class,
+                     TaskCompletedTestRun.class, DistributeShellTestRun.class})
 public class YarnTestSuite {
 
   @ClassRule
@@ -60,6 +61,7 @@ public class YarnTestSuite {
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
+    config.set("yarn.scheduler.minimum-allocation-mb", "128");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);

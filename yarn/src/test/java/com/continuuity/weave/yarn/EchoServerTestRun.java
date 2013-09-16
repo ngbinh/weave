@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.yarn;
 
+import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeaveRunner;
@@ -51,7 +52,8 @@ public class EchoServerTestRun {
   private static final Logger LOG = LoggerFactory.getLogger(EchoServerTestRun.class);
 
   @Test
-  public void testEchoServer() throws InterruptedException, ExecutionException, IOException, URISyntaxException, TimeoutException {
+  public void testEchoServer() throws InterruptedException, ExecutionException, IOException,
+    URISyntaxException, TimeoutException {
     WeaveRunner runner = YarnTestSuite.getWeaveRunner();
 
     WeaveController controller = runner.prepare(new EchoServer(),

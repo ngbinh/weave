@@ -15,17 +15,21 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
+import com.continuuity.weave.api.WeaveRunResources;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
@@ -40,10 +44,9 @@ import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
@@ -81,6 +84,7 @@ import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
@@ -93,6 +97,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.lang.reflect.Method;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.util.Collection;
 import java.util.List;
@@ -123,6 +128,8 @@ public final class ApplicationMasterService implements Service {
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
   private final Map<String, Integer> instanceCounts;
+  private final String appMasterHost;
+  private final int trackerPort;
 
   private YarnRPC yarnRPC;
   private Resource maxCapability;
@@ -130,6 +137,7 @@ public final class ApplicationMasterService implements Service {
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
   private ExecutorService instanceChangeExecutor;
+  private TrackerService trackerService;
 
 
   public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile) throws IOException {
@@ -143,14 +151,19 @@ public final class ApplicationMasterService implements Service {
     String masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
     Preconditions.checkArgument(masterContainerId != null,
                                 "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
-    amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
+    ContainerId appMasterContainerId = ConverterUtils.toContainerId(masterContainerId);
+    amrmClient = new AMRMClientImpl(appMasterContainerId.getApplicationAttemptId());
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
                                                    masterContainerId);
-    runningContainers = new RunningContainers();
 
     serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
+    appMasterHost = System.getenv().get(ApplicationConstants.NM_HOST_ENV);
+    trackerPort = getRandomPort();
+
+    runningContainers = initRunningContainers(appMasterContainerId, appMasterHost);
+    trackerService = new TrackerService(trackerPort, runningContainers.getResourceReport());
   }
 
   private Multimap<String, String> decodeRunnableArgs() throws IOException {
@@ -166,6 +179,18 @@ public final class ApplicationMasterService implements Service {
         return new Gson().toJsonTree(amLiveNode);
       }
     };
+  }
+
+  private RunningContainers initRunningContainers(ContainerId appMasterContainerId,
+                                                  String appMasterHost) throws YarnRemoteException {
+    WeaveRunResources appMasterResources = new DefaultWeaveRunResources(
+      0,
+      appMasterContainerId.toString(),
+      Integer.parseInt(System.getenv(EnvKeys.WEAVE_VIRTUAL_CORES)),
+      Integer.parseInt(System.getenv(EnvKeys.WEAVE_MEMORY_MB)),
+      appMasterHost);
+    String appId = appMasterContainerId.getApplicationAttemptId().getApplicationId().toString();
+    return new RunningContainers(appId, appMasterResources);
   }
 
   private Map<String, Integer> initInstanceCounts(WeaveSpecification weaveSpec, Map<String, Integer> result) {
@@ -184,7 +209,8 @@ public final class ApplicationMasterService implements Service {
     amrmClient.init(yarnConf);
     amrmClient.start();
     // TODO: Have RPC host and port
-    RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster("", 0, null);
+    RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster(
+      appMasterHost, trackerPort, null);
     maxCapability = response.getMaximumResourceCapability();
     minCapability = response.getMinimumResourceCapability();
 
@@ -204,6 +230,16 @@ public final class ApplicationMasterService implements Service {
     LOG.info("Kafka server started");
 
     runnableContainerRequests = initContainerRequests();
+
+    trackerService.startUp();
+    LOG.info("tracker service started on " + appMasterHost + ":" + trackerPort);
+  }
+
+  private int getRandomPort() throws IOException {
+    ServerSocket tmpSocket = new ServerSocket(0);
+    int port = tmpSocket.getLocalPort();
+    tmpSocket.close();
+    return port;
   }
 
   private void doStop() throws Exception {
@@ -225,6 +261,7 @@ public final class ApplicationMasterService implements Service {
       TimeUnit.SECONDS.sleep(1);
     }
 
+    trackerService.shutDown();
     amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
     amrmClient.stop();
 
@@ -430,7 +467,7 @@ public final class ApplicationMasterService implements Service {
                                                                                        getZKNamespace(runnableName)),
                                                                    runnableArgs.get(runnableName),
                                                                    instanceId, instanceCounts.get(runnableName));
-      runningContainers.add(runnableName, container.getId(),
+      runningContainers.add(runnableName, container, instanceId,
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
 
@@ -629,8 +666,8 @@ public final class ApplicationMasterService implements Service {
     try {
       Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
 
-      cores = Math.max(Math.min(cores, getVirtualCores(maxCapability)),
-                       getVirtualCores(minCapability));
+      cores = Math.max(Math.min(cores, YarnUtils.getVirtualCores(maxCapability)),
+                       YarnUtils.getVirtualCores(minCapability));
       setVirtualCores.invoke(capability, cores);
     } catch (Exception e) {
       // It's ok to ignore this exception, as it's using older version of API.
@@ -642,15 +679,6 @@ public final class ApplicationMasterService implements Service {
     capability.setMemory(memory);
 
     return capability;
-  }
-
-  private int getVirtualCores(Resource resource) {
-    try {
-      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
-      return (Integer) getVirtualCores.invoke(resource);
-    } catch (Exception e) {
-      return 0;
-    }
   }
 
   @Override
