@@ -19,6 +19,7 @@ import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
+import com.google.common.collect.Iterables;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.server.MiniYARNCluster;
@@ -28,15 +29,20 @@ import org.junit.ClassRule;
 import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Test suite for all tests with mini yarn cluster.
  */
 @RunWith(Suite.class)
-@Suite.SuiteClasses({EchoServerTestRun.class, TaskCompletedTestRun.class, DistributeShellTestRun.class})
+@Suite.SuiteClasses({EchoServerTestRun.class, ResourceReportTestRun.class,
+                     TaskCompletedTestRun.class, DistributeShellTestRun.class})
 public class YarnTestSuite {
+  private static final Logger LOG = LoggerFactory.getLogger(YarnTestSuite.class);
 
   @ClassRule
   public static TemporaryFolder tmpFolder = new TemporaryFolder();
@@ -60,6 +66,7 @@ public class YarnTestSuite {
       ".fifo.FifoScheduler");
     config.set("yarn.minicluster.fixed.ports", "true");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
+    config.set("yarn.scheduler.minimum-allocation-mb", "128");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);
@@ -86,5 +93,17 @@ public class YarnTestSuite {
   public static final WeaveRunnerService createWeaveRunnerService() throws IOException {
     return new YarnWeaveRunnerService(config, zkServer.getConnectionStr() + "/weave",
                                       new LocalLocationFactory(tmpFolder.newFolder()));
+  }
+
+  public static final <T> boolean waitForSize(Iterable<T> iterable, int count, int limit) throws InterruptedException {
+    int trial = 0;
+    int size = Iterables.size(iterable);
+    while (size != count && trial < limit) {
+      LOG.info("Waiting for {} size {} == {}", iterable, size, count);
+      TimeUnit.SECONDS.sleep(1);
+      trial++;
+      size = Iterables.size(iterable);
+    }
+    return trial < limit;
   }
 }

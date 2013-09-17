@@ -15,11 +15,13 @@
  */
 package com.continuuity.weave.yarn;
 
+import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.internal.AbstractWeaveController;
 import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.appmaster.ResourceReportClient;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -35,6 +37,12 @@ import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.ProtocolException;
+import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -47,6 +55,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
   private final YarnClient yarnClient;
   private final ApplicationId applicationId;
   private final Runnable startUp;
+  private ResourceReportClient resourcesClient;
 
   YarnWeaveController(RunId runId, ZKClient zkClient, YarnClient yarnClient, ApplicationId appId) {
     this(runId, zkClient, ImmutableList.<LogHandler>of(), yarnClient, appId, new Runnable() {
@@ -91,6 +100,10 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
         LOG.info("Yarn application is not in running state. Shutting down controller.",
                  Constants.APPLICATION_MAX_START_SECONDS);
         forceShutDown();
+      } else {
+        String appMasterHost = yarnClient.getApplicationReport(applicationId).getHost();
+        int appMasterPort = yarnClient.getApplicationReport(applicationId).getRpcPort();
+        resourcesClient = new ResourceReportClient(appMasterHost, appMasterPort);
       }
     } catch (Exception e) {
       throw Throwables.propagate(e);
@@ -167,5 +180,10 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
         return true;
     }
     return false;
+  }
+
+  @Override
+  public ResourceReport getResourceReport() {
+    return resourcesClient.get();
   }
 }

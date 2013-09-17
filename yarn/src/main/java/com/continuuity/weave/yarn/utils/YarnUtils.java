@@ -22,10 +22,12 @@ import com.google.common.base.Throwables;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
+import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 
 /**
  * Collection of helper methods to simplify YARN calls.
@@ -57,6 +59,35 @@ public class YarnUtils {
     resource.setSize(localFile.getSize());
     return setLocalResourceType(resource, localFile);
   }
+
+  // temporary workaround since older versions of hadoop don't have the getVirtualCores method.
+  public static int getVirtualCores(Resource resource) {
+    try {
+      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
+      return (Integer) getVirtualCores.invoke(resource);
+    } catch (Exception e) {
+      return 0;
+    }
+  }
+
+  /**
+   * Temporary workaround since older versions of hadoop don't have the setCores method.
+   *
+   * @param resource
+   * @param cores
+   * @return true if virtual cores was set, false if not.
+   */
+  public static boolean setVirtualCores(Resource resource, int cores) {
+    try {
+      Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
+      setVirtualCores.invoke(resource, cores);
+    } catch (Exception e) {
+      // It's ok to ignore this exception, as it's using older version of API.
+      return false;
+    }
+    return true;
+  }
+
 
   private static LocalResource setLocalResourceType(LocalResource localResource, LocalFile localFile) {
     if (localFile.isArchive()) {

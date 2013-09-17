@@ -256,6 +256,9 @@ final class YarnWeavePreparer implements WeavePreparer {
               " 2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"
             ));
 
+            Resource capability = Records.newRecord(Resource.class);
+            capability.setMemory(APP_MASTER_MEMORY_MB);
+            containerLaunchContext.setResource(capability);
             containerLaunchContext.setEnvironment(
               ImmutableMap.<String, String>builder()
                           .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
@@ -265,11 +268,10 @@ final class YarnWeavePreparer implements WeavePreparer {
                           .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
                           .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
                           .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+                          .put(EnvKeys.WEAVE_MEMORY_MB, Integer.toString(APP_MASTER_MEMORY_MB))
+                          .put(EnvKeys.WEAVE_VIRTUAL_CORES, Integer.toString(YarnUtils.getVirtualCores(capability)))
                           .build()
             );
-            Resource capability = Records.newRecord(Resource.class);
-            capability.setMemory(APP_MASTER_MEMORY_MB);
-            containerLaunchContext.setResource(capability);
 
             appSubmissionContext.setAMContainerSpec(containerLaunchContext);
 

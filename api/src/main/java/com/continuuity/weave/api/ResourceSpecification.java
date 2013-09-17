@@ -22,7 +22,7 @@ import com.continuuity.weave.internal.DefaultResourceSpecification;
  */
 public interface ResourceSpecification {
 
-  final ResourceSpecification BASIC = Builder.with().setCores(1).setMemory(512, SizeUnit.MEGA).build();
+  final ResourceSpecification BASIC = Builder.with().setVirtualCores(1).setMemory(512, SizeUnit.MEGA).build();
 
   /**
    * Unit for specifying memory size.
@@ -39,10 +39,17 @@ public interface ResourceSpecification {
   }
 
   /**
-   * Returns the number of CPU cores.
-   * @return Number of CPU cores.
+   * Returns the number of virtual CPU cores. DEPRECATED, use getVirtualCores instead.
+   * @return Number of virtual CPU cores.
    */
+  @Deprecated
   int getCores();
+
+  /**
+   * Returns the number of virtual CPU cores.
+   * @return Number of virtual CPU cores.
+   */
+  int getVirtualCores();
 
   /**
    * Returns the memory size in MB.
@@ -84,7 +91,13 @@ public interface ResourceSpecification {
     }
 
     public final class CoreSetter {
+      @Deprecated
       public MemorySetter setCores(int cores) {
+        Builder.this.cores = cores;
+        return new MemorySetter();
+      }
+
+      public MemorySetter setVirtualCores(int cores) {
         Builder.this.cores = cores;
         return new MemorySetter();
       }

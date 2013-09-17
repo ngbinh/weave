@@ -15,8 +15,8 @@
  */
 package com.continuuity.weave.internal.json;
 
-import com.continuuity.weave.api.ResourceSpecification;
-import com.continuuity.weave.internal.DefaultResourceSpecification;
+import com.continuuity.weave.api.WeaveRunResources;
+import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
@@ -28,32 +28,32 @@ import com.google.gson.JsonSerializer;
 import java.lang.reflect.Type;
 
 /**
- *
+ * Codec for serializing and deserializing a {@link WeaveRunResources} object using json.
  */
-final class ResourceSpecificationCodec implements JsonSerializer<ResourceSpecification>,
-                                                  JsonDeserializer<ResourceSpecification> {
+public final class WeaveRunResourcesCodec implements JsonSerializer<WeaveRunResources>,
+                                              JsonDeserializer<WeaveRunResources> {
 
   @Override
-  public JsonElement serialize(ResourceSpecification src, Type typeOfSrc, JsonSerializationContext context) {
+  public JsonElement serialize(WeaveRunResources src, Type typeOfSrc, JsonSerializationContext context) {
     JsonObject json = new JsonObject();
 
-    json.addProperty("cores", src.getVirtualCores());
-    json.addProperty("memorySize", src.getMemorySize());
-    json.addProperty("instances", src.getInstances());
-    json.addProperty("uplink", src.getUplink());
-    json.addProperty("downlink", src.getDownlink());
+    json.addProperty("containerId", src.getContainerId());
+    json.addProperty("instanceId", src.getInstanceId());
+    json.addProperty("host", src.getHost());
+    json.addProperty("memoryMB", src.getMemoryMB());
+    json.addProperty("virtualCores", src.getVirtualCores());
 
     return json;
   }
 
   @Override
-  public ResourceSpecification deserialize(JsonElement json, Type typeOfT,
+  public WeaveRunResources deserialize(JsonElement json, Type typeOfT,
                                            JsonDeserializationContext context) throws JsonParseException {
     JsonObject jsonObj = json.getAsJsonObject();
-    return new DefaultResourceSpecification(jsonObj.get("cores").getAsInt(),
-                                            jsonObj.get("memorySize").getAsInt(),
-                                            jsonObj.get("instances").getAsInt(),
-                                            jsonObj.get("uplink").getAsInt(),
-                                            jsonObj.get("downlink").getAsInt());
+    return new DefaultWeaveRunResources(jsonObj.get("instanceId").getAsInt(),
+                                        jsonObj.get("containerId").getAsString(),
+                                        jsonObj.get("virtualCores").getAsInt(),
+                                        jsonObj.get("memoryMB").getAsInt(),
+                                        jsonObj.get("host").getAsString());
   }
 }

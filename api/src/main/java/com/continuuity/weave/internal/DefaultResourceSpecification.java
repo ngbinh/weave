@@ -21,23 +21,29 @@ import com.continuuity.weave.api.ResourceSpecification;
  * Straightforward implementation of {@link ResourceSpecification}.
  */
 public final class DefaultResourceSpecification implements ResourceSpecification {
-  private final int cores;
+  private final int virtualCores;
   private final int memorySize;
   private final int instances;
   private final int uplink;
   private final int downlink;
 
-  public DefaultResourceSpecification(int cores, int memorySize, int instances, int uplink, int downlink) {
-    this.cores = cores;
+  public DefaultResourceSpecification(int virtualCores, int memorySize, int instances, int uplink, int downlink) {
+    this.virtualCores = virtualCores;
     this.memorySize = memorySize;
     this.instances = instances;
     this.uplink = uplink;
     this.downlink = downlink;
   }
 
+  @Deprecated
   @Override
   public int getCores() {
-    return cores;
+    return virtualCores;
+  }
+
+  @Override
+  public int getVirtualCores() {
+    return virtualCores;
   }
 
   @Override
