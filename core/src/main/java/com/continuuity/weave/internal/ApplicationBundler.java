@@ -70,7 +70,7 @@ public final class ApplicationBundler {
    * Constructs a ApplicationBundler.
    *
    * @param excludePackages Class packages to exclude
-   * @param includePackages Class packages that should be included. Anything in this list will overrides the
+   * @param includePackages Class packages that should be included. Anything in this list will override the
    *                        one provided in excludePackages.
    */
   public ApplicationBundler(Iterable<String> excludePackages, Iterable<String> includePackages) {
