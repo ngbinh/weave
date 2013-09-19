@@ -60,15 +60,17 @@ public final class DefaultResourceReport implements ResourceReport {
   }
 
   /**
-   * Remove the resource corresponding to the given instance of the runnable.
+   * Remove the resource corresponding to the given runnable and container.
    *
    * @param runnableName name of runnable.
-   * @param instanceId instance id of the runnable.
+   * @param containerId container id of the runnable.
    */
-  public void removeRunnableResources(String runnableName, int instanceId) {
+  public void removeRunnableResources(String runnableName, String containerId) {
     WeaveRunResources toRemove = null;
+    // could be faster if usedResources was a Table, but that makes returning the
+    // report a little more complex, and this does not need to be terribly fast.
     for (WeaveRunResources resources : usedResources.get(runnableName)) {
-      if (resources.getInstanceId() == instanceId) {
+      if (resources.getContainerId().equals(containerId)) {
         toRemove = resources;
         break;
       }
