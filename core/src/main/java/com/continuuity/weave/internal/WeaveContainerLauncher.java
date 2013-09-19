@@ -35,17 +35,15 @@ public final class WeaveContainerLauncher {
   private final RunId runId;
   private final ProcessLauncher processLauncher;
   private final ZKClient zkClient;
-  private final Iterable<String> args;
   private final int instanceId;
   private final int instanceCount;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId, ProcessLauncher processLauncher,
-                                ZKClient zkClient, Iterable<String> args, int instanceId, int instanceCount) {
+                                ZKClient zkClient, int instanceId, int instanceCount) {
     this.runtimeSpec = runtimeSpec;
     this.runId = runId;
     this.processLauncher = processLauncher;
     this.zkClient = zkClient;
-    this.args = args;
     this.instanceId = instanceId;
     this.instanceCount = instanceCount;
   }
@@ -83,7 +81,7 @@ public final class WeaveContainerLauncher {
                .add(Constants.Files.CONTAINER_JAR)
                .add(WeaveContainerMain.class.getName())
                .add(Boolean.TRUE.toString())
-               .addAll(args).build().toArray(new String[0]))
+               .build().toArray(new String[0]))
       .redirectOutput(stdout).redirectError(stderr)
       .launch();
 
