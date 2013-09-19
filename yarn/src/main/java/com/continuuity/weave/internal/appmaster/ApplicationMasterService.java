@@ -459,7 +459,6 @@ public final class ApplicationMasterService implements Service {
                                                                    containerRunId, processLauncher,
                                                                    ZKClients.namespace(zkClient,
                                                                                        getZKNamespace(runnableName)),
-                                                                   runnableArgs.get(runnableName),
                                                                    instanceId, instanceCounts.get(runnableName));
       runningContainers.add(runnableName, container, instanceId,
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",

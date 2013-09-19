@@ -37,7 +37,6 @@ import com.google.common.util.concurrent.Service;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -70,9 +69,13 @@ public final class WeaveContainerMain extends ServiceMain {
     
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
     ContainerInfo containerInfo = new ContainerInfo();
-    BasicWeaveContext context = new BasicWeaveContext(runId, appRunId, containerInfo.getHost(), args,
-                                                  decodeArgs(),
-                                                  runnableSpec, instanceId, discoveryService, instanceCount);
+    Arguments arguments = decodeArgs();
+    BasicWeaveContext context = new BasicWeaveContext(
+      runId, appRunId, containerInfo.getHost(),
+      arguments.getRunnableArguments().get(runnableName).toArray(new String[0]),
+      arguments.getArguments().toArray(new String[0]),
+      runnableSpec, instanceId, discoveryService, instanceCount
+    );
 
     Service service = new ZKServiceWrapper(
       zkClientService,
@@ -119,10 +122,8 @@ public final class WeaveContainerMain extends ServiceMain {
     }
   }
 
-  private static String[] decodeArgs() throws IOException {
-    List<String> args = ArgumentsCodec.decode(Files.newReaderSupplier(new File(Constants.Files.ARGUMENTS),
-                                                                      Charsets.UTF_8)).getArguments();
-    return args.toArray(new String[args.size()]);
+  private static Arguments decodeArgs() throws IOException {
+    return ArgumentsCodec.decode(Files.newReaderSupplier(new File(Constants.Files.ARGUMENTS), Charsets.UTF_8));
   }
 
   @Override
