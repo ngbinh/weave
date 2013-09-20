@@ -41,6 +41,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.InetSocketAddress;
+import java.net.URL;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -56,13 +57,13 @@ public final class TrackerService extends AbstractIdleService {
   private static final int NUM_BOSS_THREADS = 1;
   private static final int CLOSE_CHANNEL_TIMEOUT = 5;
   private static final int MAX_INPUT_SIZE = 100 * 1024 * 1024;
-  public static final String PATH = "/resources";
 
+  private static final String PATH = "/resources";
+
+  private final String host;
   private ServerBootstrap bootstrap;
   private InetSocketAddress bindAddress;
-  private int port;
-  private String host;
-  private String url;
+  private URL url;
   private final ChannelGroup channelGroup;
   private final ResourceReport resourceReport;
 
@@ -82,13 +83,13 @@ public final class TrackerService extends AbstractIdleService {
    * @return port the tracker service is bound to.
    */
   public int getPort() {
-    return port;
+    return bindAddress.getPort();
   }
 
   /**
    * @return tracker url.
    */
-  public String getUrl() {
+  public URL getUrl() {
     return url;
   }
 
@@ -123,12 +124,9 @@ public final class TrackerService extends AbstractIdleService {
       }
     });
 
-    bindAddress = new InetSocketAddress(0);
-    Channel channel = bootstrap.bind(bindAddress);
-    // need to do this because the bindAddress object does not get updated to return the
-    // actual ephemeral port it bound to.
-    port = ((InetSocketAddress) channel.getLocalAddress()).getPort();
-    url = host + ":" + port + PATH;
+    Channel channel = bootstrap.bind(new InetSocketAddress(0));
+    bindAddress = (InetSocketAddress) channel.getLocalAddress();
+    url = new URL(String.format("http://%s:%d%s", host, bindAddress.getPort(), PATH));
     channelGroup.add(channel);
   }
 

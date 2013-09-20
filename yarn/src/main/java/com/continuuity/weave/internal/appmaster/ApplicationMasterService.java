@@ -97,6 +97,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.net.URI;
+import java.net.URL;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -204,14 +205,14 @@ public final class ApplicationMasterService implements Service {
 
     LOG.info("Starting application master tracker server");
     trackerService.startAndWait();
-    String trackerUrl = trackerService.getUrl();
+    URL trackerUrl = trackerService.getUrl();
     LOG.info("Started application master tracker server on " + trackerUrl);
 
     amrmClient.init(yarnConf);
     amrmClient.start();
 
     RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster(
-      appMasterHost, trackerService.getPort(), trackerUrl);
+      appMasterHost, trackerService.getPort(), trackerUrl.toString());
     maxCapability = response.getMaximumResourceCapability();
     minCapability = response.getMinimumResourceCapability();
 
