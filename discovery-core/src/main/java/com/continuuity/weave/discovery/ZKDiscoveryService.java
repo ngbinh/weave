@@ -31,6 +31,7 @@ import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
+import com.google.common.hash.Hashing;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -183,8 +184,8 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
     byte[] discoverableBytes = encode(discoverable);
 
     // Path /<service-name>/service-sequential
-    final String sb = "/" + discoverable.getName() + "/service-";
-    return zkClient.create(sb, discoverableBytes, CreateMode.EPHEMERAL_SEQUENTIAL, true);
+    String path = String.format("/%s/%s", discoverable.getName(), getNode(discoverable));
+    return zkClient.create(path, discoverableBytes, CreateMode.EPHEMERAL, true);
   }
 
   private Watcher createConnectionWatcher() {
@@ -304,7 +305,7 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
 
   /**
    * Static helper function for encoding an instance of {@link DiscoverableWrapper} into array of bytes.
-   * @param discoverable An instance of {@link DiscoverableWrapper}
+   * @param discoverable An instance of {@link Discoverable}
    * @return array of bytes representing an instance of <code>discoverable</code>
    */
   private static byte[] encode(Discoverable discoverable) {
@@ -312,6 +313,20 @@ public class ZKDiscoveryService implements DiscoveryService, DiscoveryServiceCli
       .create()
       .toJson(discoverable, DiscoverableWrapper.class)
       .getBytes(Charsets.UTF_8);
+  }
+
+
+  /**
+   * Static help function to generate unique node name for a given {@link Discoverable}.
+   * @param discoverable An instance of {@link Discoverable}.
+   * @return A node name based on the discoverable.
+   */
+  private static String getNode(Discoverable discoverable) {
+    InetSocketAddress socketAddress = discoverable.getSocketAddress();
+    return Hashing.md5().newHasher()
+      .putBytes(socketAddress.getAddress().getAddress())
+      .putInt(socketAddress.getPort())
+      .hash().toString();
   }
 
 
