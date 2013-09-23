@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal.zookeeper;
 
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.zookeeper.ForwardingZKClient;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.OperationFuture;
@@ -31,16 +32,24 @@ import javax.annotation.Nullable;
 /**
  * A {@link ZKClient} that namespace every paths.
  */
-public final class NamespaceZKClient implements ZKClient {
+public final class NamespaceZKClient extends ForwardingZKClient {
+  // This class extends from ForwardingZKClient but overrides every method is for letting the
+  // ZKClientServices delegate logic works.
 
   private final String namespace;
   private final ZKClient delegate;
   private final String connectString;
 
   public NamespaceZKClient(ZKClient delegate, String namespace) {
+    super(delegate);
     this.namespace = namespace;
     this.delegate = delegate;
     this.connectString = delegate.getConnectString() + namespace;
+  }
+
+  @Override
+  public Long getSessionId() {
+    return delegate.getSessionId();
   }
 
   @Override

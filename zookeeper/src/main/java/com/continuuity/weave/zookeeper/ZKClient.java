@@ -26,6 +26,15 @@ import javax.annotation.Nullable;
  */
 public interface ZKClient {
 
+  /**
+   * Returns the current Zookeeper session ID of this client.
+   * If this ZKClient is not connected, {@code null} is returned.
+   */
+  Long getSessionId();
+
+  /**
+   * Returns the connection string used for connecting to Zookeeper.
+   */
   String getConnectString();
 
   /**
