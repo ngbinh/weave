@@ -30,6 +30,8 @@ import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.util.List;
@@ -39,6 +41,8 @@ import java.util.concurrent.TimeUnit;
  * Test Zookeeper based discovery service.
  */
 public class ZKDiscoveryServiceTest {
+  private static final Logger LOG = LoggerFactory.getLogger(ZKDiscoveryServiceTest.class);
+
   private static InMemoryZKServer zkServer;
   private static ZKClientService zkClient;
 
@@ -83,6 +87,56 @@ public class ZKDiscoveryServiceTest {
       }
     }
     return (Iterables.size(discoverables) == expected);
+  }
+
+  @Test (timeout = 5000)
+  public void testDoubleRegister() throws Exception {
+    ZKDiscoveryService discoveryService = new ZKDiscoveryService(zkClient);
+    DiscoveryServiceClient discoveryServiceClient = discoveryService;
+
+    // Register on the same host port, it shouldn't fail.
+    Cancellable cancellable = register(discoveryService, "test_double_reg", "localhost", 54321);
+    Cancellable cancellable2 = register(discoveryService, "test_double_reg", "localhost", 54321);
+
+    Iterable<Discoverable> discoverables = discoveryServiceClient.discover("test_double_reg");
+
+    Assert.assertTrue(waitTillExpected(1, discoverables));
+
+    cancellable.cancel();
+    cancellable2.cancel();
+
+    // Register again with two different clients, but killing session of the first one.
+    final ZKClientService zkClient2 = ZKClientServices.delegate(
+      ZKClients.retryOnFailure(
+        ZKClients.reWatchOnExpire(
+          ZKClientService.Builder.of(zkServer.getConnectionStr()).build()),
+        RetryStrategies.fixDelay(1, TimeUnit.SECONDS)));
+    zkClient2.startAndWait();
+
+    try {
+      ZKDiscoveryService discoveryService2 = new ZKDiscoveryService(zkClient2);
+      cancellable2 = register(discoveryService2, "test_multi_client", "localhost", 54321);
+
+      // Schedule a thread to shutdown zkClient2.
+      new Thread() {
+        @Override
+        public void run() {
+          try {
+            TimeUnit.SECONDS.sleep(2);
+            zkClient2.stopAndWait();
+          } catch (InterruptedException e) {
+            LOG.error(e.getMessage(), e);
+          }
+        }
+      }.start();
+
+      // This call would block until zkClient2 is shutdown.
+      cancellable = register(discoveryService, "test_multi_client", "localhost", 54321);
+      cancellable.cancel();
+
+    } finally {
+      zkClient2.stopAndWait();
+    }
   }
 
   @Test
