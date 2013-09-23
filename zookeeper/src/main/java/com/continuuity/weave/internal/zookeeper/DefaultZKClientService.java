@@ -85,6 +85,12 @@ public final class DefaultZKClientService implements ZKClientService {
   }
 
   @Override
+  public Long getSessionId() {
+    ZooKeeper zk = zooKeeper.get();
+    return zk == null ? null : zk.getSessionId();
+  }
+
+  @Override
   public String getConnectString() {
     return zkStr;
   }
