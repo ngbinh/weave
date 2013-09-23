@@ -184,6 +184,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   @Override
   public ResourceReport getResourceReport() {
-    return resourcesClient.get();
+    // in case the user calls this before starting, return null
+    return (resourcesClient == null) ? null : resourcesClient.get();
   }
 }
