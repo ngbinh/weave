@@ -61,6 +61,12 @@ public final class FailureRetryZKClient extends ForwardingZKClient {
   @Override
   public OperationFuture<String> create(final String path, final byte[] data,
                                         final CreateMode createMode, final boolean createParent) {
+
+    // No retry for any SEQUENTIAL node, as some algorithms depends on only one sequential node being created.
+    if (createMode == CreateMode.PERSISTENT_SEQUENTIAL || createMode == CreateMode.EPHEMERAL_SEQUENTIAL) {
+      return super.create(path, data, createMode, createParent);
+    }
+
     final SettableOperationFuture<String> result = SettableOperationFuture.create(path, Threads.SAME_THREAD_EXECUTOR);
     Futures.addCallback(super.create(path, data, createMode, createParent),
                         new OperationFutureCallback<String>(OperationType.CREATE, System.currentTimeMillis(),

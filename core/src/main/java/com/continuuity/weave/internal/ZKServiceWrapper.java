@@ -49,7 +49,9 @@ public final class ZKServiceWrapper extends AbstractService {
       public void stopping(State from) {
         // If stop is triggered, stop the wrapper service. This is mainly to trigger external listeners
         // The AbstractService state lock would guaranteed that it won't be recursive.
-        ZKServiceWrapper.this.stop();
+        if (ZKServiceWrapper.this.isRunning()) {
+          ZKServiceWrapper.this.stop();
+        }
       }
 
       @Override

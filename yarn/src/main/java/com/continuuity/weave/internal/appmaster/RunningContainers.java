@@ -134,7 +134,6 @@ final class RunningContainers {
   void removeLast(String runnableName) {
     containerLock.lock();
     try {
-      int instanceId = -1;
       ContainerId containerId = null;
       WeaveContainerController lastController = null;
       int maxId = -1;
@@ -142,7 +141,7 @@ final class RunningContainers {
         // A bit hacky, as it knows the naming convention of RunId as (base-[instanceId]).
         // Could be more generic if using data structure other than a hashbased table.
         String id = entry.getValue().getRunId().getId();
-        instanceId = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
+        int instanceId = Integer.parseInt(id.substring(id.lastIndexOf('-') + 1));
         if (instanceId > maxId) {
           maxId = instanceId;
           containerId = entry.getKey();
@@ -156,7 +155,7 @@ final class RunningContainers {
       LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
       lastController.stopAndWait();
       containers.remove(runnableName, containerId);
-      resourceReport.removeRunnableResources(runnableName, instanceId);
+      resourceReport.removeRunnableResources(runnableName, containerId.toString());
       containerChange.signalAll();
     } finally {
       containerLock.unlock();
@@ -285,14 +284,17 @@ final class RunningContainers {
         if (exitStatus == RUNNABLE_ERROR) {
           LOG.warn("Container {} exited abnormally with state {}, exit code {}.", containerId, state, exitStatus);
         } else {
-          LOG.warn("Container {} exited unexpected with state{}, exit code{}. Re-request the container.",
+          LOG.warn("Container {} exited unexpected with state {}, exit code{}. Re-request the container.",
                    containerId, state, exitStatus);
           restartRunnables.add(lookup.keySet().iterator().next());
         }
       }
 
-      for (WeaveContainerController controller : lookup.values()) {
+      for (Map.Entry<String, WeaveContainerController> completedEntry : lookup.entrySet()) {
+        String runnableName = completedEntry.getKey();
+        WeaveContainerController controller = completedEntry.getValue();
         controller.completed(exitStatus);
+        resourceReport.removeRunnableResources(runnableName, containerId.toString());
       }
 
       lookup.clear();
