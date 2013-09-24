@@ -182,8 +182,8 @@ public final class ApplicationMasterService implements Service {
     WeaveRunResources appMasterResources = new DefaultWeaveRunResources(
       0,
       appMasterContainerId.toString(),
-      Integer.parseInt(System.getenv(EnvKeys.WEAVE_VIRTUAL_CORES)),
-      Integer.parseInt(System.getenv(EnvKeys.WEAVE_MEMORY_MB)),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES)),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_MEMORY_MB)),
       appMasterHost);
     String appId = appMasterContainerId.getApplicationAttemptId().getApplicationId().toString();
     return new RunningContainers(appId, appMasterResources);
@@ -659,8 +659,7 @@ public final class ApplicationMasterService implements Service {
       LOG.info("Virtual cores limit not supported.");
     }
 
-    int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()),
-                          minCapability.getMemory());
+    int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()), minCapability.getMemory());
     capability.setMemory(memory);
 
     return capability;

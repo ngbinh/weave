@@ -268,8 +268,9 @@ final class YarnWeavePreparer implements WeavePreparer {
                           .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
                           .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
                           .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-                          .put(EnvKeys.WEAVE_MEMORY_MB, Integer.toString(APP_MASTER_MEMORY_MB))
-                          .put(EnvKeys.WEAVE_VIRTUAL_CORES, Integer.toString(YarnUtils.getVirtualCores(capability)))
+                          .put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(APP_MASTER_MEMORY_MB))
+                          .put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES,
+                               Integer.toString(YarnUtils.getVirtualCores(capability)))
                           .build()
             );
 

@@ -61,4 +61,14 @@ public interface WeaveContext extends ServiceAnnouncer {
    * Returns an integer id from 0 to (instanceCount - 1).
    */
   int getInstanceId();
+
+  /**
+   * Returns the number of virtual cores the runnable is allowed to use.
+   */
+  int getVirtualCores();
+
+  /**
+   * Returns the amount of memory in MB the runnable is allowed to use.
+   */
+  int getAllowedMemoryMB();
 }

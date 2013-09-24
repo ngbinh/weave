@@ -26,13 +26,17 @@ import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.discovery.Discoverable;
+import com.continuuity.weave.internal.EnvKeys;
 import com.google.common.base.Charsets;
+import com.google.common.collect.Maps;
+import com.google.common.io.LineReader;
 import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.Socket;
@@ -69,6 +73,60 @@ public class ResourceReportTestRun {
         .anyOrder()
         .build();
     }
+  }
+
+  @Test
+  public void testRunnablesGetAllowedResourcesInEnv() throws InterruptedException, IOException,
+    TimeoutException, ExecutionException {
+    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+
+    ResourceSpecification resourceSpec = ResourceSpecification.Builder.with()
+      .setVirtualCores(1)
+      .setMemory(2048, ResourceSpecification.SizeUnit.MEGA)
+      .setInstances(1)
+      .build();
+    WeaveController controller = runner.prepare(new EnvironmentEchoServer(), resourceSpec)
+      .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+      .withApplicationArguments("envecho")
+      .withArguments("EnvironmentEchoServer", "echo2")
+      .start();
+
+    final CountDownLatch running = new CountDownLatch(1);
+    controller.addListener(new ServiceListenerAdapter() {
+      @Override
+      public void running() {
+        running.countDown();
+      }
+    }, Threads.SAME_THREAD_EXECUTOR);
+
+    Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
+
+    Iterable<Discoverable> envEchoServices = controller.discoverService("envecho");
+    Assert.assertTrue(YarnTestSuite.waitForSize(envEchoServices, 1, 30));
+
+    // TODO: check virtual cores once yarn adds the ability
+    Map<String, String> expectedValues = Maps.newHashMap();
+    expectedValues.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, "2048");
+    expectedValues.put(EnvKeys.WEAVE_INSTANCE_COUNT, "1");
+
+    // check environment of the runnable.
+    Discoverable discoverable = envEchoServices.iterator().next();
+    for (Map.Entry<String, String> expected : expectedValues.entrySet()) {
+      Socket socket = new Socket(discoverable.getSocketAddress().getHostName(),
+                                 discoverable.getSocketAddress().getPort());
+      try {
+        PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8), true);
+        LineReader reader = new LineReader(new InputStreamReader(socket.getInputStream(), Charsets.UTF_8));
+        writer.println(expected.getKey());
+        Assert.assertEquals(expected.getValue(), reader.readLine());
+      } finally {
+        socket.close();
+      }
+    }
+
+    controller.stop().get(10, TimeUnit.SECONDS);
+    // Sleep a bit before exiting.
+    TimeUnit.SECONDS.sleep(2);
   }
 
   @Test

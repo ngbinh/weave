@@ -74,7 +74,8 @@ public final class WeaveContainerMain extends ServiceMain {
       runId, appRunId, containerInfo.getHost(),
       arguments.getRunnableArguments().get(runnableName).toArray(new String[0]),
       arguments.getArguments().toArray(new String[0]),
-      runnableSpec, instanceId, discoveryService, instanceCount
+      runnableSpec, instanceId, discoveryService, instanceCount,
+      containerInfo.getMemoryMB(), containerInfo.getVirtualCores()
     );
 
     Service service = new ZKServiceWrapper(
