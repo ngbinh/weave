@@ -25,11 +25,15 @@ public final class ContainerInfo {
   private final String id;
   private final InetAddress host;
   private final int port;
+  private final int virtualCores;
+  private final int memoryMB;
 
   public ContainerInfo() throws UnknownHostException {
     id = System.getenv(EnvKeys.YARN_CONTAINER_ID);
     host = InetAddress.getByName(System.getenv(EnvKeys.YARN_CONTAINER_HOST));
     port = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_PORT));
+    virtualCores = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES));
+    memoryMB = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_MEMORY_MB));
   }
 
   public String getId() {
@@ -42,5 +46,13 @@ public final class ContainerInfo {
 
   public int getPort() {
     return port;
+  }
+
+  public int getMemoryMB() {
+    return memoryMB;
+  }
+
+  public int getVirtualCores() {
+    return virtualCores;
   }
 }
