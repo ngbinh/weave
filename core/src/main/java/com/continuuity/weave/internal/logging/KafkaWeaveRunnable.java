@@ -80,13 +80,16 @@ public final class KafkaWeaveRunnable implements WeaveRunnable {
   }
 
   @Override
+  public void destroy() {
+    server.stopAndWait();
+  }
+
+  @Override
   public void run() {
     try {
       stopLatch.await();
     } catch (InterruptedException e) {
       LOG.info("Running thread interrupted, shutting down kafka server.", e);
-    } finally {
-      server.stopAndWait();
     }
   }
 

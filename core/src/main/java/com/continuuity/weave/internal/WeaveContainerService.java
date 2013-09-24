@@ -157,13 +157,22 @@ public final class WeaveContainerService implements Service {
     }
 
     @Override
+    protected void shutDown() throws Exception {
+      runnable.destroy();
+    }
+
+    @Override
     protected void run() throws Exception {
       runnable.run();
     }
 
     @Override
     public ListenableFuture<String> onReceived(String messageId, Message message) {
-      return processMessage(messageId, message);
+      if (state() == State.RUNNING) {
+        // Only process message if the service is still alive
+        return processMessage(messageId, message);
+      }
+      return Futures.immediateFuture(messageId);
     }
   }
 }
