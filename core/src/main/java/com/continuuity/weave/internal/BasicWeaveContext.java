@@ -108,7 +108,7 @@ public final class BasicWeaveContext implements WeaveContext {
   }
 
   @Override
-  public int getAllowedMemoryMB() {
+  public int getMaxMemoryMB() {
     return allowedMemoryMB;
   }
 

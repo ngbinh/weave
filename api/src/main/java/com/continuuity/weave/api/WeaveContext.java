@@ -70,5 +70,5 @@ public interface WeaveContext extends ServiceAnnouncer {
   /**
    * Returns the amount of memory in MB the runnable is allowed to use.
    */
-  int getAllowedMemoryMB();
+  int getMaxMemoryMB();
 }
