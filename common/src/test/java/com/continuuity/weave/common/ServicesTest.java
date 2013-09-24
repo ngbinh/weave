@@ -18,7 +18,9 @@ package com.continuuity.weave.common;
 import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.AbstractIdleService;
 import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
+import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +45,32 @@ public class ServicesTest {
 
     Futures.allAsList(Services.chainStart(s1, s2, s3).get()).get();
     Futures.allAsList(Services.chainStop(s3, s2, s1).get()).get();
+  }
+
+  @Test
+  public void testCompletion() throws ExecutionException, InterruptedException {
+    Service service = new DummyService("s1", new AtomicBoolean());
+    ListenableFuture<Service.State> completion = Services.getCompletionFuture(service);
+
+    service.start();
+    service.stop();
+
+    completion.get();
+
+    AtomicBoolean transiting = new AtomicBoolean();
+    service = new DummyService("s2", transiting);
+    completion = Services.getCompletionFuture(service);
+
+    service.start();
+    transiting.set(true);
+    service.stop();
+
+    try {
+      completion.get();
+      Assert.assertTrue(false);
+    } catch (ExecutionException e) {
+      // Expected
+    }
   }
 
   private static final class DummyService extends AbstractIdleService {
