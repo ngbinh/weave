@@ -16,10 +16,12 @@
 package com.continuuity.weave.internal;
 
 import com.continuuity.weave.common.ServiceListenerAdapter;
+import com.continuuity.weave.common.Services;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.google.common.base.Objects;
-import com.google.common.util.concurrent.AbstractService;
+import com.google.common.util.concurrent.AbstractIdleService;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 
 /**
@@ -27,11 +29,14 @@ import com.google.common.util.concurrent.Service;
  * guarantee the ZKClientService will starts before the Service and stopped after
  * the Service is stopped.
  */
-public final class ZKServiceWrapper extends AbstractService {
+public final class ZKServiceWrapper extends AbstractIdleService {
+
+  // It is important that this class extends from AbstractIdleService so that start() and stop()
+  // happens in its own thread so that in the listener added to the delegate service, when
+  // performing ZKServiceWrapper.this.stop(), it won't creates a deadlock.
 
   private final ZKClientService zkClientService;
   private final Service delegateService;
-  private volatile Throwable failureCause;
 
   public ZKServiceWrapper(ZKClientService zkClientService, Service delegateService) {
     this.zkClientService = zkClientService;
@@ -39,70 +44,33 @@ public final class ZKServiceWrapper extends AbstractService {
 
     // Listen to state change of the delgateService
     this.delegateService.addListener(new ServiceListenerAdapter() {
-      @Override
-      public void running() {
-        // When the delegate service is running, then this service is consider started.
-        notifyStarted();
-      }
 
       @Override
       public void stopping(State from) {
         // If stop is triggered, stop the wrapper service. This is mainly to trigger external listeners
         // The AbstractService state lock would guaranteed that it won't be recursive.
-        if (ZKServiceWrapper.this.isRunning()) {
-          ZKServiceWrapper.this.stop();
-        }
-      }
-
-      @Override
-      public void terminated(State from) {
-        // Stop the zkClient when the delegate service is completed.
-        ZKServiceWrapper.this.zkClientService.stop();
+        ZKServiceWrapper.this.stop();
       }
 
       @Override
       public void failed(State from, Throwable failure) {
-        // Stop the zkClient when the delegate service is done because of failure
-        // Also memorize the failure reason to notifyFailed when stopping of zkClient is done.
-        failureCause = failure;
-        ZKServiceWrapper.this.zkClientService.stop();
-      }
-    }, Threads.SAME_THREAD_EXECUTOR);
-
-    // Listen to state change of zkClient
-    this.zkClientService.addListener(new ServiceListenerAdapter() {
-      @Override
-      public void running() {
-        // When ZKClient start, starts the delegate service as well.
-        ZKServiceWrapper.this.delegateService.start();
-      }
-
-      @Override
-      public void terminated(State from) {
-        // When ZKClient stopped, notify service completed based on the result of termination of the delegate service.
-        if (failureCause == null) {
-          notifyStopped();
-        } else {
-          notifyFailed(failureCause);
-        }
-      }
-
-      @Override
-      public void failed(State from, Throwable failure) {
-        // Same logic as terminate.
-        terminated(from);
+        ZKServiceWrapper.this.stop();
       }
     }, Threads.SAME_THREAD_EXECUTOR);
   }
 
   @Override
-  protected void doStart() {
-    zkClientService.start();
+  protected void startUp() throws Exception {
+    for (ListenableFuture<State> future : Services.chainStart(zkClientService, delegateService).get()) {
+      future.get();
+    }
   }
 
   @Override
-  protected void doStop() {
-    delegateService.stop();
+  protected void shutDown() throws Exception {
+    for (ListenableFuture<State> future : Services.chainStop(delegateService, zkClientService).get()) {
+      future.get();
+    }
   }
 
   @Override
