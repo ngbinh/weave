@@ -42,13 +42,18 @@ public final class ZKServiceWrapper extends AbstractIdleService {
     this.zkClientService = zkClientService;
     this.delegateService = delegateService;
 
-    // Listen to state change of the delgateService
+    // Listen to state change of the delegateService
     this.delegateService.addListener(new ServiceListenerAdapter() {
 
       @Override
       public void stopping(State from) {
         // If stop is triggered, stop the wrapper service. This is mainly to trigger external listeners
         // The AbstractService state lock would guaranteed that it won't be recursive.
+        ZKServiceWrapper.this.stop();
+      }
+
+      @Override
+      public void terminated(State from) {
         ZKServiceWrapper.this.stop();
       }
 
