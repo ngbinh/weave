@@ -15,8 +15,6 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
@@ -89,7 +87,6 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -262,13 +259,9 @@ public final class ApplicationMasterService implements Service {
     // App location cleanup
     cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
 
-    // When logger context is stopped, stop the kafka server as well.
-    ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-    if (loggerFactory instanceof LoggerContext) {
-      ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
-    } else {
-      kafkaServer.stopAndWait();
-    }
+    // Sleep for 2 seconds before shutting down the kafka server.
+    TimeUnit.SECONDS.sleep(2);
+    kafkaServer.stopAndWait();
   }
 
   private void cleanupDir(URI appDir) {
@@ -300,26 +293,6 @@ public final class ApplicationMasterService implements Service {
     }
   }
 
-  private LoggerContextListener getLoggerStopListener() {
-    return new LoggerContextListenerAdapter(true) {
-      @Override
-      public void onStop(LoggerContext context) {
-        // Sleep a bit before stopping kafka to have chance for client to fetch the last log.
-        try {
-          TimeUnit.SECONDS.sleep(2);
-        } catch (InterruptedException e) {
-          // Ignored.
-        } finally {
-          try {
-            kafkaServer.stop().get(5, TimeUnit.SECONDS);
-          } catch (Exception e) {
-            // Cannot use logger here
-            e.printStackTrace(System.err);
-          }
-        }
-      }
-    };
-  }
 
   private void doRun() throws Exception {
     // The main loop

@@ -108,6 +108,20 @@ public abstract class SocketServer extends AbstractWeaveRunnable {
     try {
       serverSocket.close();
     } catch (IOException e) {
+      LOG.error("Exception while closing socket.", e);
+      throw Throwables.propagate(e);
+    }
+    serverSocket = null;
+  }
+
+  @Override
+  public void destroy() {
+    try {
+      if (serverSocket != null) {
+        serverSocket.close();
+      }
+    } catch (IOException e) {
+      LOG.error("Exception while closing socket.", e);
       throw Throwables.propagate(e);
     }
   }

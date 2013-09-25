@@ -20,7 +20,6 @@ import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.ServiceMain;
-import com.continuuity.weave.internal.ZKServiceWrapper;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
@@ -58,9 +57,8 @@ public final class ApplicationMasterMain extends ServiceMain {
             ZKClientService.Builder.of(zkConnect).build(),
             RetryStrategies.fixDelay(1, TimeUnit.SECONDS))));
 
-    Service service = new ZKServiceWrapper(zkClientService,
-                                           new ApplicationMasterService(runId, zkClientService, weaveSpec));
-    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(service);
+    Service service = new ApplicationMasterService(runId, zkClientService, weaveSpec);
+    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(zkClientService, service);
   }
 
   @Override
