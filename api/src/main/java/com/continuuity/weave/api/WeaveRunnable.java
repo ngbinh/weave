@@ -45,4 +45,11 @@ public interface WeaveRunnable extends Runnable {
    * Requests to stop the running service.
    */
   void stop();
+
+  /**
+   * Called when the {@link com.continuuity.weave.api.WeaveRunnable#run()} completed. Useful for doing
+   * resource cleanup. This method would only get called if the call to {@link #initialize(WeaveContext)} was
+   * successful.
+   */
+  void destroy();
 }

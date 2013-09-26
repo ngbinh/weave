@@ -32,12 +32,6 @@ public final class EnvKeys {
   public static final String WEAVE_FS_USER = "WEAVE_FS_USER";
 
   /**
-   * Used to inform application master of its resource usage.
-   */
-  public static final String WEAVE_VIRTUAL_CORES = "WEAVE_VIRTUAL_CORES";
-  public static final String WEAVE_MEMORY_MB = "WEAVE_MEMORY_MB";
-
-  /**
    * Cluster filesystem directory for storing weave app related files.
    */
   public static final String WEAVE_APP_DIR = "WEAVE_APP_DIR";
@@ -49,6 +43,11 @@ public final class EnvKeys {
   public static final String YARN_CONTAINER_ID = "YARN_CONTAINER_ID";
   public static final String YARN_CONTAINER_HOST = "YARN_CONTAINER_HOST";
   public static final String YARN_CONTAINER_PORT = "YARN_CONTAINER_PORT";
+  /**
+   * Used to inform runnables of their resource usage.
+   */
+  public static final String YARN_CONTAINER_VIRTUAL_CORES = "YARN_CONTAINER_VIRTUAL_CORES";
+  public static final String YARN_CONTAINER_MEMORY_MB = "YARN_CONTAINER_MEMORY_MB";
 
   private EnvKeys() {
   }
