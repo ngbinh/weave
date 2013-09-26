@@ -20,6 +20,7 @@ import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveRunnable;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Instances;
@@ -159,6 +160,7 @@ public final class WeaveContainerService implements Service {
     @Override
     protected void shutDown() throws Exception {
       runnable.destroy();
+      Loggings.forceFlush();
     }
 
     @Override

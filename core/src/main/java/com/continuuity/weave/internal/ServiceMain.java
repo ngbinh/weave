@@ -53,8 +53,10 @@ public abstract class ServiceMain {
       @Override
       public void run() {
         try {
+          System.out.println("Stopping service in shutdown hook: " + serviceName);
           Futures.getUnchecked(Services.chainStop(service, zkClientService));
         } finally {
+          System.out.println("Service " + serviceName + " stopped in shutdown hook.");
           if (loggerFactory instanceof LoggerContext) {
             ((LoggerContext) loggerFactory).stop();
           }

@@ -37,6 +37,7 @@ import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
+import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Networks;
@@ -199,6 +200,8 @@ public final class ApplicationMasterService implements Service {
     instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
     yarnRPC = YarnRPC.create(yarnConf);
 
+    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
+
     LOG.info("Starting application master tracker server");
     trackerService.startAndWait();
     String trackerUrl = trackerService.getUrl();
@@ -223,7 +226,7 @@ public final class ApplicationMasterService implements Service {
 
     // Starts kafka server
     LOG.info("Starting kafka server");
-    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
+
     kafkaServer.startAndWait();
     LOG.info("Kafka server started");
 
@@ -253,15 +256,17 @@ public final class ApplicationMasterService implements Service {
     amrmClient.stop();
 
     LOG.info("Stopping application master tracker server");
-    trackerService.stopAndWait();
-    LOG.info("Stopped application master tracker server");
-
-    // App location cleanup
-    cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
-
-    // Sleep for 2 seconds before shutting down the kafka server.
-    TimeUnit.SECONDS.sleep(2);
-    kafkaServer.stopAndWait();
+    try {
+      trackerService.stopAndWait();
+      LOG.info("Stopped application master tracker server");
+    } catch (Exception e) {
+      LOG.error("Failed to stop tracker service.", e);
+    } finally {
+      // App location cleanup
+      cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+      Loggings.forceFlush();
+      kafkaServer.stopAndWait();
+    }
   }
 
   private void cleanupDir(URI appDir) {
