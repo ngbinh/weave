@@ -78,13 +78,10 @@ public final class WeaveContainerMain extends ServiceMain {
       containerInfo.getMemoryMB(), containerInfo.getVirtualCores()
     );
 
-    Service service = new ZKServiceWrapper(
-      zkClientService,
-      new WeaveContainerService(context, containerInfo,
-                                getContainerZKClient(zkClientService, appRunId, runnableName),
-                                runId, runnableSpec, getClassLoader()));
-
-    new WeaveContainerMain().doMain(service);
+    Service service = new WeaveContainerService(context, containerInfo,
+                                                getContainerZKClient(zkClientService, appRunId, runnableName),
+                                                runId, runnableSpec, getClassLoader());
+    new WeaveContainerMain().doMain(zkClientService, service);
   }
 
   private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {
