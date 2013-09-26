@@ -61,7 +61,7 @@ public class ServicesTest {
     service = new DummyService("s2", transiting);
     completion = Services.getCompletionFuture(service);
 
-    service.start();
+    service.startAndWait();
     transiting.set(true);
     service.stop();
 
