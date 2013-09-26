@@ -262,10 +262,15 @@ public final class ApplicationMasterService implements Service {
     } catch (Exception e) {
       LOG.error("Failed to stop tracker service.", e);
     } finally {
-      // App location cleanup
-      cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
-      Loggings.forceFlush();
-      kafkaServer.stopAndWait();
+      try {
+        // App location cleanup
+        cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+        Loggings.forceFlush();
+        // Sleep a short while to let kafka clients to have chance to fetch the log
+        TimeUnit.SECONDS.sleep(1);
+      } finally {
+        kafkaServer.stopAndWait();
+      }
     }
   }
 
