@@ -47,18 +47,12 @@ public abstract class ServiceMain {
     configureLogger();
 
     final String serviceName = service.toString();
-    final ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+
 
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {
-        try {
-          Futures.getUnchecked(Services.chainStop(service, zkClientService));
-        } finally {
-          if (loggerFactory instanceof LoggerContext) {
-            ((LoggerContext) loggerFactory).stop();
-          }
-        }
+        Services.chainStop(service, zkClientService);
       }
     });
 
@@ -74,6 +68,11 @@ public abstract class ServiceMain {
       LOG.info("Service {} completed.", serviceName);
     } catch (Throwable t) {
       LOG.warn("Exception thrown from service {}.", serviceName, t);
+    } finally {
+      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
+      if (loggerFactory instanceof LoggerContext) {
+        ((LoggerContext) loggerFactory).stop();
+      }
     }
   }
 

@@ -36,7 +36,10 @@ import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
+import org.jboss.netty.channel.socket.nio.NioClientBossPool;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
+import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,8 +72,11 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
   protected void startUp() throws Exception {
     brokerCache.startAndWait();
     ThreadFactory threadFactory = Threads.createDaemonThreadFactory("kafka-client-netty-%d");
-    bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(Executors.newSingleThreadExecutor(threadFactory),
-                                                                      Executors.newFixedThreadPool(4, threadFactory)));
+    NioClientBossPool bossPool = new NioClientBossPool(Executors.newSingleThreadExecutor(threadFactory), 1,
+                                                       new HashedWheelTimer(threadFactory), null);
+    NioWorkerPool workerPool = new NioWorkerPool(Executors.newFixedThreadPool(4, threadFactory), 4);
+
+    bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(bossPool, workerPool));
     bootstrap.setPipelineFactory(new KafkaChannelPipelineFactory());
     connectionPool = new ConnectionPool(bootstrap);
   }
