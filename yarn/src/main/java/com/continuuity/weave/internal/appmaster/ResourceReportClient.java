@@ -1,3 +1,18 @@
+/*
+ * Copyright 2012-2013 Continuuity,Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.ResourceReport;
@@ -17,13 +32,12 @@ import java.net.URL;
  */
 public class ResourceReportClient {
   private static final Logger LOG = LoggerFactory.getLogger(ResourceReportClient.class);
-  private static final String REPORT_PATH = "/resources";
 
   private final ResourceReportAdapter reportAdapter;
-  private final String resourcesUrl;
+  private final URL resourceUrl;
 
-  public ResourceReportClient(String host, int port) {
-    resourcesUrl = "http://" + host + ":" + port + REPORT_PATH;
+  public ResourceReportClient(URL resourceUrl) {
+    this.resourceUrl = resourceUrl;
     this.reportAdapter = ResourceReportAdapter.create();
   }
 
@@ -32,14 +46,13 @@ public class ResourceReportClient {
     Reader reader = null;
     HttpURLConnection conn = null;
     try {
-      URL url = new URL(resourcesUrl);
-      conn = (HttpURLConnection) url.openConnection();
+      conn = (HttpURLConnection) resourceUrl.openConnection();
       conn.setRequestMethod("GET");
 
       reader = new InputStreamReader(conn.getInputStream(), Charsets.UTF_8);
       report = reportAdapter.fromJson(reader);
     } catch (IOException e) {
-      LOG.error("Exception getting resource report from " + resourcesUrl, e);
+      LOG.error("Exception getting resource report from {}.", resourceUrl, e);
     } finally {
       if (reader != null) {
         try {

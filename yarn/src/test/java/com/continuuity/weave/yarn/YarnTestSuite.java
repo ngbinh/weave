@@ -39,8 +39,12 @@ import java.util.concurrent.TimeUnit;
  * Test suite for all tests with mini yarn cluster.
  */
 @RunWith(Suite.class)
-@Suite.SuiteClasses({EchoServerTestRun.class, ResourceReportTestRun.class,
-                     TaskCompletedTestRun.class, DistributeShellTestRun.class})
+@Suite.SuiteClasses({
+                      EchoServerTestRun.class,
+                      ResourceReportTestRun.class,
+                      TaskCompletedTestRun.class,
+                      DistributeShellTestRun.class
+                    })
 public class YarnTestSuite {
   private static final Logger LOG = LoggerFactory.getLogger(YarnTestSuite.class);
 

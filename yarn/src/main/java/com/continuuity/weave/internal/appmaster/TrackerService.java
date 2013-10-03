@@ -1,3 +1,18 @@
+/*
+ * Copyright 2012-2013 Continuuity,Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.ResourceReport;
@@ -41,6 +56,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URL;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
@@ -53,12 +69,13 @@ import java.util.concurrent.TimeUnit;
  */
 public final class TrackerService extends AbstractIdleService {
 
+  // TODO: This is temporary. When support more REST API, this would get moved.
+  public static final String PATH = "/resources";
+
   private static final Logger LOG  = LoggerFactory.getLogger(TrackerService.class);
   private static final int NUM_BOSS_THREADS = 1;
   private static final int CLOSE_CHANNEL_TIMEOUT = 5;
   private static final int MAX_INPUT_SIZE = 100 * 1024 * 1024;
-
-  private static final String PATH = "/resources";
 
   private final String host;
   private ServerBootstrap bootstrap;
@@ -124,9 +141,10 @@ public final class TrackerService extends AbstractIdleService {
       }
     });
 
-    Channel channel = bootstrap.bind(new InetSocketAddress(0));
+    Channel channel = bootstrap.bind(new InetSocketAddress(host, 0));
     bindAddress = (InetSocketAddress) channel.getLocalAddress();
-    url = new URL(String.format("http://%s:%d%s", host, bindAddress.getPort(), PATH));
+    url = URI.create(String.format("http://%s:%d", host, bindAddress.getPort()))
+             .resolve(TrackerService.PATH).toURL();
     channelGroup.add(channel);
   }
 

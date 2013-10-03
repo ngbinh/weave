@@ -19,12 +19,12 @@ import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
 import com.continuuity.weave.api.WeaveRunResources;
+import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.DefaultResourceReport;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.state.Message;
-import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -33,8 +33,6 @@ import com.google.common.collect.Table;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.hadoop.yarn.api.records.Container;
-import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerState;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.slf4j.Logger;
@@ -62,7 +60,7 @@ final class RunningContainers {
   private static final int RUNNABLE_ERROR = -100;
 
   // Table of <runnableName, containerId, controller>
-  private final Table<String, ContainerId, WeaveContainerController> containers;
+  private final Table<String, String, WeaveContainerController> containers;
   private final DefaultResourceReport resourceReport;
   private final Deque<String> startSequence;
   private final Lock containerLock;
@@ -88,16 +86,15 @@ final class RunningContainers {
     }
   }
 
-  void add(String runnableName, Container container, int instanceId, WeaveContainerController controller) {
+  void add(String runnableName, ContainerInfo containerInfo, int instanceId, WeaveContainerController controller) {
     containerLock.lock();
     try {
-      ContainerId containerId = container.getId();
-      containers.put(runnableName, containerId, controller);
+      containers.put(runnableName, containerInfo.getId(), controller);
       WeaveRunResources resources = new DefaultWeaveRunResources(instanceId,
-                                                                 containerId.toString(),
-                                                                 YarnUtils.getVirtualCores(container.getResource()),
-                                                                 container.getResource().getMemory(),
-                                                                 container.getNodeId().getHost());
+                                                                 containerInfo.getId(),
+                                                                 containerInfo.getVirtualCores(),
+                                                                 containerInfo.getMemoryMB(),
+                                                                 containerInfo.getHost().getHostName());
       resourceReport.addRunResources(runnableName, resources);
 
       if (startSequence.isEmpty() || !runnableName.equals(startSequence.peekLast())) {
@@ -134,10 +131,10 @@ final class RunningContainers {
   void removeLast(String runnableName) {
     containerLock.lock();
     try {
-      ContainerId containerId = null;
+      String containerId = null;
       WeaveContainerController lastController = null;
       int maxId = -1;
-      for (Map.Entry<ContainerId, WeaveContainerController> entry : containers.row(runnableName).entrySet()) {
+      for (Map.Entry<String, WeaveContainerController> entry : containers.row(runnableName).entrySet()) {
         // A bit hacky, as it knows the naming convention of RunId as (base-[instanceId]).
         // Could be more generic if using data structure other than a hashbased table.
         String id = entry.getValue().getRunId().getId();
@@ -155,7 +152,7 @@ final class RunningContainers {
       LOG.info("Stopping service: {} {}", runnableName, lastController.getRunId());
       lastController.stopAndWait();
       containers.remove(runnableName, containerId);
-      resourceReport.removeRunnableResources(runnableName, containerId.toString());
+      resourceReport.removeRunnableResources(runnableName, containerId);
       containerChange.signalAll();
     } finally {
       containerLock.unlock();
@@ -194,7 +191,7 @@ final class RunningContainers {
 
       // Sends the command to all running containers
       AtomicInteger count = new AtomicInteger(containers.size());
-      for (Map.Entry<String, Map<ContainerId, WeaveContainerController>> entry : containers.rowMap().entrySet()) {
+      for (Map.Entry<String, Map<String, WeaveContainerController>> entry : containers.rowMap().entrySet()) {
         for (WeaveContainerController controller : entry.getValue().values()) {
           sendMessage(entry.getKey(), message, controller, count, completion);
         }
@@ -249,7 +246,7 @@ final class RunningContainers {
     }
   }
 
-  Set<ContainerId> getContainerIds() {
+  Set<String> getContainerIds() {
     containerLock.lock();
     try {
       return ImmutableSet.copyOf(containers.columnKeySet());
@@ -265,7 +262,7 @@ final class RunningContainers {
    */
   void handleCompleted(ContainerStatus status, Multiset<String> restartRunnables) {
     containerLock.lock();
-    ContainerId containerId = status.getContainerId();
+    String containerId = status.getContainerId().toString();
     int exitStatus = status.getExitStatus();
     ContainerState state = status.getState();
 
@@ -288,13 +285,15 @@ final class RunningContainers {
                    containerId, state, exitStatus);
           restartRunnables.add(lookup.keySet().iterator().next());
         }
+      } else {
+        LOG.info("Container {} exited normally with state {}", containerId, state);
       }
 
       for (Map.Entry<String, WeaveContainerController> completedEntry : lookup.entrySet()) {
         String runnableName = completedEntry.getKey();
         WeaveContainerController controller = completedEntry.getValue();
         controller.completed(exitStatus);
-        resourceReport.removeRunnableResources(runnableName, containerId.toString());
+        resourceReport.removeRunnableResources(runnableName, containerId);
       }
 
       lookup.clear();

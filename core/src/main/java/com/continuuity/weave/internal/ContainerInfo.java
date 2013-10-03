@@ -16,43 +16,19 @@
 package com.continuuity.weave.internal;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
 
 /**
-*
-*/
-public final class ContainerInfo {
-  private final String id;
-  private final InetAddress host;
-  private final int port;
-  private final int virtualCores;
-  private final int memoryMB;
+ *
+ */
+public interface ContainerInfo {
 
-  public ContainerInfo() throws UnknownHostException {
-    id = System.getenv(EnvKeys.YARN_CONTAINER_ID);
-    host = InetAddress.getByName(System.getenv(EnvKeys.YARN_CONTAINER_HOST));
-    port = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_PORT));
-    virtualCores = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES));
-    memoryMB = Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_MEMORY_MB));
-  }
+  String getId();
 
-  public String getId() {
-    return id;
-  }
+  InetAddress getHost();
 
-  public InetAddress getHost() {
-    return host;
-  }
+  int getPort();
 
-  public int getPort() {
-    return port;
-  }
+  int getMemoryMB();
 
-  public int getMemoryMB() {
-    return memoryMB;
-  }
-
-  public int getVirtualCores() {
-    return virtualCores;
-  }
+  int getVirtualCores();
 }

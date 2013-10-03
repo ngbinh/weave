@@ -13,21 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.yarn;
-
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.PrintWriter;
-
 /**
- * Test server that returns back the value of the env key sent in.  Used to check env for
- * runnables is correctly set.
+ * This package contains class for interacting with Yarn.
  */
-public class EnvironmentEchoServer extends SocketServer {
-
-  @Override
-  public void handleRequest(BufferedReader reader, PrintWriter writer) throws IOException {
-    String envKey = reader.readLine();
-    writer.println(System.getenv(envKey));
-  }
-}
+package com.continuuity.weave.internal.yarn;

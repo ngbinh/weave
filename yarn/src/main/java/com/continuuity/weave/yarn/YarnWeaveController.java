@@ -22,6 +22,7 @@ import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.internal.AbstractWeaveController;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.appmaster.ResourceReportClient;
+import com.continuuity.weave.internal.appmaster.TrackerService;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -30,6 +31,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang.time.StopWatch;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
+import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.apache.hadoop.yarn.client.YarnClient;
@@ -37,11 +39,8 @@ import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.ProtocolException;
+import java.net.URI;
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
@@ -82,7 +81,8 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
     // Poll the status of the yarn application
     try {
-      YarnApplicationState state = yarnClient.getApplicationReport(applicationId).getYarnApplicationState();
+      ApplicationReport report = yarnClient.getApplicationReport(applicationId);
+      YarnApplicationState state = report.getYarnApplicationState();
       StopWatch stopWatch = new StopWatch();
       stopWatch.start();
       stopWatch.split();
@@ -90,7 +90,8 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
       LOG.info("Checking yarn application status");
       while (!hasRun(state) && stopWatch.getSplitTime() < maxTime) {
-        state = yarnClient.getApplicationReport(applicationId).getYarnApplicationState();
+        report = yarnClient.getApplicationReport(applicationId);
+        state = report.getYarnApplicationState();
         LOG.debug("Yarn application status: {}", state);
         TimeUnit.SECONDS.sleep(1);
         stopWatch.split();
@@ -101,9 +102,13 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
                  Constants.APPLICATION_MAX_START_SECONDS);
         forceShutDown();
       } else {
-        String appMasterHost = yarnClient.getApplicationReport(applicationId).getHost();
-        int appMasterPort = yarnClient.getApplicationReport(applicationId).getRpcPort();
-        resourcesClient = new ResourceReportClient(appMasterHost, appMasterPort);
+        try {
+          URL resourceUrl = URI.create(String.format("http://%s:%d", report.getHost(), report.getRpcPort()))
+                               .resolve(TrackerService.PATH).toURL();
+          resourcesClient = new ResourceReportClient(resourceUrl);
+        } catch (IOException e) {
+          resourcesClient = null;
+        }
       }
     } catch (Exception e) {
       throw Throwables.propagate(e);

@@ -13,21 +13,25 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.yarn;
+package com.continuuity.weave.internal.yarn;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.PrintWriter;
+import com.continuuity.weave.internal.appmaster.TrackerService;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 
 /**
- * Test server that returns back the value of the env key sent in.  Used to check env for
- * runnables is correctly set.
+ *
  */
-public class EnvironmentEchoServer extends SocketServer {
+public final class VersionDetectYarnAMClientFactory implements YarnAMClientFactory {
+
+  private final Configuration conf;
+
+  public VersionDetectYarnAMClientFactory(Configuration conf) {
+    this.conf = conf;
+  }
 
   @Override
-  public void handleRequest(BufferedReader reader, PrintWriter writer) throws IOException {
-    String envKey = reader.readLine();
-    writer.println(System.getenv(envKey));
+  public YarnAMClient create(ApplicationAttemptId attemptId, TrackerService trackerService) {
+    return new Hadoop20YarnAMClient(conf, attemptId, trackerService);
   }
 }

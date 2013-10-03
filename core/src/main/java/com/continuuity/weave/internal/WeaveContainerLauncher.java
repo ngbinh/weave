@@ -33,34 +33,32 @@ public final class WeaveContainerLauncher {
 
   private final RuntimeSpecification runtimeSpec;
   private final RunId runId;
-  private final ProcessLauncher processLauncher;
+  private final ProcessLauncher.PrepareLaunchContext launchContext;
   private final ZKClient zkClient;
   private final int instanceId;
   private final int instanceCount;
 
-  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId, ProcessLauncher processLauncher,
+  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId,
+                                ProcessLauncher.PrepareLaunchContext launchContext,
                                 ZKClient zkClient, int instanceId, int instanceCount) {
     this.runtimeSpec = runtimeSpec;
     this.runId = runId;
-    this.processLauncher = processLauncher;
+    this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceId = instanceId;
     this.instanceCount = instanceCount;
   }
 
   public WeaveContainerController start(String stdout, String stderr) {
-    ProcessLauncher.PrepareLaunchContext.AfterUser afterUser = processLauncher.prepareLaunch()
-      .setUser(System.getProperty("user.name"));
-
     ProcessLauncher.PrepareLaunchContext.AfterResources afterResources = null;
     if (runtimeSpec.getLocalFiles().isEmpty()) {
-      afterResources = afterUser.noResources();
-    }
+      afterResources = launchContext.noResources();
+    } else {
+      ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = launchContext.withResources();
 
-    ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = afterUser.withResources();
-
-    for (LocalFile localFile : runtimeSpec.getLocalFiles()) {
-      afterResources = resourcesAdder.add(localFile);
+      for (LocalFile localFile : runtimeSpec.getLocalFiles()) {
+        afterResources = resourcesAdder.add(localFile);
+      }
     }
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
