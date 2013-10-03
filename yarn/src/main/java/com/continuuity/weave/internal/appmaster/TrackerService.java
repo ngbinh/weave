@@ -80,10 +80,10 @@ public final class TrackerService extends AbstractIdleService {
   }
 
   /**
-   * @return port the tracker service is bound to.
+   * Returns the address this tracker service is bounded to.
    */
-  public int getPort() {
-    return bindAddress.getPort();
+  public InetSocketAddress getBindAddress() {
+    return bindAddress;
   }
 
   /**

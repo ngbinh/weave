@@ -212,7 +212,7 @@ public final class ApplicationMasterService implements Service {
     amrmClient.start();
 
     RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster(
-      appMasterHost, trackerService.getPort(), trackerUrl.toString());
+      appMasterHost, trackerService.getBindAddress().getPort(), trackerUrl.toString());
     maxCapability = response.getMaximumResourceCapability();
     minCapability = response.getMinimumResourceCapability();
 
