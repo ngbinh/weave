@@ -15,8 +15,6 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
@@ -39,6 +37,7 @@ import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
+import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Networks;
@@ -89,7 +88,6 @@ import org.apache.hadoop.yarn.ipc.YarnRPC;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -183,8 +181,8 @@ public final class ApplicationMasterService implements Service {
     WeaveRunResources appMasterResources = new DefaultWeaveRunResources(
       0,
       appMasterContainerId.toString(),
-      Integer.parseInt(System.getenv(EnvKeys.WEAVE_VIRTUAL_CORES)),
-      Integer.parseInt(System.getenv(EnvKeys.WEAVE_MEMORY_MB)),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES)),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_MEMORY_MB)),
       appMasterHost);
     String appId = appMasterContainerId.getApplicationAttemptId().getApplicationId().toString();
     return new RunningContainers(appId, appMasterResources);
@@ -202,6 +200,8 @@ public final class ApplicationMasterService implements Service {
 
     instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
     yarnRPC = YarnRPC.create(yarnConf);
+
+    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
 
     LOG.info("Starting application master tracker server");
     trackerService.startAndWait();
@@ -227,7 +227,7 @@ public final class ApplicationMasterService implements Service {
 
     // Starts kafka server
     LOG.info("Starting kafka server");
-    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
+
     kafkaServer.startAndWait();
     LOG.info("Kafka server started");
 
@@ -257,18 +257,21 @@ public final class ApplicationMasterService implements Service {
     amrmClient.stop();
 
     LOG.info("Stopping application master tracker server");
-    trackerService.stopAndWait();
-    LOG.info("Stopped application master tracker server");
-
-    // App location cleanup
-    cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
-
-    // When logger context is stopped, stop the kafka server as well.
-    ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-    if (loggerFactory instanceof LoggerContext) {
-      ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
-    } else {
-      kafkaServer.stopAndWait();
+    try {
+      trackerService.stopAndWait();
+      LOG.info("Stopped application master tracker server");
+    } catch (Exception e) {
+      LOG.error("Failed to stop tracker service.", e);
+    } finally {
+      try {
+        // App location cleanup
+        cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+        Loggings.forceFlush();
+        // Sleep a short while to let kafka clients to have chance to fetch the log
+        TimeUnit.SECONDS.sleep(1);
+      } finally {
+        kafkaServer.stopAndWait();
+      }
     }
   }
 
@@ -301,26 +304,6 @@ public final class ApplicationMasterService implements Service {
     }
   }
 
-  private LoggerContextListener getLoggerStopListener() {
-    return new LoggerContextListenerAdapter(true) {
-      @Override
-      public void onStop(LoggerContext context) {
-        // Sleep a bit before stopping kafka to have chance for client to fetch the last log.
-        try {
-          TimeUnit.SECONDS.sleep(2);
-        } catch (InterruptedException e) {
-          // Ignored.
-        } finally {
-          try {
-            kafkaServer.stop().get(5, TimeUnit.SECONDS);
-          } catch (Exception e) {
-            // Cannot use logger here
-            e.printStackTrace(System.err);
-          }
-        }
-      }
-    };
-  }
 
   private void doRun() throws Exception {
     // The main loop
@@ -660,8 +643,7 @@ public final class ApplicationMasterService implements Service {
       LOG.info("Virtual cores limit not supported.");
     }
 
-    int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()),
-                          minCapability.getMemory());
+    int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()), minCapability.getMemory());
     capability.setMemory(memory);
 
     return capability;

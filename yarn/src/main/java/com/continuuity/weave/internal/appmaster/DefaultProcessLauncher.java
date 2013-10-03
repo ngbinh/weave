@@ -168,6 +168,9 @@ final class DefaultProcessLauncher implements ProcessLauncher {
         environment.put(EnvKeys.YARN_CONTAINER_ID, container.getId().toString());
         environment.put(EnvKeys.YARN_CONTAINER_HOST, container.getNodeId().getHost());
         environment.put(EnvKeys.YARN_CONTAINER_PORT, Integer.toString(container.getNodeId().getPort()));
+        environment.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(container.getResource().getMemory()));
+        environment.put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES,
+                        Integer.toString(YarnUtils.getVirtualCores(container.getResource())));
 
         launchContext.setEnvironment(environment);
         return new MoreCommandImpl();

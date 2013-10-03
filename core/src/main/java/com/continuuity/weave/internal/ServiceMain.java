@@ -15,15 +15,17 @@
  */
 package com.continuuity.weave.internal;
 
-import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.common.Services;
 import com.continuuity.weave.internal.logging.KafkaAppender;
+import com.continuuity.weave.zookeeper.ZKClientService;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.classic.util.ContextInitializer;
 import ch.qos.logback.core.joran.spi.JoranException;
 import com.google.common.base.Throwables;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
-import com.google.common.util.concurrent.SettableFuture;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,63 +42,38 @@ public abstract class ServiceMain {
 
   private static final Logger LOG = LoggerFactory.getLogger(ServiceMain.class);
 
-  protected final void doMain(final Service service) throws ExecutionException, InterruptedException {
+  protected final void doMain(final ZKClientService zkClientService,
+                              final Service service) throws ExecutionException, InterruptedException {
     configureLogger();
 
     final String serviceName = service.toString();
+    final ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
 
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {
-        if (service.isRunning()) {
-          LOG.info("Shutdown hook triggered. Shutting down service " + serviceName);
-          service.stopAndWait();
+        try {
+          Futures.getUnchecked(Services.chainStop(service, zkClientService));
+        } finally {
+          if (loggerFactory instanceof LoggerContext) {
+            ((LoggerContext) loggerFactory).stop();
+          }
         }
       }
     });
 
     // Listener for state changes of the service
-    final SettableFuture<Service.State> completion = SettableFuture.create();
-    service.addListener(new Service.Listener() {
-      @Override
-      public void starting() {
-        LOG.info("Starting service " + serviceName);
-      }
-
-      @Override
-      public void running() {
-        LOG.info("Service running " + serviceName);
-      }
-
-      @Override
-      public void stopping(Service.State from) {
-        LOG.info("Stopping service " + serviceName + " from " + from);
-      }
-
-      @Override
-      public void terminated(Service.State from) {
-        LOG.info("Service terminated " + serviceName + " from " + from);
-        completion.set(from);
-      }
-
-      @Override
-      public void failed(Service.State from, Throwable failure) {
-        LOG.info("Service failure " + serviceName, failure);
-        completion.setException(failure);
-      }
-    }, Threads.SAME_THREAD_EXECUTOR);
+    ListenableFuture<Service.State> completion = Services.getCompletionFuture(service);
 
     // Starts the service
-    service.start();
-
+    LOG.info("Starting service {}.", serviceName);
+    Futures.getUnchecked(Services.chainStart(zkClientService, service));
+    LOG.info("Service {} started.", serviceName);
     try {
-      // If container failed with exception, the future.get() will throws exception
       completion.get();
-    } finally {
-      ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-      if (loggerFactory instanceof LoggerContext) {
-        ((LoggerContext) loggerFactory).stop();
-      }
+      LOG.info("Service {} completed.", serviceName);
+    } catch (Throwable t) {
+      LOG.warn("Exception thrown from service {}.", serviceName, t);
     }
   }
 

@@ -61,6 +61,11 @@ public final class ZKClientServices {
     return new ForwardingZKClientService(clientService) {
 
       @Override
+      public Long getSessionId() {
+        return client.getSessionId();
+      }
+
+      @Override
       public String getConnectString() {
         return client.getConnectString();
       }

@@ -15,7 +15,6 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.Command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,23 +23,17 @@ import java.io.IOException;
 import java.io.PrintWriter;
 
 /**
- * Test server that echoes back what it receives.
+ * Server for testing that will die if you give it a 0.
  */
-public final class EchoServer extends SocketServer {
+public final class BuggyServer extends SocketServer {
 
-  private static final Logger LOG = LoggerFactory.getLogger(EchoServer.class);
+  private static final Logger LOG = LoggerFactory.getLogger(BuggyServer.class);
 
   @Override
   public void handleRequest(BufferedReader reader, PrintWriter writer) throws IOException {
     String line = reader.readLine();
-    LOG.info("Received: " + line);
-    if (line != null) {
-      writer.println(line);
-    }
-  }
-
-  @Override
-  public void handleCommand(Command command) throws Exception {
-    LOG.info("Command received: " + command + " " + getContext().getInstanceCount());
+    LOG.info("Received: " + line + " going to divide by it");
+    Integer toDivide = Integer.valueOf(line);
+    writer.println(Integer.toString(100 / toDivide));
   }
 }
