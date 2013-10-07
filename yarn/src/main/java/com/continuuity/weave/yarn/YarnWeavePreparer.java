@@ -38,6 +38,7 @@ import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.utils.Dependencies;
+import com.continuuity.weave.internal.utils.Paths;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -59,7 +60,6 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
-import com.google.common.io.Files;
 import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
@@ -344,7 +344,7 @@ final class YarnWeavePreparer implements WeavePreparer {
 
     LOG.debug("Populating Runnable LocalFiles");
     for (Map.Entry<String, RuntimeSpecification> entry: weaveSpec.getRunnables().entrySet()) {
-      String name = entry.getKey();
+      String runnableName = entry.getKey();
       for (LocalFile localFile : entry.getValue().getLocalFiles()) {
         Location location;
 
@@ -354,18 +354,15 @@ final class YarnWeavePreparer implements WeavePreparer {
           location = locationFactory.create(uri);
         } else {
           URL url = uri.toURL();
-          LOG.debug("Create and copy {} : {}", name, url);
+          LOG.debug("Create and copy {} : {}", runnableName, url);
           // Preserves original suffix for expansion.
-          String suffix = Files.getFileExtension(url.getFile());
-          if (!suffix.isEmpty()) {
-            suffix = '.' + suffix;
-          }
-          location = copyFromURL(url, createTempLocation(localFile.getName() + suffix));
-          LOG.debug("Done {} : {}", name, url);
+          location = copyFromURL(url, createTempLocation(Paths.appendSuffix(url.getFile(), localFile.getName())));
+          LOG.debug("Done {} : {}", runnableName, url);
         }
 
-        localFiles.put(name, new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
-                                                  location.length(), localFile.isArchive(), localFile.getPattern()));
+        localFiles.put(runnableName,
+                       new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
+                                            location.length(), localFile.isArchive(), localFile.getPattern()));
       }
     }
     LOG.debug("Done Runnable LocalFiles");

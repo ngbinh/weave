@@ -40,10 +40,11 @@ import java.util.concurrent.TimeUnit;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-                      EchoServerTestRun.class,
-                      ResourceReportTestRun.class,
-                      TaskCompletedTestRun.class,
-                      DistributeShellTestRun.class
+//                      EchoServerTestRun.class,
+//                      ResourceReportTestRun.class,
+//                      TaskCompletedTestRun.class,
+//                      DistributeShellTestRun.class
+                      LocalFileTestRun.class
                     })
 public class YarnTestSuite {
   private static final Logger LOG = LoggerFactory.getLogger(YarnTestSuite.class);

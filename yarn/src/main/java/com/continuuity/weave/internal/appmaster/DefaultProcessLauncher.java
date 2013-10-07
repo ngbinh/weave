@@ -20,6 +20,7 @@ import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
+import com.continuuity.weave.internal.utils.Paths;
 import com.continuuity.weave.internal.yarn.YarnNMClient;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Objects;
@@ -100,7 +101,10 @@ public final class DefaultProcessLauncher implements ProcessLauncher {
       String name = localFile.getName();
       if (localFile.isArchive()) {
         String path = localFile.getURI().toString();
-        name += path.endsWith(".tar.gz") ? ".tar.gz" : path.substring(path.lastIndexOf('.'));
+        String suffix = Paths.getExtension(path);
+        if (!suffix.isEmpty()) {
+          name += '.' + suffix;
+        }
       }
       localResources.put(name, YarnUtils.createLocalResource(localFile));
     }
