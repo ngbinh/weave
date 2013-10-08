@@ -27,6 +27,7 @@ import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
@@ -42,7 +43,6 @@ import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.YarnAMClient;
 import com.continuuity.weave.internal.yarn.YarnAMClientFactory;
-import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
@@ -76,8 +76,6 @@ import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
-import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
 import org.slf4j.Logger;
@@ -115,7 +113,6 @@ public final class ApplicationMasterService implements Service {
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
   private final Map<String, Integer> instanceCounts;
-  private final String appMasterHost;
   private final TrackerService trackerService;
   private final YarnAMClient amClient;
 
@@ -123,33 +120,22 @@ public final class ApplicationMasterService implements Service {
   private Queue<RunnableContainerRequest> runnableContainerRequests;
   private ExecutorService instanceChangeExecutor;
 
-
-
   public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile, Configuration conf,
-                                  YarnAMClientFactory amClientFactory) throws IOException {
+                                  YarnAMClientFactory amClientFactory) throws Exception {
     this.runId = runId;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
     this.conf = conf;
     this.zkClient = zkClient;
-
-    // Get the container ID and convert it to ApplicationAttemptId
-    String masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
-    Preconditions.checkArgument(masterContainerId != null,
-                                "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
-    ContainerId appMasterContainerId = ConverterUtils.toContainerId(masterContainerId);
+    this.amClient = amClientFactory.create();
 
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
-                                                   masterContainerId);
+                                                   amClient.getContainerId().toString());
 
     serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
-    appMasterHost = System.getenv().get(ApplicationConstants.NM_HOST_ENV);
-
-    runningContainers = initRunningContainers(appMasterContainerId, appMasterHost);
-    trackerService = new TrackerService(runningContainers.getResourceReport(), appMasterHost);
-
-    amClient = amClientFactory.create(appMasterContainerId.getApplicationAttemptId(), trackerService);
+    runningContainers = initRunningContainers(amClient.getContainerId(), amClient.getHost());
+    trackerService = new TrackerService(runningContainers.getResourceReport(), amClient.getHost());
   }
 
   private Supplier<? extends JsonElement> createLiveNodeDataSupplier() {
@@ -162,7 +148,7 @@ public final class ApplicationMasterService implements Service {
   }
 
   private RunningContainers initRunningContainers(ContainerId appMasterContainerId,
-                                                  String appMasterHost) throws YarnRemoteException {
+                                                  String appMasterHost) throws Exception {
     WeaveRunResources appMasterResources = new DefaultWeaveRunResources(
       0,
       appMasterContainerId.toString(),
@@ -188,11 +174,13 @@ public final class ApplicationMasterService implements Service {
 
     kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
 
+    // Must start tracker before start AMClient
     LOG.info("Starting application master tracker server");
     trackerService.startAndWait();
     URL trackerUrl = trackerService.getUrl();
     LOG.info("Started application master tracker server on " + trackerUrl);
 
+    amClient.setTracker(trackerService.getBindAddress(), trackerUrl);
     amClient.startAndWait();
 
     // Creates ZK path for runnable and kafka logging service
@@ -221,7 +209,7 @@ public final class ApplicationMasterService implements Service {
     final Set<String> ids = Sets.newHashSet(runningContainers.getContainerIds());
     YarnAMClient.AllocateHandler handler = new YarnAMClient.AllocateHandler() {
       @Override
-      public void acquired(List<ProcessLauncher> launchers) {
+      public void acquired(List<ProcessLauncher<ContainerInfo>> launchers) {
         // no-op
       }
 
@@ -300,7 +288,7 @@ public final class ApplicationMasterService implements Service {
     int requestFailCount = 0;
     YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
       @Override
-      public void acquired(List<ProcessLauncher> launchers) {
+      public void acquired(List<ProcessLauncher<ContainerInfo>> launchers) {
         launchRunnable(launchers, provisioning);
       }
 
@@ -383,7 +371,7 @@ public final class ApplicationMasterService implements Service {
   }
 
   /**
-   * Adds {@link AMRMClient.ContainerRequest}s with the given resource capability for each runtime.
+   * Adds container requests with the given resource capability for each runtime.
    */
   private boolean addContainerRequests(Resource capability,
                                        Collection<RuntimeSpecification> runtimeSpecs,
@@ -402,8 +390,8 @@ public final class ApplicationMasterService implements Service {
   /**
    * Launches runnables in the provisioned containers.
    */
-  private void launchRunnable(List<ProcessLauncher> launchers, Queue<ProvisionRequest> provisioning) {
-    for (ProcessLauncher processLauncher : launchers) {
+  private void launchRunnable(List<ProcessLauncher<ContainerInfo>> launchers, Queue<ProvisionRequest> provisioning) {
+    for (ProcessLauncher<ContainerInfo> processLauncher : launchers) {
       ProvisionRequest provisionRequest = provisioning.peek();
       if (provisionRequest == null) {
         continue;

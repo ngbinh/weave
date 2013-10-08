@@ -29,9 +29,13 @@ import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocationFactory;
+import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.SingleRunnableApplication;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterLiveNodeData;
+import com.continuuity.weave.internal.yarn.VersionDetectYarnAppClientFactory;
+import com.continuuity.weave.internal.yarn.YarnAppClient;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.RetryStrategies;
@@ -55,6 +59,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Table;
 import com.google.common.util.concurrent.AbstractIdleService;
+import com.google.common.util.concurrent.Callables;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.gson.Gson;
@@ -62,10 +67,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.client.YarnClient;
-import org.apache.hadoop.yarn.client.YarnClientImpl;
+import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
@@ -75,6 +78,7 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -93,7 +97,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     }
   };
 
-  private final YarnClient yarnClient;
+  private final YarnAppClient yarnAppClient;
   private final ZKClientService zkClientService;
   private final LocationFactory locationFactory;
 
@@ -106,8 +110,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   public YarnWeaveRunnerService(YarnConfiguration config, String zkConnect, LocationFactory locationFactory) {
+    this.yarnAppClient = new VersionDetectYarnAppClientFactory().create(config);
     this.locationFactory = locationFactory;
-    this.yarnClient = getYarnClient(config);
     this.zkClientService = getZKClientService(zkConnect);
     this.controllers = HashBasedTable.create();
   }
@@ -128,14 +132,14 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     final WeaveSpecification weaveSpec = application.configure();
     final String appName = weaveSpec.getName();
 
-    return new YarnWeavePreparer(weaveSpec, yarnClient, zkClientService, locationFactory,
+    return new YarnWeavePreparer(weaveSpec, yarnAppClient, zkClientService, locationFactory,
                                  new YarnWeaveControllerFactory() {
       @Override
       public YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,
-                                        ApplicationId appId, Runnable startUp) {
+                                        Callable<ProcessController<ApplicationReport>> startUp) {
         ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + appName);
-        YarnWeaveController controller = listenController(new YarnWeaveController(runId, zkClient, logHandlers,
-                                                                                  yarnClient, appId, startUp));
+        YarnWeaveController controller = listenController(new YarnWeaveController(runId, zkClient,
+                                                                                  logHandlers, startUp));
         synchronized (YarnWeaveRunnerService.this) {
           Preconditions.checkArgument(!controllers.contains(appName, runId),
                                       "Application %s with runId %s is already running.", appName, runId);
@@ -170,7 +174,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
   @Override
   protected void startUp() throws Exception {
-    yarnClient.start();
+    yarnAppClient.startAndWait();
     zkClientService.startAndWait();
 
     // Create the root node, so that the namespace root would get created if it is missing
@@ -190,7 +194,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     // daemon threads.
     watchCancellable.cancel();
     zkClientService.stopAndWait();
-    yarnClient.stop();
+    yarnAppClient.stopAndWait();
   }
 
   private Cancellable watchLiveApps() {
@@ -223,7 +227,10 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
                 return;
               }
               if (nodeChildren.getChildren().isEmpty()) {     // No more child, means no live instances
-                watched.remove(appName).cancel();
+                Cancellable removed = watched.remove(appName);
+                if (removed != null) {
+                  removed.cancel();
+                }
                 return;
               }
               synchronized (YarnWeaveRunnerService.this) {
@@ -294,12 +301,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
                                    .build(), RetryStrategies.exponentialDelay(100, 2000, TimeUnit.MILLISECONDS))));
   }
 
-  private YarnClient getYarnClient(YarnConfiguration config) {
-    YarnClient client = new YarnClientImpl();
-    client.init(config);
-    return client;
-  }
-
   private Iterable<LiveInfo> createLiveInfos() {
     return new Iterable<LiveInfo>() {
 
@@ -345,8 +346,9 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
         synchronized (YarnWeaveRunnerService.this) {
           if (!controllers.contains(appName, runId)) {
             ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + appName);
-            YarnWeaveController controller = listenController(new YarnWeaveController(runId, zkClient,
-                                                                                      yarnClient, appId));
+            YarnWeaveController controller = listenController(
+              new YarnWeaveController(runId, zkClient,
+                                      Callables.returning(yarnAppClient.createProcessController(appId))));
             controllers.put(appName, runId, controller);
             controller.start();
           }
@@ -359,6 +361,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       }
     }, Threads.SAME_THREAD_EXECUTOR);
   }
+
 
   /**
    * Decodes application ID stored inside the node data.
@@ -387,11 +390,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
     try {
       ApplicationMasterLiveNodeData amLiveNode = gson.fromJson(json, ApplicationMasterLiveNodeData.class);
-      ApplicationId appId = Records.newRecord(ApplicationId.class);
-      appId.setId(amLiveNode.getAppId());
-      appId.setClusterTimestamp(amLiveNode.getAppIdClusterTime());
-
-      return appId;
+      return YarnUtils.createApplicationId(amLiveNode.getAppIdClusterTime(), amLiveNode.getAppId());
     } catch (Exception e) {
       LOG.warn("Failed to decode application live node data.", e);
       return null;

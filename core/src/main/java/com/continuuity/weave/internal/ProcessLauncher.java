@@ -17,30 +17,24 @@ package com.continuuity.weave.internal;
 
 import com.continuuity.weave.api.LocalFile;
 
-import java.util.List;
 import java.util.Map;
 
 /**
  * Class for launching container process.
+ *
+ * @param <T> Type of the object that contains information about the container that the process is going to launch.
  */
-public interface ProcessLauncher {
+public interface ProcessLauncher<T> {
 
   /**
    * Returns information about the container that this launch would launch process in.
    */
-  ContainerInfo getContainerInfo();
+  T getContainerInfo();
 
   /**
    * Returns a preparer with the given default set of environments and resources.
    */
-  PrepareLaunchContext prepareLaunch(Map<String, String> environments, List<LocalFile> resources);
-
-  /**
-   * For controlling a launch yarn process.
-   */
-  interface ProcessController {
-    void kill();
-  }
+  PrepareLaunchContext prepareLaunch(Map<String, String> environments, Iterable<LocalFile> resources);
 
   /**
    * For setting up the launcher.
@@ -91,7 +85,7 @@ public interface ProcessLauncher {
     }
 
     interface MoreCommand extends CommandAdder {
-      ProcessController launch();
+      <R> ProcessController<R> launch();
     }
   }
 }

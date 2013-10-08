@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal.yarn;
 
+import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.Service;
@@ -24,6 +25,8 @@ import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
 
+import java.net.InetSocketAddress;
+import java.net.URL;
 import java.util.Collections;
 import java.util.List;
 
@@ -33,6 +36,9 @@ import java.util.List;
  */
 public interface YarnAMClient extends Service {
 
+  /**
+   * Builder for creating a container request.
+   */
   abstract class ContainerRequestBuilder {
 
     protected final Resource capability;
@@ -68,12 +74,21 @@ public interface YarnAMClient extends Service {
     }
   }
 
+  ContainerId getContainerId();
+
+  String getHost();
+
+  /**
+   * Sets the tracker address and tracker url. This method should be called before calling {@link #start()}.
+   */
+  void setTracker(InetSocketAddress trackerAddr, URL trackerUrl);
+
   /**
    * Callback for allocate call.
    */
   // TODO: Move AM heartbeat logic into this interface so AM only needs to handle callback.
   interface AllocateHandler {
-    void acquired(List<ProcessLauncher> launchers);
+    void acquired(List<ProcessLauncher<ContainerInfo>> launchers);
 
     void completed(List<ContainerStatus> completed);
   }

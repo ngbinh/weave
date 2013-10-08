@@ -13,15 +13,17 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.yarn;
+package com.continuuity.weave.internal.appmaster;
 
-import com.continuuity.weave.internal.appmaster.TrackerService;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import com.continuuity.weave.internal.ProcessController;
+import org.apache.hadoop.yarn.api.records.ApplicationReport;
+import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
+import org.apache.hadoop.yarn.api.records.Resource;
 
 /**
- *
+ * Interface for submitting a new application to run.
  */
-public interface YarnAMClientFactory {
+public interface ApplicationSubmitter {
 
-  YarnAMClient create();
+  ProcessController<ApplicationReport> submit(ContainerLaunchContext launchContext, Resource capability);
 }

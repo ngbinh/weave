@@ -15,13 +15,12 @@
  */
 package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.internal.appmaster.TrackerService;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import org.apache.hadoop.conf.Configuration;
 
 /**
  *
  */
-public interface YarnAMClientFactory {
+public interface YarnAppClientFactory {
 
-  YarnAMClient create();
+  YarnAppClient create(Configuration configuration);
 }

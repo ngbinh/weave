@@ -13,15 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.yarn;
-
-import com.continuuity.weave.internal.appmaster.TrackerService;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
-
 /**
- *
+ * This package contains classes for Weave to interact with Hadoop-2.0 library.
  */
-public interface YarnAMClientFactory {
-
-  YarnAMClient create();
-}
+package com.continuuity.weave.internal.yarn;

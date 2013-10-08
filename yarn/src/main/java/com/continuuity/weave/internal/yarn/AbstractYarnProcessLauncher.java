@@ -1,84 +1,60 @@
 /*
- * Copyright 2012-2013 Continuuity,Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not
- * use this file except in compliance with the License. You may obtain a copy of
- * the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License.
+ * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
  */
-package com.continuuity.weave.internal.appmaster;
+package com.continuuity.weave.internal.yarn;
 
 import com.continuuity.weave.api.LocalFile;
-import com.continuuity.weave.common.Cancellable;
-import com.continuuity.weave.internal.ContainerInfo;
-import com.continuuity.weave.internal.EnvKeys;
+import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.utils.Paths;
-import com.continuuity.weave.internal.yarn.YarnNMClient;
 import com.continuuity.weave.yarn.utils.YarnUtils;
-import com.google.common.base.Objects;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.util.Records;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
 
 /**
+ * Abstract class to help creating different types of process launcher that process on yarn.
  *
+ * @param <T> Type of the object that contains information about the container that the process is going to launch.
  */
-public final class DefaultProcessLauncher implements ProcessLauncher {
+public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<T> {
 
-  private static final Logger LOG = LoggerFactory.getLogger(DefaultProcessLauncher.class);
+  private final T containerInfo;
 
-  private final Container container;
-  private final YarnNMClient nmClient;
-  private final ContainerInfo containerInfo;
-  private boolean launched;
-
-  public DefaultProcessLauncher(Container container, YarnNMClient nmClient) {
-    this.container = container;
-    this.nmClient = nmClient;
-    this.containerInfo = new YarnContainerInfo(container);
+  protected AbstractYarnProcessLauncher(T containerInfo) {
+    this.containerInfo = containerInfo;
   }
 
   @Override
-  public String toString() {
-    return Objects.toStringHelper(ProcessLauncher.class)
-      .add("container", container)
-      .toString();
-  }
-
-  @Override
-  public ContainerInfo getContainerInfo() {
+  public T getContainerInfo() {
     return containerInfo;
   }
 
   @Override
-  public PrepareLaunchContext prepareLaunch(Map<String, String> environment, List<LocalFile> localFiles) {
-    return new PrepareLaunchContextImpl(environment, localFiles);
+  public PrepareLaunchContext prepareLaunch(Map<String, String> environments, Iterable<LocalFile> resources) {
+    return new PrepareLaunchContextImpl(environments, resources);
   }
 
-  public boolean isLaunched() {
-    return launched;
+  /**
+   * Tells whether to append suffix to localize resource name for archive file type. Default is true.
+   */
+  protected boolean useArchiveSuffix() {
+    return true;
   }
 
-  public Container getContainer() {
-    return container;
-  }
+  /**
+   * For children class to override to perform actual process launching.
+   */
+  protected abstract <R> ProcessController<R> doLaunch(ContainerLaunchContext launchContext);
 
+  /**
+   * Implementation for the {@link PrepareLaunchContext}.
+   */
   private final class PrepareLaunchContextImpl implements PrepareLaunchContext {
 
     private final ContainerLaunchContext launchContext;
@@ -86,7 +62,7 @@ public final class DefaultProcessLauncher implements ProcessLauncher {
     private final Map<String, String> environment;
     private final List<String> commands;
 
-    PrepareLaunchContextImpl(Map<String, String> env, List<LocalFile> localFiles) {
+    private PrepareLaunchContextImpl(Map<String, String> env, Iterable<LocalFile> localFiles) {
       this.launchContext = Records.newRecord(ContainerLaunchContext.class);
       this.localResources = Maps.newHashMap();
       this.environment = Maps.newHashMap(env);
@@ -97,9 +73,11 @@ public final class DefaultProcessLauncher implements ProcessLauncher {
       }
     }
 
-    void addLocalFile(LocalFile localFile) {
+    private void addLocalFile(LocalFile localFile) {
       String name = localFile.getName();
-      if (localFile.isArchive()) {
+      // Always append the file extension as the resource name so that archive expansion by Yarn could work.
+      // Renaming would happen by the Container Launcher.
+      if (localFile.isArchive() && useArchiveSuffix()) {
         String path = localFile.getURI().toString();
         String suffix = Paths.getExtension(path);
         if (!suffix.isEmpty()) {
@@ -147,14 +125,6 @@ public final class DefaultProcessLauncher implements ProcessLauncher {
 
       @Override
       public CommandAdder withCommands() {
-        // Defaulting extra environments
-        environment.put(EnvKeys.YARN_CONTAINER_ID, container.getId().toString());
-        environment.put(EnvKeys.YARN_CONTAINER_HOST, container.getNodeId().getHost());
-        environment.put(EnvKeys.YARN_CONTAINER_PORT, Integer.toString(container.getNodeId().getPort()));
-        environment.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(container.getResource().getMemory()));
-        environment.put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES,
-                        Integer.toString(YarnUtils.getVirtualCores(container.getResource())));
-
         launchContext.setEnvironment(environment);
         return new MoreCommandImpl();
       }
@@ -180,19 +150,9 @@ public final class DefaultProcessLauncher implements ProcessLauncher {
       }
 
       @Override
-      public ProcessController launch() {
-        LOG.info("Launching in container {}, {}", container.getId(), commands);
+      public <R> ProcessController<R> launch() {
         launchContext.setCommands(commands);
-
-        final Cancellable cancellable = nmClient.start(container, launchContext);
-        launched = true;
-
-        return new ProcessController() {
-          @Override
-          public void kill() {
-            cancellable.cancel();
-          }
-        };
+        return doLaunch(launchContext);
       }
 
       @Override

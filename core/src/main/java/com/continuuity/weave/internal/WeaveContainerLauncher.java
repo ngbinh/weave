@@ -63,23 +63,24 @@ public final class WeaveContainerLauncher {
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
 
-    final ProcessLauncher.ProcessController processController = afterResources
+    // Currently no reporting is supported for runnable containers
+    ProcessController<Void> processController = afterResources
       .withEnvironment()
-        .add(EnvKeys.WEAVE_RUN_ID, runId.getId())
-        .add(EnvKeys.WEAVE_RUNNABLE_NAME, runtimeSpec.getName())
-        .add(EnvKeys.WEAVE_INSTANCE_ID, Integer.toString(instanceId))
-        .add(EnvKeys.WEAVE_INSTANCE_COUNT, Integer.toString(instanceCount))
+      .add(EnvKeys.WEAVE_RUN_ID, runId.getId())
+      .add(EnvKeys.WEAVE_RUNNABLE_NAME, runtimeSpec.getName())
+      .add(EnvKeys.WEAVE_INSTANCE_ID, Integer.toString(instanceId))
+      .add(EnvKeys.WEAVE_INSTANCE_COUNT, Integer.toString(instanceCount))
       .withCommands()
-        .add("java",
-             ImmutableList.<String>builder()
-               .add("-Djava.io.tmpdir=tmp")
-               .add("-cp").add(Constants.Files.LAUNCHER_JAR)
-               .add("-Xmx" + memory + "m")
-               .add(WeaveLauncher.class.getName())
-               .add(Constants.Files.CONTAINER_JAR)
-               .add(WeaveContainerMain.class.getName())
-               .add(Boolean.TRUE.toString())
-               .build().toArray(new String[0]))
+      .add("java",
+           ImmutableList.<String>builder()
+             .add("-Djava.io.tmpdir=tmp")
+             .add("-cp").add(Constants.Files.LAUNCHER_JAR)
+             .add("-Xmx" + memory + "m")
+             .add(WeaveLauncher.class.getName())
+             .add(Constants.Files.CONTAINER_JAR)
+             .add(WeaveContainerMain.class.getName())
+             .add(Boolean.TRUE.toString())
+             .build().toArray(new String[0]))
       .redirectOutput(stdout).redirectError(stderr)
       .launch();
 
@@ -91,10 +92,10 @@ public final class WeaveContainerLauncher {
   private static final class WeaveContainerControllerImpl extends AbstractZKServiceController
                                                           implements WeaveContainerController {
 
-    private final ProcessLauncher.ProcessController processController;
+    private final ProcessController<Void> processController;
 
     protected WeaveContainerControllerImpl(ZKClient zkClient, RunId runId,
-                                           ProcessLauncher.ProcessController processController) {
+                                           ProcessController<Void> processController) {
       super(runId, zkClient);
       this.processController = processController;
     }
@@ -134,7 +135,7 @@ public final class WeaveContainerLauncher {
 
     @Override
     public void kill() {
-      processController.kill();
+      processController.cancel();
     }
   }
 }

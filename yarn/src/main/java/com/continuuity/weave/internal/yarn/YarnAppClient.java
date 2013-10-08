@@ -13,20 +13,24 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.yarn;
+package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.api.RunId;
-import com.continuuity.weave.api.logging.LogHandler;
+import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.internal.ProcessController;
+import com.continuuity.weave.internal.ProcessLauncher;
+import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 
-import java.util.concurrent.Callable;
-
 /**
- * Factory for creating {@link YarnWeaveController}.
+ * Interface for launching Yarn application from client.
  */
-interface YarnWeaveControllerFactory {
+public interface YarnAppClient extends Service {
 
-  YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,
-                             Callable<ProcessController<ApplicationReport>> startUp);
+  /**
+   * Creates a {@link ProcessLauncher} for launching the application represented by the given spec.
+   */
+  ProcessLauncher<ApplicationId> createLauncher(WeaveSpecification weaveSpec) throws Exception;
+
+  ProcessController<ApplicationReport> createProcessController(ApplicationId appId);
 }

@@ -21,6 +21,7 @@ import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.internal.AbstractWeaveController;
 import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.appmaster.ResourceReportClient;
 import com.continuuity.weave.internal.appmaster.TrackerService;
 import com.continuuity.weave.internal.state.StateNode;
@@ -30,18 +31,16 @@ import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang.time.StopWatch;
-import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
-import org.apache.hadoop.yarn.client.YarnClient;
-import org.apache.hadoop.yarn.exceptions.YarnRemoteException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -51,37 +50,34 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeaveController.class);
 
-  private final YarnClient yarnClient;
-  private final ApplicationId applicationId;
-  private final Runnable startUp;
+  private final Callable<ProcessController<ApplicationReport>> startUp;
+  private ProcessController<ApplicationReport> processController;
   private ResourceReportClient resourcesClient;
 
-  YarnWeaveController(RunId runId, ZKClient zkClient, YarnClient yarnClient, ApplicationId appId) {
-    this(runId, zkClient, ImmutableList.<LogHandler>of(), yarnClient, appId, new Runnable() {
-      @Override
-      public void run() {
-        // No-op
-      }
-    });
+  /**
+   * Creates an instance without any {@link LogHandler}.
+   */
+  YarnWeaveController(RunId runId, ZKClient zkClient, Callable<ProcessController<ApplicationReport>> startUp) {
+    this(runId, zkClient, ImmutableList.<LogHandler>of(), startUp);
   }
 
-
-  YarnWeaveController(RunId runId, ZKClient zkClient, Iterable<LogHandler> logHandlers,
-                      YarnClient yarnClient, ApplicationId appId, Runnable startUp) {
+  YarnWeaveController(RunId runId, ZKClient zkClient, Iterable <LogHandler> logHandlers,
+                      Callable<ProcessController<ApplicationReport>> startUp) {
     super(runId, zkClient, logHandlers);
-    this.yarnClient = yarnClient;
-    this.applicationId = appId;
     this.startUp = startUp;
   }
 
   @Override
   protected void doStartUp() {
     super.doStartUp();
-    startUp.run();
 
-    // Poll the status of the yarn application
+    // Submit and poll the status of the yarn application
     try {
-      ApplicationReport report = yarnClient.getApplicationReport(applicationId);
+      processController = startUp.call();
+
+      ApplicationReport report = processController.getReport();
+      LOG.debug("Application {} submit", report.getApplicationId());
+
       YarnApplicationState state = report.getYarnApplicationState();
       StopWatch stopWatch = new StopWatch();
       stopWatch.start();
@@ -90,7 +86,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
       LOG.info("Checking yarn application status");
       while (!hasRun(state) && stopWatch.getSplitTime() < maxTime) {
-        report = yarnClient.getApplicationReport(applicationId);
+        report = processController.getReport();
         state = report.getYarnApplicationState();
         LOG.debug("Yarn application status: {}", state);
         TimeUnit.SECONDS.sleep(1);
@@ -117,6 +113,11 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   @Override
   protected void doShutDown() {
+    if (processController == null) {
+      LOG.warn("No process controller for application that is not submitted.");
+      return;
+    }
+
     // Wait for the stop message being processed
     try {
       Uninterruptibles.getUninterruptibly(getStopMessageFuture(),
@@ -134,13 +135,13 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
       stopWatch.split();
       long maxTime = TimeUnit.MILLISECONDS.convert(Constants.APPLICATION_MAX_STOP_SECONDS, TimeUnit.SECONDS);
 
-      LOG.info("Fetching yarn application report for {}", applicationId);
-      FinalApplicationStatus finalStatus = yarnClient.getApplicationReport(applicationId).getFinalApplicationStatus();
+      ApplicationReport report = processController.getReport();
+      FinalApplicationStatus finalStatus = report.getFinalApplicationStatus();
       while (finalStatus == FinalApplicationStatus.UNDEFINED && stopWatch.getSplitTime() < maxTime) {
-        LOG.debug("Yarn application final status for {} {}", applicationId, finalStatus);
+        LOG.debug("Yarn application final status for {} {}", report.getApplicationId(), finalStatus);
         TimeUnit.SECONDS.sleep(1);
         stopWatch.split();
-        finalStatus = yarnClient.getApplicationReport(applicationId).getFinalApplicationStatus();
+        finalStatus = processController.getReport().getFinalApplicationStatus();
       }
       LOG.debug("Yarn application final status is {}", finalStatus);
 
@@ -158,11 +159,12 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   @Override
   public void kill() {
-    try {
-      LOG.info("Killing application {}", applicationId);
-      yarnClient.killApplication(applicationId);
-    } catch (YarnRemoteException e) {
-      throw Throwables.propagate(e);
+    if (processController != null) {
+      ApplicationReport report = processController.getReport();
+      LOG.info("Killing application {}", report.getApplicationId());
+      processController.cancel();
+    } else {
+      LOG.warn("No process controller for application that is not submitted.");
     }
   }
 

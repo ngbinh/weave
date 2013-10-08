@@ -19,6 +19,7 @@ import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.filesystem.Location;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
+import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
@@ -86,6 +87,33 @@ public class YarnUtils {
       return false;
     }
     return true;
+  }
+
+
+  /**
+   * Creates {@link ApplicationId} from the given cluster timestamp and id.
+   */
+  public static ApplicationId createApplicationId(long timestamp, int id) {
+    try {
+      try {
+        // For Hadoop-2.1
+        Method method = ApplicationId.class.getMethod("newInstance", long.class, int.class);
+        return (ApplicationId) method.invoke(null, timestamp, id);
+      } catch (NoSuchMethodException e) {
+        // Try with Hadoop-2.0 way
+        ApplicationId appId = Records.newRecord(ApplicationId.class);
+
+        Method setClusterTimestamp = ApplicationId.class.getMethod("setClusterTimestamp", long.class);
+        Method setId = ApplicationId.class.getMethod("setId", int.class);
+
+        setClusterTimestamp.invoke(appId, timestamp);
+        setId.invoke(appId, id);
+
+        return appId;
+      }
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
   }
 
 

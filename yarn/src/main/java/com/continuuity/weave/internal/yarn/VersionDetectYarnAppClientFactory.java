@@ -21,30 +21,24 @@ import org.apache.hadoop.conf.Configuration;
 /**
  *
  */
-public final class VersionDetectYarnAMClientFactory implements YarnAMClientFactory {
-
-  private final Configuration conf;
-
-  public VersionDetectYarnAMClientFactory(Configuration conf) {
-    this.conf = conf;
-  }
+public final class VersionDetectYarnAppClientFactory implements YarnAppClientFactory {
 
   @Override
   @SuppressWarnings("unchecked")
-  public YarnAMClient create() {
+  public YarnAppClient create(Configuration configuration) {
     try {
-      Class<YarnAMClient> clz;
+      Class<YarnAppClient> clz;
       try {
-        // Try to find hadoop-2.0 class
-        String clzName = getClass().getPackage().getName() + ".Hadoop20YarnAMClient";
-        clz = (Class<YarnAMClient>) Class.forName(clzName);
+        // Try to find the hadoop-2.0 class.
+        String clzName = getClass().getPackage().getName() + ".Hadoop20YarnAppClient";
+        clz = (Class<YarnAppClient>) Class.forName(clzName);
       } catch (ClassNotFoundException e) {
         // Try to find hadoop-2.1 class
-        String clzName = getClass().getPackage().getName() + ".Hadoop21YarnAMClient";
-        clz = (Class<YarnAMClient>) Class.forName(clzName);
+        String clzName = getClass().getPackage().getName() + ".Hadoop21YarnAppClient";
+        clz = (Class<YarnAppClient>) Class.forName(clzName);
       }
 
-      return clz.getConstructor(Configuration.class).newInstance(conf);
+      return clz.getConstructor(Configuration.class).newInstance(configuration);
 
     } catch (Exception e) {
       throw Throwables.propagate(e);

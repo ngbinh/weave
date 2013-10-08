@@ -40,10 +40,10 @@ import java.util.concurrent.TimeUnit;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-//                      EchoServerTestRun.class,
-//                      ResourceReportTestRun.class,
-//                      TaskCompletedTestRun.class,
-//                      DistributeShellTestRun.class
+                      EchoServerTestRun.class,
+                      ResourceReportTestRun.class,
+                      TaskCompletedTestRun.class,
+                      DistributeShellTestRun.class,
                       LocalFileTestRun.class
                     })
 public class YarnTestSuite {
@@ -67,8 +67,12 @@ public class YarnTestSuite {
     config = new YarnConfiguration(new Configuration());
 
     // Use the FIFO scheduler for testing.
-    config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
-      ".fifo.FifoScheduler");
+//    config.set("yarn.resourcemanager.scheduler.class",
+//               "org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler");
+    config.set("yarn.resourcemanager.scheduler.class",
+               "org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler");
+    config.set("yarn.scheduler.capacity.resource-calculator",
+               "org.apache.hadoop.yarn.util.resource.DominantResourceCalculator");
     config.set("yarn.minicluster.fixed.ports", "true");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
     config.set("yarn.scheduler.minimum-allocation-mb", "128");

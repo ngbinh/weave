@@ -18,7 +18,7 @@ package com.continuuity.weave.internal;
 import java.net.InetAddress;
 
 /**
- *
+ * Represents information of the container that the processing is/will be running in.
  */
 public interface ContainerInfo {
 

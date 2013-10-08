@@ -13,15 +13,21 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.yarn;
+package com.continuuity.weave.internal;
 
-import com.continuuity.weave.internal.appmaster.TrackerService;
-import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
+import com.continuuity.weave.common.Cancellable;
 
 /**
+ * For controlling a launch yarn process.
  *
+ * @param <R> Report type.
  */
-public interface YarnAMClientFactory {
+public interface ProcessController<R> extends Cancellable {
 
-  YarnAMClient create();
+  R getReport();
+
+  /**
+   * Request to stop the running process.
+   */
+  void cancel();
 }
