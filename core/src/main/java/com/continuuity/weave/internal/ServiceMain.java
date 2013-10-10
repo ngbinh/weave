@@ -54,7 +54,6 @@ public abstract class ServiceMain {
     configureLogger();
 
     final String serviceName = service.toString();
-
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {
