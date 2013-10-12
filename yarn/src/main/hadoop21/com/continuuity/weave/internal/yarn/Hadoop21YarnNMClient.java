@@ -42,9 +42,10 @@ public final class Hadoop21YarnNMClient extends AbstractIdleService implements Y
   }
 
   @Override
-  public Cancellable start(Container container, ContainerLaunchContext launchContext) {
+  public Cancellable start(YarnContainerInfo containerInfo, YarnLaunchContext launchContext) {
     try {
-      nmClient.startContainer(container, launchContext);
+      Container container = containerInfo.getContainer();
+      nmClient.startContainer(container, launchContext.<ContainerLaunchContext>getLaunchContext());
       return new ContainerTerminator(container, nmClient);
     } catch (Exception e) {
       LOG.error("Error in launching process", e);

@@ -16,8 +16,6 @@
 package com.continuuity.weave.internal.yarn;
 
 import com.continuuity.weave.common.Cancellable;
-import org.apache.hadoop.yarn.api.records.Container;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 
 /**
  * Abstraction for dealing with API differences in different hadoop yarn version
@@ -27,11 +25,11 @@ public interface YarnNMClient {
   /**
    * Starts a process based on the given launch context.
    *
-   * @param container The container that the new process will launch in.
+   * @param containerInfo The containerInfo that the new process will launch in.
    * @param launchContext Contains information about the process going to start.
    * @return A {@link Cancellable} that when {@link Cancellable#cancel()}} is invoked,
    *         it will try to shutdown the process.
    *
    */
-  Cancellable start(Container container, ContainerLaunchContext launchContext);
+  Cancellable start(YarnContainerInfo containerInfo, YarnLaunchContext launchContext);
 }

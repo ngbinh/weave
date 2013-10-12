@@ -25,6 +25,7 @@ import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.state.Message;
+import com.continuuity.weave.internal.yarn.YarnContainerStatus;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
@@ -34,7 +35,6 @@ import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.hadoop.yarn.api.records.ContainerState;
-import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -260,9 +260,9 @@ final class RunningContainers {
    * @param status The completion status.
    * @param restartRunnables Set of runnable names that requires restart.
    */
-  void handleCompleted(ContainerStatus status, Multiset<String> restartRunnables) {
+  void handleCompleted(YarnContainerStatus status, Multiset<String> restartRunnables) {
     containerLock.lock();
-    String containerId = status.getContainerId().toString();
+    String containerId = status.getContainerId();
     int exitStatus = status.getExitStatus();
     ContainerState state = status.getState();
 

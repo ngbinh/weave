@@ -15,12 +15,10 @@
  */
 package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.Service;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
@@ -88,9 +86,9 @@ public interface YarnAMClient extends Service {
    */
   // TODO: Move AM heartbeat logic into this interface so AM only needs to handle callback.
   interface AllocateHandler {
-    void acquired(List<ProcessLauncher<ContainerInfo>> launchers);
+    void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers);
 
-    void completed(List<ContainerStatus> completed);
+    void completed(List<YarnContainerStatus> completed);
   }
 
   void allocate(float progress, AllocateHandler handler) throws Exception;

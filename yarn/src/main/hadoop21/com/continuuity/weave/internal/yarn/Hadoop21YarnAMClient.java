@@ -15,10 +15,12 @@
  */
 package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.appmaster.RunnableProcessLauncher;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
@@ -45,6 +47,17 @@ import java.util.List;
 public final class Hadoop21YarnAMClient extends AbstractIdleService implements YarnAMClient {
 
   private static final Logger LOG = LoggerFactory.getLogger(Hadoop21YarnAMClient.class);
+
+  private static final Function<ContainerStatus, YarnContainerStatus> STATUS_TRANSFORM;
+
+  static {
+    STATUS_TRANSFORM = new Function<ContainerStatus, YarnContainerStatus>() {
+      @Override
+      public YarnContainerStatus apply(ContainerStatus status) {
+        return new Hadoop21YarnContainerStatus(status);
+      }
+    };
+  }
 
   private final ContainerId containerId;
   private final AMRMClient<AMRMClient.ContainerRequest> amrmClient;
@@ -103,29 +116,31 @@ public final class Hadoop21YarnAMClient extends AbstractIdleService implements Y
   @Override
   public synchronized void allocate(float progress, AllocateHandler handler) throws Exception {
     AllocateResponse allocateResponse = amrmClient.allocate(progress);
-    List<ProcessLauncher<ContainerInfo>> launchers
+    List<ProcessLauncher<YarnContainerInfo>> launchers
       = Lists.newArrayListWithCapacity(allocateResponse.getAllocatedContainers().size());
 
     for (Container container : allocateResponse.getAllocatedContainers()) {
-      launchers.add(new RunnableProcessLauncher(container, nmClient));
+      launchers.add(new RunnableProcessLauncher(new Hadoop21YarnContainerInfo(container), nmClient));
     }
 
     if (!launchers.isEmpty()) {
       handler.acquired(launchers);
 
       // If no process has been launched through the given launcher, return the container.
-      for (ProcessLauncher<ContainerInfo> l : launchers) {
+      for (ProcessLauncher<YarnContainerInfo> l : launchers) {
         // This cast always works.
         RunnableProcessLauncher launcher = (RunnableProcessLauncher) l;
         if (!launcher.isLaunched()) {
-          Container container = launcher.getContainer();
+          // This cast always works.
+          Container container = launcher.getContainerInfo().getContainer();
           LOG.info("Nothing to run in container, releasing it: {}", container);
           amrmClient.releaseAssignedContainer(container.getId());
         }
       }
     }
 
-    List<ContainerStatus> completed = allocateResponse.getCompletedContainersStatuses();
+    List<YarnContainerStatus> completed = ImmutableList.copyOf(
+      Iterables.transform(allocateResponse.getCompletedContainersStatuses(), STATUS_TRANSFORM));
     if (!completed.isEmpty()) {
       handler.completed(completed);
     }

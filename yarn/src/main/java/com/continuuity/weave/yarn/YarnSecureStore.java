@@ -15,18 +15,30 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.RunId;
-import com.continuuity.weave.api.logging.LogHandler;
-import com.continuuity.weave.internal.ProcessController;
-import com.continuuity.weave.internal.yarn.YarnApplicationReport;
-
-import java.util.concurrent.Callable;
+import com.continuuity.weave.api.SecureStore;
+import org.apache.hadoop.security.Credentials;
 
 /**
- * Factory for creating {@link YarnWeaveController}.
+ * A {@link SecureStore} for hadoop credentials.
  */
-interface YarnWeaveControllerFactory {
+public final class YarnSecureStore implements SecureStore {
 
-  YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,
-                             Callable<ProcessController<YarnApplicationReport>> startUp);
+  private final Credentials credentials;
+
+  public static SecureStore create() {
+    return create(new Credentials());
+  }
+
+  public static SecureStore create(Credentials credentials) {
+    return new YarnSecureStore(credentials);
+  }
+
+  private YarnSecureStore(Credentials credentials) {
+    this.credentials = credentials;
+  }
+
+  @Override
+  public <T> T getStore() {
+    return (T) credentials;
+  }
 }

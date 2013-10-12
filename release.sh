@@ -12,6 +12,9 @@ git checkout develop
 # Hard reset develop to origin/develop
 git reset --hard origin/develop
 
+# Clean everything
+mvn clean
+
 # Generate the release version
 VERSION=`mvn org.apache.maven.plugins:maven-help-plugin:evaluate -Dexpression=project.version | grep -v '^\[' | sed 's/-SNAPSHOT$//g'`
 
@@ -73,8 +76,14 @@ then
     # Push to remote release branch
     git push origin release/$VERSION
 
+    # Compile the Hadoop-2.0 version
+    mvn compile -P hadoop-2.0
+
+    # Compile and package Hadoop-2.1 classes
+    mvn package -DskipTests=true -P hadoop-2.1
+
     # Publish artifacts
-    mvn deploy -DskipTests=true
+    mvn deploy -DskipTests=true -P hadoop-2.1
 fi
 
 echo "Release completed"
@@ -94,6 +103,12 @@ then
     # Push to remote release branch
     git push origin develop
 
+    # Compile the Hadoop-2.0 version
+    mvn compile -P hadoop-2.0
+
+    # Compile and package Hadoop-2.1 classes
+    mvn package -DskipTests=true -P hadoop-2.1
+
     # Publish first SNAPSHOT artifacts
-    mvn deploy -DskipTests=true
+    mvn deploy -DskipTests=true -P hadoop-2.1
 fi

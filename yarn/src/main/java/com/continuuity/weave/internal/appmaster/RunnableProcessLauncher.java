@@ -16,16 +16,14 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.common.Cancellable;
-import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.yarn.AbstractYarnProcessLauncher;
+import com.continuuity.weave.internal.yarn.YarnContainerInfo;
+import com.continuuity.weave.internal.yarn.YarnLaunchContext;
 import com.continuuity.weave.internal.yarn.YarnNMClient;
-import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Objects;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.yarn.api.records.Container;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,43 +32,42 @@ import java.util.Map;
 /**
  *
  */
-public final class RunnableProcessLauncher extends AbstractYarnProcessLauncher<ContainerInfo> {
+public final class RunnableProcessLauncher extends AbstractYarnProcessLauncher<YarnContainerInfo> {
 
   private static final Logger LOG = LoggerFactory.getLogger(RunnableProcessLauncher.class);
 
-  private final Container container;
+  private final YarnContainerInfo containerInfo;
   private final YarnNMClient nmClient;
   private boolean launched;
 
-  public RunnableProcessLauncher(Container container, YarnNMClient nmClient) {
-    super(new YarnContainerInfo(container));
-    this.container = container;
+  public RunnableProcessLauncher(YarnContainerInfo containerInfo, YarnNMClient nmClient) {
+    super(containerInfo);
+    this.containerInfo = containerInfo;
     this.nmClient = nmClient;
   }
 
   @Override
   public String toString() {
     return Objects.toStringHelper(this)
-      .add("container", container)
+      .add("container", containerInfo)
       .toString();
   }
 
   @Override
-  protected <R> ProcessController<R> doLaunch(ContainerLaunchContext launchContext) {
+  protected <R> ProcessController<R> doLaunch(YarnLaunchContext launchContext) {
     Map<String, String> env = Maps.newHashMap(launchContext.getEnvironment());
 
     // Set extra environments
-    env.put(EnvKeys.YARN_CONTAINER_ID, container.getId().toString());
-    env.put(EnvKeys.YARN_CONTAINER_HOST, container.getNodeId().getHost());
-    env.put(EnvKeys.YARN_CONTAINER_PORT, Integer.toString(container.getNodeId().getPort()));
-    env.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(container.getResource().getMemory()));
-    env.put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES,
-                    Integer.toString(YarnUtils.getVirtualCores(container.getResource())));
+    env.put(EnvKeys.YARN_CONTAINER_ID, containerInfo.getId());
+    env.put(EnvKeys.YARN_CONTAINER_HOST, containerInfo.getHost().getHostName());
+    env.put(EnvKeys.YARN_CONTAINER_PORT, Integer.toString(containerInfo.getPort()));
+    env.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(containerInfo.getMemoryMB()));
+    env.put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES, Integer.toString(containerInfo.getVirtualCores()));
 
     launchContext.setEnvironment(env);
 
-    LOG.info("Launching in container {}, {}", container.getId(), launchContext.getCommands());
-    final Cancellable cancellable = nmClient.start(container, launchContext);
+    LOG.info("Launching in container {}, {}", containerInfo.getId(), launchContext.getCommands());
+    final Cancellable cancellable = nmClient.start(containerInfo, launchContext);
     launched = true;
 
     return new ProcessController<R>() {
@@ -90,9 +87,5 @@ public final class RunnableProcessLauncher extends AbstractYarnProcessLauncher<C
 
   public boolean isLaunched() {
     return launched;
-  }
-
-  public Container getContainer() {
-    return container;
   }
 }

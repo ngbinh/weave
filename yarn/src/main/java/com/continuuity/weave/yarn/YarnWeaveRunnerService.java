@@ -35,6 +35,7 @@ import com.continuuity.weave.internal.SingleRunnableApplication;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterLiveNodeData;
 import com.continuuity.weave.internal.yarn.VersionDetectYarnAppClientFactory;
 import com.continuuity.weave.internal.yarn.YarnAppClient;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.NodeData;
@@ -67,7 +68,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -97,6 +97,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     }
   };
 
+  private final YarnConfiguration yarnConfig;
   private final YarnAppClient yarnAppClient;
   private final ZKClientService zkClientService;
   private final LocationFactory locationFactory;
@@ -110,6 +111,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   }
 
   public YarnWeaveRunnerService(YarnConfiguration config, String zkConnect, LocationFactory locationFactory) {
+    this.yarnConfig = config;
     this.yarnAppClient = new VersionDetectYarnAppClientFactory().create(config);
     this.locationFactory = locationFactory;
     this.zkClientService = getZKClientService(zkConnect);
@@ -132,11 +134,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     final WeaveSpecification weaveSpec = application.configure();
     final String appName = weaveSpec.getName();
 
-    return new YarnWeavePreparer(weaveSpec, yarnAppClient, zkClientService, locationFactory,
+    return new YarnWeavePreparer(yarnConfig, weaveSpec, yarnAppClient, zkClientService, locationFactory,
                                  new YarnWeaveControllerFactory() {
       @Override
       public YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,
-                                        Callable<ProcessController<ApplicationReport>> startUp) {
+                                        Callable<ProcessController<YarnApplicationReport>> startUp) {
         ZKClient zkClient = ZKClients.namespace(zkClientService, "/" + appName);
         YarnWeaveController controller = listenController(new YarnWeaveController(runId, zkClient,
                                                                                   logHandlers, startUp));

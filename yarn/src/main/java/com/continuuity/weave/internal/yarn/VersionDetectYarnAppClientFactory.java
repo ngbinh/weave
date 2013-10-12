@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal.yarn;
 
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Throwables;
 import org.apache.hadoop.conf.Configuration;
 
@@ -28,12 +29,13 @@ public final class VersionDetectYarnAppClientFactory implements YarnAppClientFac
   public YarnAppClient create(Configuration configuration) {
     try {
       Class<YarnAppClient> clz;
-      try {
-        // Try to find the hadoop-2.0 class.
+
+      if (YarnUtils.isHadoop20()) {
+        // Uses hadoop-2.0 class.
         String clzName = getClass().getPackage().getName() + ".Hadoop20YarnAppClient";
         clz = (Class<YarnAppClient>) Class.forName(clzName);
-      } catch (ClassNotFoundException e) {
-        // Try to find hadoop-2.1 class
+      } else {
+        // Uses hadoop-2.1 class
         String clzName = getClass().getPackage().getName() + ".Hadoop21YarnAppClient";
         clz = (Class<YarnAppClient>) Class.forName(clzName);
       }

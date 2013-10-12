@@ -51,14 +51,17 @@ public final class Hadoop20YarnNMClient implements YarnNMClient {
   }
 
   @Override
-  public Cancellable start(Container container, ContainerLaunchContext launchContext) {
-    launchContext.setUser(System.getProperty("user.name"));
+  public Cancellable start(YarnContainerInfo containerInfo, YarnLaunchContext launchContext) {
+    ContainerLaunchContext context = launchContext.getLaunchContext();
+    context.setUser(System.getProperty("user.name"));
 
-    launchContext.setContainerId(container.getId());
-    launchContext.setResource(container.getResource());
+    Container container = containerInfo.getContainer();
+
+    context.setContainerId(container.getId());
+    context.setResource(container.getResource());
 
     StartContainerRequest startRequest = Records.newRecord(StartContainerRequest.class);
-    startRequest.setContainerLaunchContext(launchContext);
+    startRequest.setContainerLaunchContext(context);
 
     ContainerManager manager = connectContainerManager(container);
     try {

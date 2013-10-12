@@ -25,7 +25,6 @@ import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.Resource;
@@ -64,10 +63,11 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
     ApplicationSubmitter submitter = new ApplicationSubmitter() {
 
       @Override
-      public ProcessController<ApplicationReport> submit(ContainerLaunchContext launchContext, Resource capability) {
-        launchContext.setUser(appSubmissionContext.getUser());
-        launchContext.setResource(capability);
-        appSubmissionContext.setAMContainerSpec(launchContext);
+      public ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability) {
+        ContainerLaunchContext context = launchContext.getLaunchContext();
+        context.setUser(appSubmissionContext.getUser());
+        context.setResource(capability);
+        appSubmissionContext.setAMContainerSpec(context);
 
         try {
           yarnClient.submitApplication(appSubmissionContext);
@@ -83,7 +83,7 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
   }
 
   @Override
-  public ProcessController<ApplicationReport> createProcessController(ApplicationId appId) {
+  public ProcessController<YarnApplicationReport> createProcessController(ApplicationId appId) {
     return new ProcessControllerImpl(yarnClient, appId);
   }
 
@@ -97,7 +97,7 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
     yarnClient.stop();
   }
 
-  private static final class ProcessControllerImpl implements ProcessController<ApplicationReport> {
+  private static final class ProcessControllerImpl implements ProcessController<YarnApplicationReport> {
     private final YarnClient yarnClient;
     private final ApplicationId appId;
 
@@ -107,9 +107,9 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
     }
 
     @Override
-    public ApplicationReport getReport() {
+    public YarnApplicationReport getReport() {
       try {
-        return yarnClient.getApplicationReport(appId);
+        return new Hadoop20YarnApplicationReport(yarnClient.getApplicationReport(appId));
       } catch (YarnRemoteException e) {
         LOG.error("Failed to get application report {}", appId, e);
         throw Throwables.propagate(e);

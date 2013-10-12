@@ -16,49 +16,53 @@
 package com.continuuity.weave.yarn.utils;
 
 import com.continuuity.weave.api.LocalFile;
-import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.LocationFactory;
+import com.continuuity.weave.internal.yarn.YarnLaunchContext;
+import com.continuuity.weave.internal.yarn.YarnLocalResource;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Maps;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.api.records.LocalResourceType;
 import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Collection of helper methods to simplify YARN calls.
  */
 public class YarnUtils {
 
-  public static LocalResource createLocalResource(Location location) {
-    try {
-      LocalResource resource = Records.newRecord(LocalResource.class);
-      resource.setVisibility(LocalResourceVisibility.APPLICATION);
-      resource.setType(LocalResourceType.FILE);
-      resource.setResource(ConverterUtils.getYarnUrlFromURI(location.toURI()));
-      resource.setTimestamp(location.lastModified());
-      resource.setSize(location.length());
-      return resource;
-    } catch (IOException e) {
-      throw Throwables.propagate(e);
-    }
-  }
-
-  public static LocalResource createLocalResource(LocalFile localFile) {
+  public static YarnLocalResource createLocalResource(LocalFile localFile) {
     Preconditions.checkArgument(localFile.getLastModified() >= 0, "Last modified time should be >= 0.");
     Preconditions.checkArgument(localFile.getSize() >= 0, "File size should be >= 0.");
 
-    LocalResource resource = Records.newRecord(LocalResource.class);
+    YarnLocalResource resource = createAdapter(YarnLocalResource.class);
     resource.setVisibility(LocalResourceVisibility.APPLICATION);
     resource.setResource(ConverterUtils.getYarnUrlFromURI(localFile.getURI()));
     resource.setTimestamp(localFile.getLastModified());
     resource.setSize(localFile.getSize());
     return setLocalResourceType(resource, localFile);
+  }
+
+  public static YarnLaunchContext createLaunchContext() {
+    return createAdapter(YarnLaunchContext.class);
   }
 
   // temporary workaround since older versions of hadoop don't have the getVirtualCores method.
@@ -89,7 +93,6 @@ public class YarnUtils {
     return true;
   }
 
-
   /**
    * Creates {@link ApplicationId} from the given cluster timestamp and id.
    */
@@ -116,8 +119,71 @@ public class YarnUtils {
     }
   }
 
+  /**
+   * Helper method to get delegation tokens for the given LocationFactory.
+   * @param config The hadoop configuration.
+   * @param locationFactory The LocationFactory for generating tokens.
+   * @param credentials Credentials for storing tokens acquired.
+   * @return List of delegation Tokens acquired.
+   */
+  public static List<Token<?>> addDelegationTokens(Configuration config,
+                                                   LocationFactory locationFactory,
+                                                   Credentials credentials) throws IOException {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return ImmutableList.of();
+    }
 
-  private static LocalResource setLocalResourceType(LocalResource localResource, LocalFile localFile) {
+    if (!(locationFactory instanceof HDFSLocationFactory)) {
+      return ImmutableList.of();
+    }
+
+    FileSystem fileSystem = ((HDFSLocationFactory) locationFactory).getFileSystem();
+
+    String rmHost = config.getSocketAddr(YarnConfiguration.RM_ADDRESS,
+                                         YarnConfiguration.DEFAULT_RM_ADDRESS,
+                                         YarnConfiguration.DEFAULT_RM_PORT).getHostName();
+    String renewer = SecurityUtil.getServerPrincipal(config.get(YarnConfiguration.RM_PRINCIPAL), rmHost);
+
+    if (renewer == null || renewer.length() == 0) {
+      throw new IOException("No Kerberos principal for Yarn RM to use as renewer");
+    }
+
+    Token<?>[] tokens = fileSystem.addDelegationTokens(renewer, credentials);
+    return tokens == null ? ImmutableList.<Token<?>>of() : ImmutableList.copyOf(tokens);
+  }
+
+  /**
+   * Returns true if Hadoop-2.0 classes are in the classpath.
+   */
+  public static boolean isHadoop20() {
+    try {
+      Class.forName("org.apache.hadoop.yarn.client.api.NMClient");
+      return false;
+    } catch (ClassNotFoundException e) {
+      return true;
+    }
+  }
+
+  /**
+   * Helper method to create adapter class for bridging between Hadoop 2.0 and 2.1
+   */
+  private static <T> T createAdapter(Class<T> clz) {
+    String className = clz.getPackage().getName();
+
+    if (isHadoop20()) {
+      className += ".Hadoop20" + clz.getSimpleName();
+    } else {
+      className += ".Hadoop21" + clz.getSimpleName();
+    }
+
+    try {
+      return (T) Class.forName(className).newInstance();
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
+    }
+  }
+
+  private static YarnLocalResource setLocalResourceType(YarnLocalResource localResource, LocalFile localFile) {
     if (localFile.isArchive()) {
       if (localFile.getPattern() == null) {
         localResource.setType(LocalResourceType.ARCHIVE);
@@ -129,6 +195,15 @@ public class YarnUtils {
       localResource.setType(LocalResourceType.FILE);
     }
     return localResource;
+  }
+
+  private static <T> Map<String, T> transformResource(Map<String, YarnLocalResource> from) {
+    return Maps.transformValues(from, new Function<YarnLocalResource, T>() {
+      @Override
+      public T apply(YarnLocalResource resource) {
+        return resource.getLocalResource();
+      }
+    });
   }
 
   private YarnUtils() {

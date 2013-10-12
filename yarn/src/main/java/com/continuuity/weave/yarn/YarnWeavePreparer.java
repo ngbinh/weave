@@ -18,6 +18,7 @@ package com.continuuity.weave.yarn;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
+import com.continuuity.weave.api.SecureStore;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeavePreparer;
 import com.continuuity.weave.api.WeaveSpecification;
@@ -42,7 +43,9 @@ import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.utils.Dependencies;
 import com.continuuity.weave.internal.utils.Paths;
 import com.continuuity.weave.internal.yarn.YarnAppClient;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
 import com.continuuity.weave.launcher.WeaveLauncher;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.base.Charsets;
@@ -65,9 +68,12 @@ import com.google.common.io.ByteStreams;
 import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -95,6 +101,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
   private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
 
+  private final YarnConfiguration yarnConfig;
   private final WeaveSpecification weaveSpec;
   private final YarnAppClient yarnAppClient;
   private final ZKClient zkClient;
@@ -108,16 +115,18 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<URI> resources = Lists.newArrayList();
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
+  private final Credentials credentials;
 
-  YarnWeavePreparer(WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
-                    ZKClient zkClient, LocationFactory locationFactory,
-                    YarnWeaveControllerFactory controllerFactory) {
+  YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
+                    ZKClient zkClient, LocationFactory locationFactory, YarnWeaveControllerFactory controllerFactory) {
+    this.yarnConfig = yarnConfig;
     this.weaveSpec = weaveSpec;
     this.yarnAppClient = yarnAppClient;
     this.zkClient = ZKClients.namespace(zkClient, "/" + weaveSpec.getName());
     this.locationFactory = locationFactory;
     this.runId = RunIds.generate();
     this.controllerFactory = controllerFactory;
+    this.credentials = createCredentials();
   }
 
   @Override
@@ -182,14 +191,23 @@ final class YarnWeavePreparer implements WeavePreparer {
   }
 
   @Override
+  public WeavePreparer addSecureStore(SecureStore secureStore) {
+    Preconditions.checkArgument(secureStore instanceof YarnSecureStore, "Only YarnSecureStore is supported.");
+    Credentials credentials = secureStore.getStore();
+    this.credentials.mergeAll(credentials);
+    return this;
+  }
+
+  @Override
   public WeaveController start() {
     try {
       final ProcessLauncher<ApplicationId> launcher = yarnAppClient.createLauncher(weaveSpec);
       final ApplicationId appId = launcher.getContainerInfo();
 
-      Callable<ProcessController<ApplicationReport>> submitTask = new Callable<ProcessController<ApplicationReport>>() {
+      Callable<ProcessController<YarnApplicationReport>> submitTask =
+        new Callable<ProcessController<YarnApplicationReport>>() {
         @Override
-        public ProcessController<ApplicationReport> call() throws Exception {
+        public ProcessController<YarnApplicationReport> call() throws Exception {
           String fsUser = locationFactory.getHomeLocation().getName();
 
           // Local files needed by AM
@@ -221,7 +239,7 @@ final class YarnWeavePreparer implements WeavePreparer {
                                                         EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString(),
                                                         EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
                                                         EnvKeys.WEAVE_RUN_ID, runId.getId()),
-                                        localFiles.values())
+                                        localFiles.values(), credentials)
             .noResources()
             .noEnvironment()
             .withCommands().add(
@@ -246,6 +264,22 @@ final class YarnWeavePreparer implements WeavePreparer {
       LOG.error("Failed to submit application {}", weaveSpec.getName(), e);
       throw Throwables.propagate(e);
     }
+  }
+
+  private Credentials createCredentials() {
+    Credentials credentials = new Credentials();
+
+    try {
+      credentials.addAll(UserGroupInformation.getCurrentUser().getCredentials());
+
+      List<Token<?>> tokens = YarnUtils.addDelegationTokens(yarnConfig, locationFactory, credentials);
+      for (Token<?> token : tokens) {
+        LOG.debug("Delegation token acquired for {}, {}", locationFactory.getHomeLocation().toURI(), token);
+      }
+    } catch (IOException e) {
+      LOG.warn("Failed to check for secure login type. Not gathering any delegation token.", e);
+    }
+    return credentials;
   }
 
   private ApplicationBundler createBundler() {

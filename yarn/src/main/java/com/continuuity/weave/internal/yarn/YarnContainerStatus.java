@@ -13,17 +13,20 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
+package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.internal.ProcessController;
-import com.continuuity.weave.internal.yarn.YarnApplicationReport;
-import com.continuuity.weave.internal.yarn.YarnLaunchContext;
-import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.api.records.ContainerState;
 
 /**
- * Interface for submitting a new application to run.
+ * This interface is for adapting differences in ContainerStatus between Hadoop 2.0 and 2.1
  */
-public interface ApplicationSubmitter {
+public interface YarnContainerStatus {
 
-  ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability);
+  String getContainerId();
+
+  ContainerState getState();
+
+  int getExitStatus();
+
+  String getDiagnostics();
 }

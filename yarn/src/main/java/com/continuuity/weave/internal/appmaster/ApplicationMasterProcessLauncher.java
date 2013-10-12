@@ -19,10 +19,10 @@ import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.yarn.AbstractYarnProcessLauncher;
+import com.continuuity.weave.internal.yarn.YarnLaunchContext;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
 
@@ -47,7 +47,7 @@ public final class ApplicationMasterProcessLauncher extends AbstractYarnProcessL
 
   @Override
   @SuppressWarnings("unchecked")
-  protected <R> ProcessController<R> doLaunch(ContainerLaunchContext launchContext) {
+  protected <R> ProcessController<R> doLaunch(YarnLaunchContext launchContext) {
     final ApplicationId appId = getContainerInfo();
 
     // Set the resource requirement for AM

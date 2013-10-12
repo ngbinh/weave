@@ -13,10 +13,8 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
+package com.continuuity.weave.internal.yarn;
 
-import com.continuuity.weave.internal.ContainerInfo;
-import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Throwables;
 import org.apache.hadoop.yarn.api.records.Container;
 
@@ -26,48 +24,45 @@ import java.net.UnknownHostException;
 /**
  *
  */
-public final class YarnContainerInfo implements ContainerInfo {
+public final class Hadoop21YarnContainerInfo implements YarnContainerInfo {
 
-  private final String id;
-  private final InetAddress host;
-  private final int port;
-  private final int virtualCores;
-  private final int memoryMB;
+  private final Container container;
 
-  public YarnContainerInfo(Container container) {
+  public Hadoop21YarnContainerInfo(Container container) {
+    this.container = container;
+  }
+
+  @Override
+  public <T> T getContainer() {
+    return (T) container;
+  }
+
+  @Override
+  public String getId() {
+    return container.getId().toString();
+  }
+
+  @Override
+  public InetAddress getHost() {
     try {
-      this.id = container.getId().toString();
-      this.port = container.getNodeId().getPort();
-      this.virtualCores = YarnUtils.getVirtualCores(container.getResource());
-      this.memoryMB = container.getResource().getMemory();
-      this.host = InetAddress.getByName(container.getNodeId().getHost());
+      return InetAddress.getByName(container.getNodeId().getHost());
     } catch (UnknownHostException e) {
       throw Throwables.propagate(e);
     }
   }
 
   @Override
-  public String getId() {
-    return id;
-  }
-
-  @Override
-  public InetAddress getHost() {
-    return host;
-  }
-
-  @Override
   public int getPort() {
-    return port;
+    return container.getNodeId().getPort();
   }
 
   @Override
   public int getMemoryMB() {
-    return memoryMB;
+    return container.getResource().getMemory();
   }
 
   @Override
   public int getVirtualCores() {
-    return virtualCores;
+    return container.getResource().getVirtualCores();
   }
 }

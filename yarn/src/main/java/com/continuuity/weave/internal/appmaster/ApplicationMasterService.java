@@ -27,7 +27,6 @@ import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.Constants;
-import com.continuuity.weave.internal.ContainerInfo;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
@@ -43,6 +42,8 @@ import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Networks;
 import com.continuuity.weave.internal.yarn.YarnAMClient;
 import com.continuuity.weave.internal.yarn.YarnAMClientFactory;
+import com.continuuity.weave.internal.yarn.YarnContainerInfo;
+import com.continuuity.weave.internal.yarn.YarnContainerStatus;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
@@ -72,9 +73,12 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.ContainerStatus;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
@@ -87,6 +91,7 @@ import java.io.Reader;
 import java.net.URI;
 import java.net.URL;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -105,6 +110,9 @@ public final class ApplicationMasterService implements Service {
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
   private static final int CONTAINER_REQUEST_MAX_FAILURE = 30;
 
+  // Copied from org.apache.hadoop.yarn.security.AMRMTokenIdentifier.KIND_NAME since it's missing in Hadoop-2.0
+  private static final Text AMRM_TOKEN_KIND_NAME = new Text("YARN_AM_RM_TOKEN");
+
   private final RunId runId;
   private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
@@ -115,6 +123,7 @@ public final class ApplicationMasterService implements Service {
   private final Map<String, Integer> instanceCounts;
   private final TrackerService trackerService;
   private final YarnAMClient amClient;
+  private final Credentials credentials;
 
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
@@ -127,6 +136,7 @@ public final class ApplicationMasterService implements Service {
     this.conf = conf;
     this.zkClient = zkClient;
     this.amClient = amClientFactory.create();
+    this.credentials = createCredentials();
 
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
@@ -209,14 +219,14 @@ public final class ApplicationMasterService implements Service {
     final Set<String> ids = Sets.newHashSet(runningContainers.getContainerIds());
     YarnAMClient.AllocateHandler handler = new YarnAMClient.AllocateHandler() {
       @Override
-      public void acquired(List<ProcessLauncher<ContainerInfo>> launchers) {
+      public void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers) {
         // no-op
       }
 
       @Override
-      public void completed(List<ContainerStatus> completed) {
-        for (ContainerStatus status : completed) {
-          ids.remove(status.getContainerId().toString());
+      public void completed(List<YarnContainerStatus> completed) {
+        for (YarnContainerStatus status : completed) {
+          ids.remove(status.getContainerId());
         }
       }
     };
@@ -259,12 +269,16 @@ public final class ApplicationMasterService implements Service {
       if ("file".equals(appDir.getScheme())) {
         location = new LocalLocationFactory().create(appDir);
       } else if ("hdfs".equals(appDir.getScheme())) {
-        String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
-        if (fsUser == null) {
-          fsUser = System.getProperty("user.name");
+        if (UserGroupInformation.isSecurityEnabled()) {
+          location = new HDFSLocationFactory(FileSystem.get(conf)).create(appDir);
+        } else {
+          String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
+          if (fsUser == null) {
+            fsUser = System.getProperty("user.name");
+          }
+          location = new HDFSLocationFactory(
+            FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
         }
-        location = new HDFSLocationFactory(
-          FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
       } else {
         LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
         return;
@@ -288,12 +302,12 @@ public final class ApplicationMasterService implements Service {
     int requestFailCount = 0;
     YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
       @Override
-      public void acquired(List<ProcessLauncher<ContainerInfo>> launchers) {
+      public void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers) {
         launchRunnable(launchers, provisioning);
       }
 
       @Override
-      public void completed(List<ContainerStatus> completed) {
+      public void completed(List<YarnContainerStatus> completed) {
         handleCompleted(completed);
       }
     };
@@ -337,9 +351,9 @@ public final class ApplicationMasterService implements Service {
   /**
    * Handling containers that are completed.
    */
-  private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+  private void handleCompleted(List<YarnContainerStatus> completedContainersStatuses) {
     Multiset<String> restartRunnables = HashMultiset.create();
-    for (ContainerStatus status : completedContainersStatuses) {
+    for (YarnContainerStatus status : completedContainersStatuses) {
       LOG.info("Container {} completed with {}:{}.",
                status.getContainerId(), status.getState(), status.getDiagnostics());
       runningContainers.handleCompleted(status, restartRunnables);
@@ -351,6 +365,26 @@ public final class ApplicationMasterService implements Service {
         runnableContainerRequests.add(createRunnableContainerRequest(entry.getElement()));
       }
     }
+  }
+
+  private Credentials createCredentials() {
+    Credentials credentials = new Credentials();
+    try {
+      credentials.addAll(UserGroupInformation.getCurrentUser().getCredentials());
+
+      // Remove the AM->RM tokens
+      Iterator<Token<?>> iter = credentials.getAllTokens().iterator();
+      while (iter.hasNext()) {
+        Token<?> token = iter.next();
+        if (token.getKind().equals(AMRM_TOKEN_KIND_NAME)) {
+          iter.remove();
+        }
+      }
+    } catch (IOException e) {
+      LOG.warn("Failed to get current user. No credentials will be provided to containers.", e);
+    }
+
+    return credentials;
   }
 
   private Queue<RunnableContainerRequest> initContainerRequests() {
@@ -390,8 +424,9 @@ public final class ApplicationMasterService implements Service {
   /**
    * Launches runnables in the provisioned containers.
    */
-  private void launchRunnable(List<ProcessLauncher<ContainerInfo>> launchers, Queue<ProvisionRequest> provisioning) {
-    for (ProcessLauncher<ContainerInfo> processLauncher : launchers) {
+  private void launchRunnable(List<ProcessLauncher<YarnContainerInfo>> launchers,
+                              Queue<ProvisionRequest> provisioning) {
+    for (ProcessLauncher<YarnContainerInfo> processLauncher : launchers) {
       ProvisionRequest provisionRequest = provisioning.peek();
       if (provisionRequest == null) {
         continue;
@@ -409,7 +444,7 @@ public final class ApplicationMasterService implements Service {
         ImmutableMap.of(EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
                         EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
                         EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect()
-        ), getLocalizeFiles()
+        ), getLocalizeFiles(), credentials
       );
 
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(weaveSpec.getRunnables().get(runnableName),

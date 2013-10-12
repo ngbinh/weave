@@ -118,6 +118,14 @@ public interface WeavePreparer {
   WeavePreparer withClassPaths(Iterable<String> classPaths);
 
   /**
+   * Adds security credentials for the runtime environment to gives application access to resources.
+   *
+   * @param secureStore Contains security token available for the runtime environment.
+   * @return This {@link WeavePreparer}.
+   */
+  WeavePreparer addSecureStore(SecureStore secureStore);
+
+  /**
    * Starts the application.
    * @return A {@link WeaveController} for controlling the running application.
    */

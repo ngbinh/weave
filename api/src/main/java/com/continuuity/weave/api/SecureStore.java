@@ -13,17 +13,12 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
-
-import com.continuuity.weave.internal.ProcessController;
-import com.continuuity.weave.internal.yarn.YarnApplicationReport;
-import com.continuuity.weave.internal.yarn.YarnLaunchContext;
-import org.apache.hadoop.yarn.api.records.Resource;
+package com.continuuity.weave.api;
 
 /**
- * Interface for submitting a new application to run.
+ * Represents storage of secure tokens.
  */
-public interface ApplicationSubmitter {
+public interface SecureStore {
 
-  ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability);
+  <T> T getStore();
 }

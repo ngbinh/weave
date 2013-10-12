@@ -25,7 +25,6 @@ import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.Resource;
@@ -61,8 +60,8 @@ public final class Hadoop21YarnAppClient extends AbstractIdleService implements 
 
     ApplicationSubmitter submitter = new ApplicationSubmitter() {
       @Override
-      public ProcessController<ApplicationReport> submit(ContainerLaunchContext launchContext, Resource capability) {
-        appSubmissionContext.setAMContainerSpec(launchContext);
+      public ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability) {
+        appSubmissionContext.setAMContainerSpec(launchContext.<ContainerLaunchContext>getLaunchContext());
         appSubmissionContext.setResource(capability);
         appSubmissionContext.setMaxAppAttempts(2);
 
@@ -80,7 +79,7 @@ public final class Hadoop21YarnAppClient extends AbstractIdleService implements 
   }
 
   @Override
-  public ProcessController<ApplicationReport> createProcessController(ApplicationId appId) {
+  public ProcessController<YarnApplicationReport> createProcessController(ApplicationId appId) {
     return new ProcessControllerImpl(yarnClient, appId);
   }
 
@@ -94,7 +93,7 @@ public final class Hadoop21YarnAppClient extends AbstractIdleService implements 
     yarnClient.stop();
   }
 
-  private static final class ProcessControllerImpl implements ProcessController<ApplicationReport> {
+  private static final class ProcessControllerImpl implements ProcessController<YarnApplicationReport> {
     private final YarnClient yarnClient;
     private final ApplicationId appId;
 
@@ -104,9 +103,9 @@ public final class Hadoop21YarnAppClient extends AbstractIdleService implements 
     }
 
     @Override
-    public ApplicationReport getReport() {
+    public YarnApplicationReport getReport() {
       try {
-        return yarnClient.getApplicationReport(appId);
+        return new Hadoop21YarnApplicationReport(yarnClient.getApplicationReport(appId));
       } catch (Exception e) {
         LOG.error("Failed to get application report {}", appId, e);
         throw Throwables.propagate(e);

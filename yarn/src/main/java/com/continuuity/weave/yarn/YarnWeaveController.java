@@ -25,13 +25,13 @@ import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.appmaster.ResourceReportClient;
 import com.continuuity.weave.internal.appmaster.TrackerService;
 import com.continuuity.weave.internal.state.StateNode;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang.time.StopWatch;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
 import org.apache.hadoop.yarn.api.records.YarnApplicationState;
 import org.slf4j.Logger;
@@ -50,19 +50,19 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeaveController.class);
 
-  private final Callable<ProcessController<ApplicationReport>> startUp;
-  private ProcessController<ApplicationReport> processController;
+  private final Callable<ProcessController<YarnApplicationReport>> startUp;
+  private ProcessController<YarnApplicationReport> processController;
   private ResourceReportClient resourcesClient;
 
   /**
    * Creates an instance without any {@link LogHandler}.
    */
-  YarnWeaveController(RunId runId, ZKClient zkClient, Callable<ProcessController<ApplicationReport>> startUp) {
+  YarnWeaveController(RunId runId, ZKClient zkClient, Callable<ProcessController<YarnApplicationReport>> startUp) {
     this(runId, zkClient, ImmutableList.<LogHandler>of(), startUp);
   }
 
   YarnWeaveController(RunId runId, ZKClient zkClient, Iterable <LogHandler> logHandlers,
-                      Callable<ProcessController<ApplicationReport>> startUp) {
+                      Callable<ProcessController<YarnApplicationReport>> startUp) {
     super(runId, zkClient, logHandlers);
     this.startUp = startUp;
   }
@@ -75,7 +75,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
     try {
       processController = startUp.call();
 
-      ApplicationReport report = processController.getReport();
+      YarnApplicationReport report = processController.getReport();
       LOG.debug("Application {} submit", report.getApplicationId());
 
       YarnApplicationState state = report.getYarnApplicationState();
@@ -135,7 +135,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
       stopWatch.split();
       long maxTime = TimeUnit.MILLISECONDS.convert(Constants.APPLICATION_MAX_STOP_SECONDS, TimeUnit.SECONDS);
 
-      ApplicationReport report = processController.getReport();
+      YarnApplicationReport report = processController.getReport();
       FinalApplicationStatus finalStatus = report.getFinalApplicationStatus();
       while (finalStatus == FinalApplicationStatus.UNDEFINED && stopWatch.getSplitTime() < maxTime) {
         LOG.debug("Yarn application final status for {} {}", report.getApplicationId(), finalStatus);
@@ -160,7 +160,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
   @Override
   public void kill() {
     if (processController != null) {
-      ApplicationReport report = processController.getReport();
+      YarnApplicationReport report = processController.getReport();
       LOG.info("Killing application {}", report.getApplicationId());
       processController.cancel();
     } else {

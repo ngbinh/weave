@@ -20,11 +20,13 @@ import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.utils.Paths;
 import com.continuuity.weave.yarn.utils.YarnUtils;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
-import org.apache.hadoop.yarn.api.records.LocalResource;
-import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.token.Token;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
@@ -35,6 +37,8 @@ import java.util.Map;
  * @param <T> Type of the object that contains information about the container that the process is going to launch.
  */
 public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<T> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(AbstractYarnProcessLauncher.class);
 
   private final T containerInfo;
 
@@ -48,8 +52,13 @@ public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<
   }
 
   @Override
-  public PrepareLaunchContext prepareLaunch(Map<String, String> environments, Iterable<LocalFile> resources) {
-    return new PrepareLaunchContextImpl(environments, resources);
+  public <C> PrepareLaunchContext prepareLaunch(Map<String, String> environments,
+                                                Iterable<LocalFile> resources, C credentials) {
+    if (credentials != null) {
+      Preconditions.checkArgument(credentials instanceof Credentials, "Credentials should be of type %s",
+                                  Credentials.class.getName());
+    }
+    return new PrepareLaunchContextImpl(environments, resources, (Credentials) credentials);
   }
 
   /**
@@ -62,20 +71,22 @@ public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<
   /**
    * For children class to override to perform actual process launching.
    */
-  protected abstract <R> ProcessController<R> doLaunch(ContainerLaunchContext launchContext);
+  protected abstract <R> ProcessController<R> doLaunch(YarnLaunchContext launchContext);
 
   /**
    * Implementation for the {@link PrepareLaunchContext}.
    */
   private final class PrepareLaunchContextImpl implements PrepareLaunchContext {
 
-    private final ContainerLaunchContext launchContext;
-    private final Map<String, LocalResource> localResources;
+    private final Credentials credentials;
+    private final YarnLaunchContext launchContext;
+    private final Map<String, YarnLocalResource> localResources;
     private final Map<String, String> environment;
     private final List<String> commands;
 
-    private PrepareLaunchContextImpl(Map<String, String> env, Iterable<LocalFile> localFiles) {
-      this.launchContext = Records.newRecord(ContainerLaunchContext.class);
+    private PrepareLaunchContextImpl(Map<String, String> env, Iterable<LocalFile> localFiles, Credentials credentials) {
+      this.credentials = credentials;
+      this.launchContext = YarnUtils.createLaunchContext();
       this.localResources = Maps.newHashMap();
       this.environment = Maps.newHashMap(env);
       this.commands = Lists.newLinkedList();
@@ -163,6 +174,12 @@ public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<
 
       @Override
       public <R> ProcessController<R> launch() {
+        if (credentials != null && !credentials.getAllTokens().isEmpty()) {
+          for (Token<?> token : credentials.getAllTokens()) {
+            LOG.info("Launch with delegation token {}", token);
+          }
+          launchContext.setCredentials(credentials);
+        }
         launchContext.setCommands(commands);
         return doLaunch(launchContext);
       }

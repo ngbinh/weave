@@ -32,9 +32,10 @@ public interface ProcessLauncher<T> {
   T getContainerInfo();
 
   /**
-   * Returns a preparer with the given default set of environments and resources.
+   * Returns a preparer with the given default set of environments, resources and credentials.
    */
-  PrepareLaunchContext prepareLaunch(Map<String, String> environments, Iterable<LocalFile> resources);
+  <C> PrepareLaunchContext prepareLaunch(Map<String, String> environments,
+                                         Iterable<LocalFile> resources, C credentials);
 
   /**
    * For setting up the launcher.

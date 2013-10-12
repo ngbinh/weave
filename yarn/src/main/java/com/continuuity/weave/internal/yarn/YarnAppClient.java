@@ -20,7 +20,6 @@ import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.google.common.util.concurrent.Service;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationReport;
 
 /**
  * Interface for launching Yarn application from client.
@@ -32,5 +31,5 @@ public interface YarnAppClient extends Service {
    */
   ProcessLauncher<ApplicationId> createLauncher(WeaveSpecification weaveSpec) throws Exception;
 
-  ProcessController<ApplicationReport> createProcessController(ApplicationId appId);
+  ProcessController<YarnApplicationReport> createProcessController(ApplicationId appId);
 }
