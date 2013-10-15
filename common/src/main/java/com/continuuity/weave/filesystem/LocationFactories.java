@@ -28,12 +28,12 @@ public final class LocationFactories {
   /**
    * Creates a {@link LocationFactory} that always applies the giving namespace prefix.
    */
-  public static LocationFactory namespace(final LocationFactory delegate, final String namespace) {
-    return new LocationFactory() {
+  public static LocationFactory namespace(LocationFactory delegate, final String namespace) {
+    return new ForwardingLocationFactory(delegate) {
       @Override
       public Location create(String path) {
         try {
-          Location base = delegate.create(namespace);
+          Location base = getDelegate().create(namespace);
           return base.append(path);
         } catch (IOException e) {
           throw Throwables.propagate(e);
@@ -43,10 +43,10 @@ public final class LocationFactories {
       @Override
       public Location create(URI uri) {
         if (uri.isAbsolute()) {
-          return delegate.create(uri);
+          return getDelegate().create(uri);
         }
         try {
-          Location base = delegate.create(namespace);
+          Location base = getDelegate().create(namespace);
           return base.append(uri.getPath());
         } catch (IOException e) {
           throw Throwables.propagate(e);
@@ -55,7 +55,7 @@ public final class LocationFactories {
 
       @Override
       public Location getHomeLocation() {
-        return delegate.getHomeLocation();
+        return getDelegate().getHomeLocation();
       }
     };
   }

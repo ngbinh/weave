@@ -116,6 +116,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
   private final Credentials credentials;
+  private String user;
 
   YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
                     ZKClient zkClient, LocationFactory locationFactory, YarnWeaveControllerFactory controllerFactory) {
@@ -127,11 +128,18 @@ final class YarnWeavePreparer implements WeavePreparer {
     this.runId = RunIds.generate();
     this.controllerFactory = controllerFactory;
     this.credentials = createCredentials();
+    this.user = System.getProperty("user.name");
   }
 
   @Override
   public WeavePreparer addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
+    return this;
+  }
+
+  @Override
+  public WeavePreparer setUser(String user) {
+    this.user = user;
     return this;
   }
 
@@ -201,7 +209,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   @Override
   public WeaveController start() {
     try {
-      final ProcessLauncher<ApplicationId> launcher = yarnAppClient.createLauncher(weaveSpec);
+      final ProcessLauncher<ApplicationId> launcher = yarnAppClient.createLauncher(user, weaveSpec);
       final ApplicationId appId = launcher.getContainerInfo();
 
       Callable<ProcessController<YarnApplicationReport>> submitTask =
@@ -230,6 +238,7 @@ final class YarnWeavePreparer implements WeavePreparer {
                                                      Constants.Files.ARGUMENTS));
 
           LOG.debug("Submit AM container spec: {}", appId);
+          LOG.debug("Tokens submitting: {}", credentials.getAllTokens());
           // java -Djava.io.tmpdir=tmp -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
           //     com.continuuity.weave.internal.WeaveLauncher
           //     appMaster.jar
@@ -246,7 +255,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               "java",
               "-Djava.io.tmpdir=tmp",
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
-              "-Xmx" + Constants.APP_MASTER_MEMORY_MB + "m",
+              "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * Constants.HEAP_MEMORY_DISCOUNT) + "m",
               WeaveLauncher.class.getName(),
               Constants.Files.APP_MASTER_JAR,
               ApplicationMasterMain.class.getName(),

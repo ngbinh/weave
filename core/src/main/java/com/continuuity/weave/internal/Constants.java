@@ -30,6 +30,8 @@ public final class Constants {
   /** Memory size of AM */
   public static final int APP_MASTER_MEMORY_MB = 512;
 
+  public static final double HEAP_MEMORY_DISCOUNT = 0.9d;
+
   /**
    * Constants for names of internal files that are shared between client, AM and containers.
    */

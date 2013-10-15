@@ -16,6 +16,7 @@
 package com.continuuity.weave.yarn.utils;
 
 import com.continuuity.weave.api.LocalFile;
+import com.continuuity.weave.filesystem.ForwardingLocationFactory;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.yarn.YarnLaunchContext;
@@ -38,9 +39,12 @@ import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +52,8 @@ import java.util.Map;
  * Collection of helper methods to simplify YARN calls.
  */
 public class YarnUtils {
+
+  private static final Logger LOG = LoggerFactory.getLogger(YarnUtils.class);
 
   public static YarnLocalResource createLocalResource(LocalFile localFile) {
     Preconditions.checkArgument(localFile.getLastModified() >= 0, "Last modified time should be >= 0.");
@@ -130,26 +136,38 @@ public class YarnUtils {
                                                    LocationFactory locationFactory,
                                                    Credentials credentials) throws IOException {
     if (!UserGroupInformation.isSecurityEnabled()) {
+      LOG.info("Security is not enabled");
       return ImmutableList.of();
     }
 
-    if (!(locationFactory instanceof HDFSLocationFactory)) {
+    FileSystem fileSystem = getFileSystem(locationFactory);
+
+    if (fileSystem == null) {
+      LOG.info("LocationFactory is not HDFS");
       return ImmutableList.of();
     }
 
-    FileSystem fileSystem = ((HDFSLocationFactory) locationFactory).getFileSystem();
+    String renewer = getYarnTokenRenewer(config);
 
-    String rmHost = config.getSocketAddr(YarnConfiguration.RM_ADDRESS,
-                                         YarnConfiguration.DEFAULT_RM_ADDRESS,
-                                         YarnConfiguration.DEFAULT_RM_PORT).getHostName();
+    Token<?>[] tokens = fileSystem.addDelegationTokens(renewer, credentials);
+    return tokens == null ? ImmutableList.<Token<?>>of() : ImmutableList.copyOf(tokens);
+  }
+
+  public static String getYarnTokenRenewer(Configuration config) throws IOException {
+    String rmHost = getRMAddress(config).getHostName();
     String renewer = SecurityUtil.getServerPrincipal(config.get(YarnConfiguration.RM_PRINCIPAL), rmHost);
 
     if (renewer == null || renewer.length() == 0) {
       throw new IOException("No Kerberos principal for Yarn RM to use as renewer");
     }
 
-    Token<?>[] tokens = fileSystem.addDelegationTokens(renewer, credentials);
-    return tokens == null ? ImmutableList.<Token<?>>of() : ImmutableList.copyOf(tokens);
+    return renewer;
+  }
+
+  public static InetSocketAddress getRMAddress(Configuration config) {
+    return config.getSocketAddr(YarnConfiguration.RM_ADDRESS,
+                                YarnConfiguration.DEFAULT_RM_ADDRESS,
+                                YarnConfiguration.DEFAULT_RM_PORT);
   }
 
   /**
@@ -204,6 +222,19 @@ public class YarnUtils {
         return resource.getLocalResource();
       }
     });
+  }
+
+  /**
+   * Gets the Hadoop FileSystem from LocationFactory.
+   */
+  private static FileSystem getFileSystem(LocationFactory locationFactory) {
+    if (locationFactory instanceof HDFSLocationFactory) {
+      return ((HDFSLocationFactory) locationFactory).getFileSystem();
+    }
+    if (locationFactory instanceof ForwardingLocationFactory) {
+      return getFileSystem(((ForwardingLocationFactory) locationFactory).getDelegate());
+    }
+    return null;
   }
 
   private YarnUtils() {

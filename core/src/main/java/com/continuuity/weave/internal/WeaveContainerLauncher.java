@@ -75,7 +75,7 @@ public final class WeaveContainerLauncher {
            ImmutableList.<String>builder()
              .add("-Djava.io.tmpdir=tmp")
              .add("-cp").add(Constants.Files.LAUNCHER_JAR)
-             .add("-Xmx" + memory + "m")
+             .add("-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m")
              .add(WeaveLauncher.class.getName())
              .add(Constants.Files.CONTAINER_JAR)
              .add(WeaveContainerMain.class.getName())

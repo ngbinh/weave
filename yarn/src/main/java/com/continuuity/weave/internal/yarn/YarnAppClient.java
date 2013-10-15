@@ -31,5 +31,13 @@ public interface YarnAppClient extends Service {
    */
   ProcessLauncher<ApplicationId> createLauncher(WeaveSpecification weaveSpec) throws Exception;
 
+  /**
+   * Creates a {@link ProcessLauncher} for launching application with the given user and spec.
+   *
+   * @deprecated This method will get removed.
+   */
+  @Deprecated
+  ProcessLauncher<ApplicationId> createLauncher(String user, WeaveSpecification weaveSpec) throws Exception;
+
   ProcessController<YarnApplicationReport> createProcessController(ApplicationId appId);
 }

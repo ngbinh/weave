@@ -181,7 +181,10 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
       LOG.info("Adjust virtual cores requirement from {} to {}.", cores, updatedCores);
     }
 
-    int updatedMemory = Math.max(Math.min(resource.getMemory(), maxCapability.getMemory()), minCapability.getMemory());
+    int updatedMemory = Math.min(resource.getMemory(), maxCapability.getMemory());
+    int minMemory = minCapability.getMemory();
+    updatedMemory = (int) Math.ceil(((double) updatedMemory / minMemory)) * minMemory;
+
     if (resource.getMemory() != updatedMemory) {
       resource.setMemory(updatedMemory);
       LOG.info("Adjust memory requirement from {} to {} MB.", resource.getMemory(), updatedMemory);

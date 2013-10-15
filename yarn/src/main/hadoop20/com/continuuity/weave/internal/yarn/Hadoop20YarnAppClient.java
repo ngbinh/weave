@@ -20,13 +20,23 @@ import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterProcessLauncher;
 import com.continuuity.weave.internal.appmaster.ApplicationSubmitter;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.DataInputByteBuffer;
+import org.apache.hadoop.io.DataOutputBuffer;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.SecurityUtil;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
+import org.apache.hadoop.yarn.api.records.DelegationToken;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.client.YarnClient;
 import org.apache.hadoop.yarn.client.YarnClientImpl;
@@ -35,6 +45,9 @@ import org.apache.hadoop.yarn.util.Records;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+
 /**
  *
  */
@@ -42,31 +55,34 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
 
   private static final Logger LOG = LoggerFactory.getLogger(Hadoop20YarnAppClient.class);
   private final YarnClient yarnClient;
+  private String user;
 
   public Hadoop20YarnAppClient(Configuration configuration) {
     this.yarnClient = new YarnClientImpl();
     yarnClient.init(configuration);
+    this.user = System.getProperty("user.name");
   }
 
   @Override
   public ProcessLauncher<ApplicationId> createLauncher(WeaveSpecification weaveSpec) throws Exception {
     // Request for new application
-    GetNewApplicationResponse response = yarnClient.getNewApplication();
+    final GetNewApplicationResponse response = yarnClient.getNewApplication();
     final ApplicationId appId = response.getApplicationId();
 
     // Setup the context for application submission
     final ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
     appSubmissionContext.setApplicationId(appId);
     appSubmissionContext.setApplicationName(weaveSpec.getName());
-    appSubmissionContext.setUser(System.getProperty("user.name"));
+    appSubmissionContext.setUser(user);
 
     ApplicationSubmitter submitter = new ApplicationSubmitter() {
 
       @Override
       public ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability) {
         ContainerLaunchContext context = launchContext.getLaunchContext();
+        addRMToken(context);
         context.setUser(appSubmissionContext.getUser());
-        context.setResource(capability);
+        context.setResource(adjustMemory(response, capability));
         appSubmissionContext.setAMContainerSpec(context);
 
         try {
@@ -80,6 +96,69 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
     };
 
     return new ApplicationMasterProcessLauncher(appId, submitter);
+  }
+
+  private Resource adjustMemory(GetNewApplicationResponse response, Resource capability) {
+    int minMemory = response.getMinimumResourceCapability().getMemory();
+
+    int updatedMemory = Math.min(capability.getMemory(), response.getMaximumResourceCapability().getMemory());
+    updatedMemory = (int) Math.ceil(((double) updatedMemory / minMemory)) * minMemory;
+
+    if (updatedMemory != capability.getMemory()) {
+      capability.setMemory(updatedMemory);
+    }
+
+    return capability;
+  }
+
+  private void addRMToken(ContainerLaunchContext context) {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return;
+    }
+
+    Credentials credentials = new Credentials();
+
+    try {
+      ByteBuffer tokens = context.getContainerTokens();
+      if (tokens != null) {
+        DataInputByteBuffer input = new DataInputByteBuffer();
+        input.reset(tokens);
+        credentials.readTokenStorageStream(input);
+      }
+
+      Configuration config = yarnClient.getConfig();
+      Token<TokenIdentifier> token = convertToken(
+        yarnClient.getRMDelegationToken(new Text(YarnUtils.getYarnTokenRenewer(config))),
+        YarnUtils.getRMAddress(config));
+
+      LOG.info("Added RM delegation token {}", token);
+      credentials.addToken(token.getService(), token);
+
+      DataOutputBuffer buffer = new DataOutputBuffer();
+      credentials.writeTokenStorageToStream(buffer);
+      context.setContainerTokens(ByteBuffer.wrap(buffer.getData(), 0, buffer.getLength()));
+
+    } catch (Exception e) {
+      LOG.error("Fails to create credentials.", e);
+      throw Throwables.propagate(e);
+    }
+  }
+
+  private <T extends TokenIdentifier> Token<T> convertToken(DelegationToken protoToken, InetSocketAddress serviceAddr) {
+    Token<T> token = new Token<T>(protoToken.getIdentifier().array(),
+                                  protoToken.getPassword().array(),
+                                  new Text(protoToken.getKind()),
+                                  new Text(protoToken.getService()));
+    if (serviceAddr != null) {
+      SecurityUtil.setTokenService(token, serviceAddr);
+    }
+    return token;
+  }
+
+  @Override
+  public ProcessLauncher<ApplicationId> createLauncher(String user, WeaveSpecification weaveSpec) throws Exception {
+    this.user = user;
+    return createLauncher(weaveSpec);
   }
 
   @Override
