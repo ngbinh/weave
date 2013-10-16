@@ -15,17 +15,15 @@
  */
 package com.continuuity.weave.internal.yarn;
 
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Function;
-import com.google.common.base.Throwables;
 import com.google.common.collect.Maps;
-import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.yarn.api.records.ApplicationAccessType;
 import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
 import org.apache.hadoop.yarn.api.records.LocalResource;
 import org.apache.hadoop.yarn.util.Records;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -60,14 +58,7 @@ public final class Hadoop20YarnLaunchContext implements YarnLaunchContext {
 
   @Override
   public void setCredentials(Credentials credentials) {
-    try {
-      DataOutputBuffer buffer = new DataOutputBuffer();
-      credentials.writeTokenStorageToStream(buffer);
-      launchContext.setContainerTokens(ByteBuffer.wrap(buffer.getData(), 0, buffer.getLength()));
-    } catch (IOException e) {
-      // Exception shouldn't be thrown as it's writing to memory buffer.
-      throw Throwables.propagate(e);
-    }
+    launchContext.setContainerTokens(YarnUtils.encodeCredentials(credentials));
   }
 
   @Override

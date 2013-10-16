@@ -238,7 +238,6 @@ final class YarnWeavePreparer implements WeavePreparer {
                                                      Constants.Files.ARGUMENTS));
 
           LOG.debug("Submit AM container spec: {}", appId);
-          LOG.debug("Tokens submitting: {}", credentials.getAllTokens());
           // java -Djava.io.tmpdir=tmp -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
           //     com.continuuity.weave.internal.WeaveLauncher
           //     appMaster.jar

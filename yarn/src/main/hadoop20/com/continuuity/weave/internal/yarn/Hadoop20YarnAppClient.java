@@ -24,8 +24,6 @@ import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.io.DataInputByteBuffer;
-import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
@@ -46,7 +44,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
 
 /**
  *
@@ -116,15 +113,8 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
       return;
     }
 
-    Credentials credentials = new Credentials();
-
     try {
-      ByteBuffer tokens = context.getContainerTokens();
-      if (tokens != null) {
-        DataInputByteBuffer input = new DataInputByteBuffer();
-        input.reset(tokens);
-        credentials.readTokenStorageStream(input);
-      }
+      Credentials credentials = YarnUtils.decodeCredentials(context.getContainerTokens());
 
       Configuration config = yarnClient.getConfig();
       Token<TokenIdentifier> token = convertToken(
@@ -134,9 +124,7 @@ public final class Hadoop20YarnAppClient extends AbstractIdleService implements 
       LOG.info("Added RM delegation token {}", token);
       credentials.addToken(token.getService(), token);
 
-      DataOutputBuffer buffer = new DataOutputBuffer();
-      credentials.writeTokenStorageToStream(buffer);
-      context.setContainerTokens(ByteBuffer.wrap(buffer.getData(), 0, buffer.getLength()));
+      context.setContainerTokens(YarnUtils.encodeCredentials(credentials));
 
     } catch (Exception e) {
       LOG.error("Fails to create credentials.", e);

@@ -28,6 +28,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.io.DataInputByteBuffer;
+import org.apache.hadoop.io.DataOutputBuffer;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -45,6 +47,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 
@@ -151,6 +154,32 @@ public class YarnUtils {
 
     Token<?>[] tokens = fileSystem.addDelegationTokens(renewer, credentials);
     return tokens == null ? ImmutableList.<Token<?>>of() : ImmutableList.copyOf(tokens);
+  }
+
+  public static ByteBuffer encodeCredentials(Credentials credentials) {
+    try {
+      DataOutputBuffer out = new DataOutputBuffer();
+      credentials.writeTokenStorageToStream(out);
+      return ByteBuffer.wrap(out.getData(), 0, out.getLength());
+    } catch (IOException e) {
+      // Shouldn't throw
+      LOG.error("Failed to encode Credentials.", e);
+      throw Throwables.propagate(e);
+    }
+  }
+
+  /**
+   * Decodes {@link Credentials} from the given buffer.
+   * If the buffer is null or empty, it returns an empty Credentials.
+   */
+  public static Credentials decodeCredentials(ByteBuffer buffer) throws IOException {
+    Credentials credentials = new Credentials();
+    if (buffer != null && buffer.hasRemaining()) {
+      DataInputByteBuffer in = new DataInputByteBuffer();
+      in.reset(buffer);
+      credentials.readTokenStorageStream(in);
+    }
+    return credentials;
   }
 
   public static String getYarnTokenRenewer(Configuration config) throws IOException {
