@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
+  Copyright 2012-2013 Continuuity,Inc.
 
   Licensed under the Apache License, Version 2.0 (the "License"); you may not
   use this file except in compliance with the License. You may obtain a copy of
@@ -20,12 +20,16 @@
     <parent>
         <artifactId>weave-parent</artifactId>
         <groupId>com.continuuity.weave</groupId>
-        <version>1.0.0-rc7-SNAPSHOT</version>
+        <version>1.1.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>weave-yarn</artifactId>
     <name>Weave Apache Hadoop YARN library</name>
+
+    <properties>
+        <output.dir>target/classes</output.dir>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -79,4 +83,27 @@
             <artifactId>junit</artifactId>
         </dependency>
     </dependencies>
+
+    <build>
+        <outputDirectory>${output.dir}</outputDirectory>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>hadoop-2.0</id>
+            <properties>
+                <output.dir>${hadoop20.output.dir}</output.dir>
+            </properties>
+        </profile>
+        <profile>
+            <id>hadoop-2.1</id>
+            <build>
+                <resources>
+                    <resource>
+                        <directory>${hadoop20.output.dir}</directory>
+                    </resource>
+                </resources>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -23,7 +23,6 @@ import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
 
 /**
@@ -33,55 +32,55 @@ public final class WeaveContainerLauncher {
 
   private final RuntimeSpecification runtimeSpec;
   private final RunId runId;
-  private final ProcessLauncher processLauncher;
+  private final ProcessLauncher.PrepareLaunchContext launchContext;
   private final ZKClient zkClient;
   private final int instanceId;
   private final int instanceCount;
+  private final String jvmOpts;
 
-  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId, ProcessLauncher processLauncher,
-                                ZKClient zkClient, int instanceId, int instanceCount) {
+  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId,
+                                ProcessLauncher.PrepareLaunchContext launchContext,
+                                ZKClient zkClient, int instanceId, int instanceCount, String jvmOpts) {
     this.runtimeSpec = runtimeSpec;
     this.runId = runId;
-    this.processLauncher = processLauncher;
+    this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceId = instanceId;
     this.instanceCount = instanceCount;
+    this.jvmOpts = jvmOpts;
   }
 
   public WeaveContainerController start(String stdout, String stderr) {
-    ProcessLauncher.PrepareLaunchContext.AfterUser afterUser = processLauncher.prepareLaunch()
-      .setUser(System.getProperty("user.name"));
-
     ProcessLauncher.PrepareLaunchContext.AfterResources afterResources = null;
     if (runtimeSpec.getLocalFiles().isEmpty()) {
-      afterResources = afterUser.noResources();
-    }
+      afterResources = launchContext.noResources();
+    } else {
+      ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = launchContext.withResources();
 
-    ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = afterUser.withResources();
-
-    for (LocalFile localFile : runtimeSpec.getLocalFiles()) {
-      afterResources = resourcesAdder.add(localFile);
+      for (LocalFile localFile : runtimeSpec.getLocalFiles()) {
+        afterResources = resourcesAdder.add(localFile);
+      }
     }
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
 
-    final ProcessLauncher.ProcessController processController = afterResources
+    // Currently no reporting is supported for runnable containers
+    ProcessController<Void> processController = afterResources
       .withEnvironment()
-        .add(EnvKeys.WEAVE_RUN_ID, runId.getId())
-        .add(EnvKeys.WEAVE_RUNNABLE_NAME, runtimeSpec.getName())
-        .add(EnvKeys.WEAVE_INSTANCE_ID, Integer.toString(instanceId))
-        .add(EnvKeys.WEAVE_INSTANCE_COUNT, Integer.toString(instanceCount))
+      .add(EnvKeys.WEAVE_RUN_ID, runId.getId())
+      .add(EnvKeys.WEAVE_RUNNABLE_NAME, runtimeSpec.getName())
+      .add(EnvKeys.WEAVE_INSTANCE_ID, Integer.toString(instanceId))
+      .add(EnvKeys.WEAVE_INSTANCE_COUNT, Integer.toString(instanceCount))
       .withCommands()
-        .add("java",
-             ImmutableList.<String>builder()
-               .add("-Djava.io.tmpdir=tmp")
-               .add("-cp").add(Constants.Files.LAUNCHER_JAR)
-               .add("-Xmx" + memory + "m")
-               .add(WeaveLauncher.class.getName())
-               .add(Constants.Files.CONTAINER_JAR)
-               .add(WeaveContainerMain.class.getName())
-               .add(Boolean.TRUE.toString())
-               .build().toArray(new String[0]))
+      .add("java",
+           "-Djava.io.tmpdir=tmp",
+           "-cp", Constants.Files.LAUNCHER_JAR,
+           "-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+           jvmOpts,
+           WeaveLauncher.class.getName(),
+           Constants.Files.CONTAINER_JAR,
+           WeaveContainerMain.class.getName(),
+           Boolean.TRUE.toString())
       .redirectOutput(stdout).redirectError(stderr)
       .launch();
 
@@ -93,10 +92,10 @@ public final class WeaveContainerLauncher {
   private static final class WeaveContainerControllerImpl extends AbstractZKServiceController
                                                           implements WeaveContainerController {
 
-    private final ProcessLauncher.ProcessController processController;
+    private final ProcessController<Void> processController;
 
     protected WeaveContainerControllerImpl(ZKClient zkClient, RunId runId,
-                                           ProcessLauncher.ProcessController processController) {
+                                           ProcessController<Void> processController) {
       super(runId, zkClient);
       this.processController = processController;
     }
@@ -136,7 +135,7 @@ public final class WeaveContainerLauncher {
 
     @Override
     public void kill() {
-      processController.kill();
+      processController.cancel();
     }
   }
 }

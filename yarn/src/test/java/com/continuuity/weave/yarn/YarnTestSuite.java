@@ -39,8 +39,13 @@ import java.util.concurrent.TimeUnit;
  * Test suite for all tests with mini yarn cluster.
  */
 @RunWith(Suite.class)
-@Suite.SuiteClasses({EchoServerTestRun.class, ResourceReportTestRun.class,
-                     TaskCompletedTestRun.class, DistributeShellTestRun.class})
+@Suite.SuiteClasses({
+                      EchoServerTestRun.class,
+                      ResourceReportTestRun.class,
+                      TaskCompletedTestRun.class,
+                      DistributeShellTestRun.class,
+                      LocalFileTestRun.class
+                    })
 public class YarnTestSuite {
   private static final Logger LOG = LoggerFactory.getLogger(YarnTestSuite.class);
 
@@ -61,12 +66,14 @@ public class YarnTestSuite {
     // Start YARN mini cluster
     config = new YarnConfiguration(new Configuration());
 
-    // Use the FIFO scheduler for testing.
-    config.set("yarn.resourcemanager.scheduler.class", "org.apache.hadoop.yarn.server.resourcemanager.scheduler" +
-      ".fifo.FifoScheduler");
+    config.set("yarn.resourcemanager.scheduler.class",
+               "org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler");
+    config.set("yarn.scheduler.capacity.resource-calculator",
+               "org.apache.hadoop.yarn.util.resource.DominantResourceCalculator");
     config.set("yarn.minicluster.fixed.ports", "true");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
     config.set("yarn.scheduler.minimum-allocation-mb", "128");
+    config.set("yarn.nodemanager.delete.debug-delay-sec", "3600");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);

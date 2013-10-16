@@ -17,12 +17,16 @@ package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.logging.LogHandler;
-import org.apache.hadoop.yarn.api.records.ApplicationId;
+import com.continuuity.weave.internal.ProcessController;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
+
+import java.util.concurrent.Callable;
 
 /**
- *
+ * Factory for creating {@link YarnWeaveController}.
  */
 interface YarnWeaveControllerFactory {
 
-  YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers, ApplicationId appId, Runnable startUp);
+  YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,
+                             Callable<ProcessController<YarnApplicationReport>> startUp);
 }

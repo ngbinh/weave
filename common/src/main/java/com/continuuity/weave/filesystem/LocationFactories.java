@@ -1,5 +1,17 @@
 /*
- * Copyright 2012-2013 Continuuity,Inc. All Rights Reserved.
+ * Copyright 2012-2013 Continuuity,Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
  */
 package com.continuuity.weave.filesystem;
 
@@ -16,12 +28,12 @@ public final class LocationFactories {
   /**
    * Creates a {@link LocationFactory} that always applies the giving namespace prefix.
    */
-  public static LocationFactory namespace(final LocationFactory delegate, final String namespace) {
-    return new LocationFactory() {
+  public static LocationFactory namespace(LocationFactory delegate, final String namespace) {
+    return new ForwardingLocationFactory(delegate) {
       @Override
       public Location create(String path) {
         try {
-          Location base = delegate.create(namespace);
+          Location base = getDelegate().create(namespace);
           return base.append(path);
         } catch (IOException e) {
           throw Throwables.propagate(e);
@@ -31,10 +43,10 @@ public final class LocationFactories {
       @Override
       public Location create(URI uri) {
         if (uri.isAbsolute()) {
-          return delegate.create(uri);
+          return getDelegate().create(uri);
         }
         try {
-          Location base = delegate.create(namespace);
+          Location base = getDelegate().create(namespace);
           return base.append(uri.getPath());
         } catch (IOException e) {
           throw Throwables.propagate(e);
@@ -43,7 +55,7 @@ public final class LocationFactories {
 
       @Override
       public Location getHomeLocation() {
-        return delegate.getHomeLocation();
+        return getDelegate().getHomeLocation();
       }
     };
   }

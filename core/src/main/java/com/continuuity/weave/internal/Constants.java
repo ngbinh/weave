@@ -27,6 +27,11 @@ public final class Constants {
   /** Maximum number of seconds for AM to stop. */
   public static final int APPLICATION_MAX_STOP_SECONDS = 30;
 
+  /** Memory size of AM */
+  public static final int APP_MASTER_MEMORY_MB = 512;
+
+  public static final double HEAP_MEMORY_DISCOUNT = 0.9d;
+
   /**
    * Constants for names of internal files that are shared between client, AM and containers.
    */
@@ -40,6 +45,7 @@ public final class Constants {
     public static final String ARGUMENTS = "arguments.json";
     public static final String LOGBACK_TEMPLATE = "logback-template.xml";
     public static final String KAFKA = "kafka.tgz";
+    public static final String JVM_OPTIONS = "jvm.opts";
 
     private Files() {
     }

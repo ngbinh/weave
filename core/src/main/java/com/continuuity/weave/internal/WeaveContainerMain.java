@@ -68,7 +68,7 @@ public final class WeaveContainerMain extends ServiceMain {
     renameLocalFiles(weaveSpec.getRunnables().get(runnableName));
     
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
-    ContainerInfo containerInfo = new ContainerInfo();
+    ContainerInfo containerInfo = new EnvContainerInfo();
     Arguments arguments = decodeArgs();
     BasicWeaveContext context = new BasicWeaveContext(
       runId, appRunId, containerInfo.getHost(),

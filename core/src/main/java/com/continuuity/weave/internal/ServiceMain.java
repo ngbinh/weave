@@ -42,13 +42,18 @@ public abstract class ServiceMain {
 
   private static final Logger LOG = LoggerFactory.getLogger(ServiceMain.class);
 
+  static {
+    // This is to work around detection of HADOOP_HOME (HADOOP-9422)
+    if (!System.getenv().containsKey("HADOOP_HOME") && System.getProperty("hadoop.home.dir") == null) {
+      System.setProperty("hadoop.home.dir", new File("").getAbsolutePath());
+    }
+  }
+
   protected final void doMain(final ZKClientService zkClientService,
                               final Service service) throws ExecutionException, InterruptedException {
     configureLogger();
 
     final String serviceName = service.toString();
-
-
     Runtime.getRuntime().addShutdownHook(new Thread() {
       @Override
       public void run() {

@@ -17,24 +17,17 @@ package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
-import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 
 /**
  * Data structure to represent a container request in progress (provisioning).
  */
 final class ProvisionRequest {
-  private final AMRMClient.ContainerRequest request;
   private final RuntimeSpecification runtimeSpec;
   private final RunId baseRunId;
 
-  ProvisionRequest(AMRMClient.ContainerRequest request, RuntimeSpecification runtimeSpec, RunId baseRunId) {
-    this.request = request;
+  ProvisionRequest(RuntimeSpecification runtimeSpec, RunId baseRunId) {
     this.runtimeSpec = runtimeSpec;
     this.baseRunId = baseRunId;
-  }
-
-  AMRMClient.ContainerRequest getRequest() {
-    return request;
   }
 
   RuntimeSpecification getRuntimeSpec() {

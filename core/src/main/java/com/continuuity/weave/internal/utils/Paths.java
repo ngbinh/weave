@@ -15,26 +15,28 @@
  */
 package com.continuuity.weave.internal.utils;
 
-import com.google.common.base.Function;
-import com.google.common.base.Joiner;
-import com.google.common.collect.Iterables;
-
-import java.util.regex.Pattern;
+import com.google.common.io.Files;
 
 /**
  *
  */
 public final class Paths {
 
-  private static final Pattern WHITE_SPACE_PATTERN = Pattern.compile("^\\s*(.*?)\\s*$");
 
-  public static String getClassPath(Iterable<String> paths) {
-    return Joiner.on(':').join(Iterables.transform(paths, new Function<String, String>() {
-      @Override
-      public String apply(String input) {
-        return WHITE_SPACE_PATTERN.matcher(input).replaceAll("$1");
-      }
-    }));
+  public static String appendSuffix(String extractFrom, String appendTo) {
+    String suffix = getExtension(extractFrom);
+    if (!suffix.isEmpty()) {
+      return appendTo + '.' + suffix;
+    }
+    return appendTo;
+  }
+
+  public static String getExtension(String path) {
+    if (path.endsWith(".tar.gz")) {
+      return "tar.gz";
+    }
+
+    return Files.getFileExtension(path);
   }
 
   private Paths() {

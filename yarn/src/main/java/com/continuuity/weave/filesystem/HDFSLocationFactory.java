@@ -76,6 +76,13 @@ public final class HDFSLocationFactory implements LocationFactory {
     return new HDFSLocation(fileSystem, fileSystem.getHomeDirectory());
   }
 
+  /**
+   * Returns the underlying {@link FileSystem} object.
+   */
+  public FileSystem getFileSystem() {
+    return fileSystem;
+  }
+
   private static FileSystem getFileSystem(Configuration configuration) {
     try {
       return FileSystem.get(configuration);
