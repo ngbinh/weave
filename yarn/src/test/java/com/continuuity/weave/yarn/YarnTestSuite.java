@@ -73,6 +73,7 @@ public class YarnTestSuite {
     config.set("yarn.minicluster.fixed.ports", "true");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
     config.set("yarn.scheduler.minimum-allocation-mb", "128");
+    config.set("yarn.nodemanager.delete.debug-delay-sec", "3600");
 
     cluster = new MiniYARNCluster("test-cluster", 1, 1, 1);
     cluster.init(config);

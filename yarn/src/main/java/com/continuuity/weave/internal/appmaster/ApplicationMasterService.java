@@ -61,7 +61,9 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
+import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
+import com.google.common.io.InputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.common.util.concurrent.AbstractExecutionThreadService;
 import com.google.common.util.concurrent.Futures;
@@ -86,6 +88,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
 import java.net.URI;
@@ -124,6 +127,7 @@ public final class ApplicationMasterService implements Service {
   private final TrackerService trackerService;
   private final YarnAMClient amClient;
   private final Credentials credentials;
+  private final String jvmOpts;
 
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
@@ -137,6 +141,7 @@ public final class ApplicationMasterService implements Service {
     this.zkClient = zkClient;
     this.amClient = amClientFactory.create();
     this.credentials = createCredentials();
+    this.jvmOpts = loadJvmOptions();
 
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
@@ -146,6 +151,20 @@ public final class ApplicationMasterService implements Service {
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
     runningContainers = initRunningContainers(amClient.getContainerId(), amClient.getHost());
     trackerService = new TrackerService(runningContainers.getResourceReport(), amClient.getHost());
+  }
+
+  private String loadJvmOptions() throws IOException {
+    final File jvmOptsFile = new File(Constants.Files.JVM_OPTIONS);
+    if (!jvmOptsFile.exists()) {
+      return "";
+    }
+
+    return CharStreams.toString(new InputSupplier<Reader>() {
+      @Override
+      public Reader getInput() throws IOException {
+        return new FileReader(jvmOptsFile);
+      }
+    });
   }
 
   private Supplier<? extends JsonElement> createLiveNodeDataSupplier() {
@@ -180,7 +199,6 @@ public final class ApplicationMasterService implements Service {
     LOG.info("Start application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
 
     instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
-
 
     kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
 
@@ -447,11 +465,11 @@ public final class ApplicationMasterService implements Service {
         ), getLocalizeFiles(), credentials
       );
 
-      WeaveContainerLauncher launcher = new WeaveContainerLauncher(weaveSpec.getRunnables().get(runnableName),
-                                                                   containerRunId, launchContext,
-                                                                   ZKClients.namespace(zkClient,
-                                                                                       getZKNamespace(runnableName)),
-                                                                   instanceId, instanceCounts.get(runnableName));
+      WeaveContainerLauncher launcher = new WeaveContainerLauncher(
+        weaveSpec.getRunnables().get(runnableName), containerRunId, launchContext,
+        ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
+        instanceId, instanceCounts.get(runnableName), jvmOpts);
+
       runningContainers.add(runnableName, processLauncher.getContainerInfo(), instanceId,
                             launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
                                            ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));

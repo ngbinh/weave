@@ -22,6 +22,7 @@ import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.discovery.Discoverable;
 import com.google.common.base.Charsets;
+import com.google.common.base.Preconditions;
 import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import com.google.common.io.LineReader;
@@ -59,11 +60,19 @@ public class LocalFileTestRun {
                                         Charsets.UTF_8);
 
     WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    if (runner instanceof YarnWeaveRunnerService) {
+      ((YarnWeaveRunnerService) runner).setJVMOptions("-verbose:gc -Xloggc:gc.log -XX:+PrintGCDetails");
+    }
+
     WeaveController controller = runner.prepare(new LocalFileApplication())
-      .withApplicationArguments("local")
-      .withArguments("LocalFileSocketServer", "local2")
-      .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
-      .start();
+    .withApplicationArguments("local")
+    .withArguments("LocalFileSocketServer", "local2")
+    .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+    .start();
+
+    if (runner instanceof YarnWeaveRunnerService) {
+      ((YarnWeaveRunnerService) runner).setJVMOptions("");
+    }
 
     Iterable<Discoverable> discoverables = controller.discoverService("local");
     Assert.assertTrue(YarnTestSuite.waitForSize(discoverables, 1, 60));
@@ -124,6 +133,9 @@ public class LocalFileTestRun {
 
     @Override
     public void handleRequest(BufferedReader reader, PrintWriter writer) throws IOException {
+      // Verify there is a gc.log file locally
+      Preconditions.checkState(new File("gc.log").exists());
+
       LOG.info("handleRequest");
       String header = Files.toString(new File("header/header.txt"), Charsets.UTF_8);
       writer.write(header);

@@ -52,6 +52,7 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicates;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.HashMultimap;
@@ -65,6 +66,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
+import com.google.common.io.CharStreams;
 import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
@@ -106,6 +108,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final YarnAppClient yarnAppClient;
   private final ZKClient zkClient;
   private final LocationFactory locationFactory;
+  private final Supplier<String> jvmOpts;
   private final YarnWeaveControllerFactory controllerFactory;
   private final RunId runId;
 
@@ -119,14 +122,16 @@ final class YarnWeavePreparer implements WeavePreparer {
   private String user;
 
   YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
-                    ZKClient zkClient, LocationFactory locationFactory, YarnWeaveControllerFactory controllerFactory) {
+                    ZKClient zkClient, LocationFactory locationFactory, Supplier<String> jvmOpts,
+                    YarnWeaveControllerFactory controllerFactory) {
     this.yarnConfig = yarnConfig;
     this.weaveSpec = weaveSpec;
     this.yarnAppClient = yarnAppClient;
     this.zkClient = ZKClients.namespace(zkClient, "/" + weaveSpec.getName());
     this.locationFactory = locationFactory;
-    this.runId = RunIds.generate();
+    this.jvmOpts = jvmOpts;
     this.controllerFactory = controllerFactory;
+    this.runId = RunIds.generate();
     this.credentials = createCredentials();
     this.user = System.getProperty("user.name");
   }
@@ -223,6 +228,8 @@ final class YarnWeavePreparer implements WeavePreparer {
           // Local files declared by runnables
           Multimap<String, LocalFile> runnableLocalFiles = HashMultimap.create();
 
+          String vmOpts = jvmOpts.get();
+
           createAppMasterJar(createBundler(), localFiles);
           createContainerJar(createBundler(), localFiles);
           populateRunnableLocalFiles(weaveSpec, runnableLocalFiles);
@@ -230,6 +237,7 @@ final class YarnWeavePreparer implements WeavePreparer {
           saveLogback(localFiles);
           saveLauncher(localFiles);
           saveKafka(localFiles);
+          saveVmOptions(vmOpts, localFiles);
           saveArguments(new Arguments(arguments, runnableArgs), localFiles);
           saveLocalFiles(localFiles, ImmutableSet.of(Constants.Files.WEAVE_SPEC,
                                                      Constants.Files.LOGBACK_TEMPLATE,
@@ -255,6 +263,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               "-Djava.io.tmpdir=tmp",
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
               "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+              vmOpts,
               WeaveLauncher.class.getName(),
               Constants.Files.APP_MASTER_JAR,
               ApplicationMasterMain.class.getName(),
@@ -462,6 +471,24 @@ final class YarnWeavePreparer implements WeavePreparer {
     LOG.debug("Done {}", Constants.Files.KAFKA);
 
     localFiles.put(Constants.Files.KAFKA, createLocalFile(Constants.Files.KAFKA, location, true));
+  }
+
+  private void saveVmOptions(String opts, Map<String, LocalFile> localFiles) throws IOException {
+    if (opts.isEmpty()) {
+      // If no vm options, no need to localize the file.
+      return;
+    }
+    LOG.debug("Copy {}", Constants.Files.JVM_OPTIONS);
+    final Location location = createTempLocation(Constants.Files.JVM_OPTIONS);
+    CharStreams.write(opts, new OutputSupplier<Writer>() {
+      @Override
+      public Writer getOutput() throws IOException {
+        return new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
+      }
+    });
+    LOG.debug("Done {}", Constants.Files.JVM_OPTIONS);
+
+    localFiles.put(Constants.Files.JVM_OPTIONS, createLocalFile(Constants.Files.JVM_OPTIONS, location));
   }
 
   private void saveArguments(Arguments arguments, Map<String, LocalFile> localFiles) throws IOException {

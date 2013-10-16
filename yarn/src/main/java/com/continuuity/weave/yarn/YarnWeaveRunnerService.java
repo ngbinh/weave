@@ -49,6 +49,7 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
+import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
@@ -105,6 +106,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   private final Table<String, RunId, WeaveController> controllers;
   private Iterable<LiveInfo> liveInfos;
   private Cancellable watchCancellable;
+  private volatile String jvmOptions = "";
 
   public YarnWeaveRunnerService(YarnConfiguration config, String zkConnect) {
     this(config, zkConnect, new HDFSLocationFactory(getFileSystem(config), "/weave"));
@@ -116,6 +118,21 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     this.locationFactory = locationFactory;
     this.zkClientService = getZKClientService(zkConnect);
     this.controllers = HashBasedTable.create();
+  }
+
+  /**
+   * This methods sets the extra JVM options that will be passed to the java command line for every application
+   * started through this {@link YarnWeaveRunnerService} instance. It only affects applications that are started
+   * after options is set.
+   *
+   * This is intended for advance usage. All options will be passed unchanged to the java command line. Invalid
+   * options could cause application not able to start.
+   *
+   * @param options extra JVM options.
+   */
+  public void setJVMOptions(String options) {
+    Preconditions.checkArgument(options != null, "JVM options cannot be null.");
+    this.jvmOptions = options;
   }
 
   @Override
@@ -135,6 +152,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     final String appName = weaveSpec.getName();
 
     return new YarnWeavePreparer(yarnConfig, weaveSpec, yarnAppClient, zkClientService, locationFactory,
+                                 Suppliers.ofInstance(jvmOptions),
                                  new YarnWeaveControllerFactory() {
       @Override
       public YarnWeaveController create(RunId runId, Iterable<LogHandler> logHandlers,

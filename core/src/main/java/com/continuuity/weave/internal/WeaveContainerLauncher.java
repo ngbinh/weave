@@ -23,7 +23,6 @@ import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
-import com.google.common.collect.ImmutableList;
 import com.google.common.util.concurrent.ListenableFuture;
 
 /**
@@ -37,16 +36,18 @@ public final class WeaveContainerLauncher {
   private final ZKClient zkClient;
   private final int instanceId;
   private final int instanceCount;
+  private final String jvmOpts;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId,
                                 ProcessLauncher.PrepareLaunchContext launchContext,
-                                ZKClient zkClient, int instanceId, int instanceCount) {
+                                ZKClient zkClient, int instanceId, int instanceCount, String jvmOpts) {
     this.runtimeSpec = runtimeSpec;
     this.runId = runId;
     this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceId = instanceId;
     this.instanceCount = instanceCount;
+    this.jvmOpts = jvmOpts;
   }
 
   public WeaveContainerController start(String stdout, String stderr) {
@@ -72,15 +73,14 @@ public final class WeaveContainerLauncher {
       .add(EnvKeys.WEAVE_INSTANCE_COUNT, Integer.toString(instanceCount))
       .withCommands()
       .add("java",
-           ImmutableList.<String>builder()
-             .add("-Djava.io.tmpdir=tmp")
-             .add("-cp").add(Constants.Files.LAUNCHER_JAR)
-             .add("-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m")
-             .add(WeaveLauncher.class.getName())
-             .add(Constants.Files.CONTAINER_JAR)
-             .add(WeaveContainerMain.class.getName())
-             .add(Boolean.TRUE.toString())
-             .build().toArray(new String[0]))
+           "-Djava.io.tmpdir=tmp",
+           "-cp", Constants.Files.LAUNCHER_JAR,
+           "-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+           jvmOpts,
+           WeaveLauncher.class.getName(),
+           Constants.Files.CONTAINER_JAR,
+           WeaveContainerMain.class.getName(),
+           Boolean.TRUE.toString())
       .redirectOutput(stdout).redirectError(stderr)
       .launch();
 

@@ -45,6 +45,7 @@ public final class Constants {
     public static final String ARGUMENTS = "arguments.json";
     public static final String LOGBACK_TEMPLATE = "logback-template.xml";
     public static final String KAFKA = "kafka.tgz";
+    public static final String JVM_OPTIONS = "jvm.opts";
 
     private Files() {
     }
