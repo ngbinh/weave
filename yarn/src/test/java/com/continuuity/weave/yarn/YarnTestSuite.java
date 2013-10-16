@@ -66,9 +66,6 @@ public class YarnTestSuite {
     // Start YARN mini cluster
     config = new YarnConfiguration(new Configuration());
 
-    // Use the FIFO scheduler for testing.
-//    config.set("yarn.resourcemanager.scheduler.class",
-//               "org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler");
     config.set("yarn.resourcemanager.scheduler.class",
                "org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler");
     config.set("yarn.scheduler.capacity.resource-calculator",

@@ -175,8 +175,7 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
     int cores = YarnUtils.getVirtualCores(resource);
     int updatedCores = Math.max(Math.min(cores, YarnUtils.getVirtualCores(maxCapability)),
                                 YarnUtils.getVirtualCores(minCapability));
-    // Try and set the virtual cores, though older versions of YARN don't support this.
-    // Log a message if we're on an older version and could not set it.
+    // Try and set the virtual cores, which older versions of YARN don't support this.
     if (cores != updatedCores && YarnUtils.setVirtualCores(resource, updatedCores)) {
       LOG.info("Adjust virtual cores requirement from {} to {}.", cores, updatedCores);
     }
