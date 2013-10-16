@@ -19,6 +19,7 @@ import com.continuuity.weave.api.WeaveRunner;
 import com.continuuity.weave.api.WeaveRunnerService;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.internal.zookeeper.InMemoryZKServer;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.collect.Iterables;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
@@ -66,12 +67,17 @@ public class YarnTestSuite {
     // Start YARN mini cluster
     config = new YarnConfiguration(new Configuration());
 
-    config.set("yarn.resourcemanager.scheduler.class",
-               "org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler");
-    config.set("yarn.scheduler.capacity.resource-calculator",
-               "org.apache.hadoop.yarn.util.resource.DominantResourceCalculator");
+    if (YarnUtils.isHadoop20()) {
+      config.set("yarn.resourcemanager.scheduler.class",
+                 "org.apache.hadoop.yarn.server.resourcemanager.scheduler.fifo.FifoScheduler");
+    } else {
+      config.set("yarn.resourcemanager.scheduler.class",
+                 "org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity.CapacityScheduler");
+      config.set("yarn.scheduler.capacity.resource-calculator",
+                 "org.apache.hadoop.yarn.util.resource.DominantResourceCalculator");
+    }
     config.set("yarn.minicluster.fixed.ports", "true");
-    config.set("yarn.nodemanager.vmem-pmem-ratio", "5.1");
+    config.set("yarn.nodemanager.vmem-pmem-ratio", "20.1");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
     config.set("yarn.scheduler.minimum-allocation-mb", "128");
     config.set("yarn.nodemanager.delete.debug-delay-sec", "3600");
