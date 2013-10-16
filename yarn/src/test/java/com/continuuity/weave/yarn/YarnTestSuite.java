@@ -71,6 +71,7 @@ public class YarnTestSuite {
     config.set("yarn.scheduler.capacity.resource-calculator",
                "org.apache.hadoop.yarn.util.resource.DominantResourceCalculator");
     config.set("yarn.minicluster.fixed.ports", "true");
+    config.set("yarn.nodemanager.vmem-pmem-ratio", "5.1");
     config.set("yarn.nodemanager.vmem-check-enabled", "false");
     config.set("yarn.scheduler.minimum-allocation-mb", "128");
     config.set("yarn.nodemanager.delete.debug-delay-sec", "3600");
