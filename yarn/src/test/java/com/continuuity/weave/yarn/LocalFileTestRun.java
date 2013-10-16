@@ -22,28 +22,36 @@ import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.discovery.Discoverable;
 import com.google.common.base.Charsets;
+import com.google.common.io.ByteStreams;
 import com.google.common.io.Files;
 import com.google.common.io.LineReader;
 import org.junit.Assert;
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.URISyntaxException;
 import java.util.concurrent.TimeUnit;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 
 /**
  * Test for local file transfer.
  */
 public class LocalFileTestRun {
+
+  @ClassRule
+  public static TemporaryFolder tmpFolder = new TemporaryFolder();
 
   @Test
   public void testLocalFile() throws Exception {
@@ -85,8 +93,16 @@ public class LocalFileTestRun {
 
     private final File headerFile;
 
-    public LocalFileApplication() throws URISyntaxException {
-      headerFile = new File(getClass().getClassLoader().getResource("header.jar").toURI());
+    public LocalFileApplication() throws Exception {
+      // Create a jar file that contains the header.txt file inside.
+      headerFile = tmpFolder.newFile("header.jar");
+      JarOutputStream os = new JarOutputStream(new FileOutputStream(headerFile));
+      try {
+        os.putNextEntry(new JarEntry("header.txt"));
+        ByteStreams.copy(getClass().getClassLoader().getResourceAsStream("header.txt"), os);
+      } finally {
+        os.close();
+      }
     }
 
     @Override
