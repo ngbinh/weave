@@ -50,6 +50,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Collection of helper methods to simplify YARN calls.
@@ -57,6 +58,7 @@ import java.util.Map;
 public class YarnUtils {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnUtils.class);
+  private static final AtomicReference<Boolean> HADOOP_20 = new AtomicReference<Boolean>();
 
   public static YarnLocalResource createLocalResource(LocalFile localFile) {
     Preconditions.checkArgument(localFile.getLastModified() >= 0, "Last modified time should be >= 0.");
@@ -203,10 +205,16 @@ public class YarnUtils {
    * Returns true if Hadoop-2.0 classes are in the classpath.
    */
   public static boolean isHadoop20() {
+    Boolean hadoop20 = HADOOP_20.get();
+    if (hadoop20 != null) {
+      return hadoop20;
+    }
     try {
       Class.forName("org.apache.hadoop.yarn.client.api.NMClient");
+      HADOOP_20.set(false);
       return false;
     } catch (ClassNotFoundException e) {
+      HADOOP_20.set(true);
       return true;
     }
   }
