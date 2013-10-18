@@ -122,7 +122,7 @@ public class EchoServerTestRun {
 
       for (WeaveController c : controllers) {
         LOG.info("Stopping application: " + c.getRunId());
-        c.stop().get(10, TimeUnit.SECONDS);
+        c.stop().get(30, TimeUnit.SECONDS);
       }
 
       Assert.assertTrue(YarnTestSuite.waitForSize(apps, 0, 60));

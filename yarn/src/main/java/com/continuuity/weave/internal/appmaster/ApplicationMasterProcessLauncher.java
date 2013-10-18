@@ -21,7 +21,7 @@ import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.yarn.AbstractYarnProcessLauncher;
 import com.continuuity.weave.internal.yarn.YarnLaunchContext;
 import com.continuuity.weave.yarn.utils.YarnUtils;
-import com.google.common.collect.Maps;
+import com.google.common.collect.ImmutableMap;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
@@ -56,11 +56,14 @@ public final class ApplicationMasterProcessLauncher extends AbstractYarnProcessL
     YarnUtils.setVirtualCores(capability, 1);
 
     // Put in extra environments
-    Map<String, String> env = Maps.newHashMap(launchContext.getEnvironment());
-    env.put(EnvKeys.WEAVE_APP_ID, Integer.toString(appId.getId()));
-    env.put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME, Long.toString(appId.getClusterTimestamp()));
-    env.put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(Constants.APP_MASTER_MEMORY_MB));
-    env.put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES, Integer.toString(YarnUtils.getVirtualCores(capability)));
+    Map<String, String> env = ImmutableMap.<String, String>builder()
+      .putAll(launchContext.getEnvironment())
+      .put(EnvKeys.YARN_APP_ID, Integer.toString(appId.getId()))
+      .put(EnvKeys.YARN_APP_ID_CLUSTER_TIME, Long.toString(appId.getClusterTimestamp()))
+      .put(EnvKeys.YARN_APP_ID_STR, appId.toString())
+      .put(EnvKeys.YARN_CONTAINER_MEMORY_MB, Integer.toString(Constants.APP_MASTER_MEMORY_MB))
+      .put(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES, Integer.toString(YarnUtils.getVirtualCores(capability)))
+      .build();
 
     launchContext.setEnvironment(env);
     return (ProcessController<R>) submitter.submit(launchContext, capability);

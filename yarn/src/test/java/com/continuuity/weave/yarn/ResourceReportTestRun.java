@@ -124,7 +124,7 @@ public class ResourceReportTestRun {
       }
     }
 
-    controller.stop().get(10, TimeUnit.SECONDS);
+    controller.stop().get(30, TimeUnit.SECONDS);
     // Sleep a bit before exiting.
     TimeUnit.SECONDS.sleep(2);
   }
@@ -178,7 +178,7 @@ public class ResourceReportTestRun {
     report = controller.getResourceReport();
     Assert.assertEquals(1, report.getRunnableResources("BuggyServer").size());
 
-    controller.stop().get(10, TimeUnit.SECONDS);
+    controller.stop().get(30, TimeUnit.SECONDS);
     // Sleep a bit before exiting.
     TimeUnit.SECONDS.sleep(2);
   }
@@ -259,7 +259,7 @@ public class ResourceReportTestRun {
       Assert.assertEquals(256, resources.getMemoryMB());
     }
 
-    controller.stop().get(10, TimeUnit.SECONDS);
+    controller.stop().get(30, TimeUnit.SECONDS);
     // Sleep a bit before exiting.
     TimeUnit.SECONDS.sleep(2);
   }

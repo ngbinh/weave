@@ -208,8 +208,9 @@ public final class ZKOperations {
    * Deletes the given path recursively. The delete method will keep running until the given path is successfully
    * removed, which means if there are new node created under the given path while deleting, they'll get deleted
    * again.  If there is {@link KeeperException} during the deletion other than
-   *         {@link KeeperException.NotEmptyException}, the exception would be reflected in the result future
-   *         and deletion process will stop, leaving the given path with intermediate state.
+   * {@link KeeperException.NotEmptyException} or {@link KeeperException.NoNodeException},
+   * the exception would be reflected in the result future and deletion process will stop,
+   * leaving the given path with intermediate state.
    *
    * @param path The path to delete.
    * @return An {@link OperationFuture} that will be completed when the given path is deleted or bailed due to
@@ -232,7 +233,7 @@ public final class ZKOperations {
       @Override
       public void onFailure(Throwable t) {
         // Failed to delete the given path
-        if (!(t instanceof KeeperException.NotEmptyException)) {
+        if (!(t instanceof KeeperException.NotEmptyException || t instanceof KeeperException.NoNodeException)) {
           // For errors other than NotEmptyException, treat the operation as failed.
           resultFuture.setException(t);
           return;
