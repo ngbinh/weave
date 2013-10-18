@@ -251,16 +251,21 @@ final class YarnWeavePreparer implements WeavePreparer {
           //     appMaster.jar
           //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
           //     false
-          return launcher.prepareLaunch(ImmutableMap.of(EnvKeys.WEAVE_FS_USER, fsUser,
-                                                        EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString(),
-                                                        EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
-                                                        EnvKeys.WEAVE_RUN_ID, runId.getId()),
-                                        localFiles.values(), credentials)
+          return launcher.prepareLaunch(
+            ImmutableMap.of(
+              EnvKeys.WEAVE_FS_USER, fsUser,
+              EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString(),
+              EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
+              EnvKeys.WEAVE_RUN_ID, runId.getId(),
+              EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()),
+            localFiles.values(), credentials)
             .noResources()
             .noEnvironment()
             .withCommands().add(
               "java",
               "-Djava.io.tmpdir=tmp",
+              "-Dyarn.appId=$" + EnvKeys.YARN_APP_ID_STR,
+              "-Dweave.app=$" + EnvKeys.WEAVE_APP_NAME,
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
               "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * Constants.HEAP_MEMORY_DISCOUNT) + "m",
               vmOpts,

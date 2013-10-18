@@ -17,6 +17,7 @@ package com.continuuity.weave.internal;
 
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.ServiceController;
+import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.json.StateNodeCodec;
@@ -51,6 +52,7 @@ import org.apache.zookeeper.Watcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executor;
@@ -72,8 +74,22 @@ public final class ZKServiceDecorator extends AbstractService {
   private final MessageCallbackCaller messageCallback;
   private ExecutorService callbackExecutor;
 
-  public ZKServiceDecorator(ZKClient zkClient, RunId id,
-                            Supplier<? extends JsonElement> liveNodeData, Service decoratedService) {
+
+  public ZKServiceDecorator(ZKClient zkClient, RunId id, Supplier<? extends JsonElement> liveNodeData,
+                            Service decoratedService) {
+    this(zkClient, id, liveNodeData, decoratedService, null);
+  }
+
+  /**
+   * Creates a ZKServiceDecorator.
+   * @param zkClient ZooKeeper client
+   * @param id The run id of the service
+   * @param liveNodeData A supplier for providing information writing to live node.
+   * @param decoratedService The Service for monitoring state changes
+   * @param finalizer An optional Runnable to run when this decorator terminated.
+   */
+  public ZKServiceDecorator(ZKClient zkClient, RunId id, Supplier <? extends JsonElement> liveNodeData,
+                            Service decoratedService, @Nullable Runnable finalizer) {
     this.zkClient = zkClient;
     this.id = id;
     this.liveNodeData = liveNodeData;
@@ -82,6 +98,9 @@ public final class ZKServiceDecorator extends AbstractService {
       this.messageCallback = new MessageCallbackCaller((MessageCallback) decoratedService, zkClient);
     } else {
       this.messageCallback = new MessageCallbackCaller(zkClient);
+    }
+    if (finalizer != null) {
+      addFinalizer(finalizer);
     }
   }
 
@@ -142,9 +161,31 @@ public final class ZKServiceDecorator extends AbstractService {
     callbackExecutor.shutdownNow();
   }
 
+  private void addFinalizer(final Runnable finalizer) {
+    addListener(new ServiceListenerAdapter() {
+      @Override
+      public void terminated(State from) {
+        try {
+          finalizer.run();
+        } catch (Throwable t) {
+          LOG.warn("Exception when running finalizer.", t);
+        }
+      }
+
+      @Override
+      public void failed(State from, Throwable failure) {
+        try {
+          finalizer.run();
+        } catch (Throwable t) {
+          LOG.warn("Exception when running finalizer.", t);
+        }
+      }
+    }, Threads.SAME_THREAD_EXECUTOR);
+  }
+
   private OperationFuture<String> createLiveNode() {
     String liveNode = getLiveNodePath();
-    LOG.info("Create live node " + liveNode);
+    LOG.info("Create live node {}{}", zkClient.getConnectString(), liveNode);
 
     JsonObject content = new JsonObject();
     content.add("data", liveNodeData.get());
@@ -154,13 +195,13 @@ public final class ZKServiceDecorator extends AbstractService {
 
   private OperationFuture<String> removeLiveNode() {
     String liveNode = getLiveNodePath();
-    LOG.info("Remove live node {}", liveNode);
+    LOG.info("Remove live node {}{}", zkClient.getConnectString(), liveNode);
     return ZKOperations.ignoreError(zkClient.delete(liveNode), KeeperException.NoNodeException.class, liveNode);
   }
 
   private OperationFuture<String> removeServiceNode() {
     String serviceNode = String.format("/%s", id.getId());
-    LOG.info("Remove service node {}", serviceNode);
+    LOG.info("Remove service node {}{}", zkClient.getConnectString(), serviceNode);
     return ZKOperations.recursiveDelete(zkClient, serviceNode);
   }
 
@@ -371,6 +412,7 @@ public final class ZKServiceDecorator extends AbstractService {
         public void run() {
           try {
             future.get();
+            LOG.info("Service and state node removed");
             notifyStopped();
           } catch (Exception e) {
             LOG.warn("Failed to remove ZK nodes.", e);
@@ -391,6 +433,7 @@ public final class ZKServiceDecorator extends AbstractService {
       Futures.successfulAsList(futures).addListener(new Runnable() {
         @Override
         public void run() {
+          LOG.info("Service and state node removed");
           notifyFailed(failure);
         }
       }, Threads.SAME_THREAD_EXECUTOR);

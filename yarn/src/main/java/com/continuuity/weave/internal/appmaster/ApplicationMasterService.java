@@ -143,11 +143,17 @@ public final class ApplicationMasterService implements Service {
     this.credentials = createCredentials();
     this.jvmOpts = loadJvmOptions();
 
-    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
-                                                   Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
+    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.YARN_APP_ID)),
+                                                   Long.parseLong(System.getenv(EnvKeys.YARN_APP_ID_CLUSTER_TIME)),
                                                    amClient.getContainerId().toString());
 
-    serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
+    serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(),
+                                             new ServiceDelegate(), new Runnable() {
+      @Override
+      public void run() {
+        amClient.stopAndWait();
+      }
+    });
     instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
     runningContainers = initRunningContainers(amClient.getContainerId(), amClient.getHost());
     trackerService = new TrackerService(runningContainers.getResourceReport(), amClient.getHost());
@@ -258,8 +264,6 @@ public final class ApplicationMasterService implements Service {
       TimeUnit.SECONDS.sleep(1);
     }
 
-    amClient.stopAndWait();
-
     LOG.info("Stopping application master tracker server");
     try {
       trackerService.stopAndWait();
@@ -275,6 +279,7 @@ public final class ApplicationMasterService implements Service {
         TimeUnit.SECONDS.sleep(1);
       } finally {
         kafkaServer.stopAndWait();
+        LOG.info("Kafka server stopped");
       }
     }
   }
@@ -459,9 +464,11 @@ public final class ApplicationMasterService implements Service {
       RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
 
       ProcessLauncher.PrepareLaunchContext launchContext = processLauncher.prepareLaunch(
-        ImmutableMap.of(EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
-                        EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
-                        EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect()
+        ImmutableMap.of(
+          EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
+          EnvKeys.WEAVE_APP_NAME, weaveSpec.getName(),
+          EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
+          EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect()
         ), getLocalizeFiles(), credentials
       );
 

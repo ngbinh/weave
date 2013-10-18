@@ -74,6 +74,8 @@ public final class WeaveContainerLauncher {
       .withCommands()
       .add("java",
            "-Djava.io.tmpdir=tmp",
+           "-Dyarn.container=$" + EnvKeys.YARN_CONTAINER_ID,
+           "-Dweave.runnable=$" + EnvKeys.WEAVE_APP_NAME + ".$" + EnvKeys.WEAVE_RUNNABLE_NAME,
            "-cp", Constants.Files.LAUNCHER_JAR,
            "-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m",
            jvmOpts,
