@@ -31,6 +31,7 @@ import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKOperations;
 import com.google.common.base.Charsets;
 import com.google.common.base.Supplier;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.AbstractService;
 import com.google.common.util.concurrent.AsyncFunction;
@@ -47,7 +48,6 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -154,8 +154,14 @@ public final class ZKServiceDecorator extends AbstractService {
 
   private OperationFuture<String> removeLiveNode() {
     String liveNode = getLiveNodePath();
-    LOG.info("Remove live node " + liveNode);
+    LOG.info("Remove live node {}", liveNode);
     return ZKOperations.ignoreError(zkClient.delete(liveNode), KeeperException.NoNodeException.class, liveNode);
+  }
+
+  private OperationFuture<String> removeServiceNode() {
+    String serviceNode = String.format("/%s", id.getId());
+    LOG.info("Remove service node {}", serviceNode);
+    return ZKOperations.recursiveDelete(zkClient, serviceNode);
   }
 
   private void watchMessages() {
@@ -357,46 +363,35 @@ public final class ZKServiceDecorator extends AbstractService {
       if (zkFailure) {
         return;
       }
-      StateNode stateNode = new StateNode(ServiceController.State.TERMINATED);
-      final OperationFuture<Stat> stateFuture = zkClient.setData(getZKPath("state"), encodeStateNode(stateNode));
-      stateFuture.addListener(new Runnable() {
+
+      ImmutableList<OperationFuture<String>> futures = ImmutableList.of(removeLiveNode(), removeServiceNode());
+      final ListenableFuture<List<String>> future = Futures.allAsList(futures);
+      Futures.successfulAsList(futures).addListener(new Runnable() {
         @Override
         public void run() {
-          final OperationFuture<String> removeFuture = removeLiveNode();
-          removeFuture.addListener(new Runnable() {
-            @Override
-            public void run() {
-              try {
-                stateFuture.get();
-                removeFuture.get();
-                notifyStopped();
-              } catch (Exception e) {
-                notifyFailed(e.getCause() == null ? e : e.getCause());
-              }
-            }
-          }, Threads.SAME_THREAD_EXECUTOR);
+          try {
+            future.get();
+            notifyStopped();
+          } catch (Exception e) {
+            LOG.warn("Failed to remove ZK nodes.", e);
+            notifyFailed(e);
+          }
         }
       }, Threads.SAME_THREAD_EXECUTOR);
     }
 
     @Override
     public void failed(State from, final Throwable failure) {
-      LOG.info("Failed: " + from + " " + id + ". Reason: " + failure, failure);
+      LOG.info("Failed: {} {}.", from, id, failure);
       if (zkFailure) {
         return;
       }
 
-      StateNode stateNode = new StateNode(failure);
-      zkClient.setData(getZKPath("state"), encodeStateNode(stateNode)).addListener(new Runnable() {
+      ImmutableList<OperationFuture<String>> futures = ImmutableList.of(removeLiveNode(), removeServiceNode());
+      Futures.successfulAsList(futures).addListener(new Runnable() {
         @Override
         public void run() {
-          removeLiveNode().addListener(new Runnable() {
-
-            @Override
-            public void run() {
-              notifyFailed(failure);
-            }
-          }, Threads.SAME_THREAD_EXECUTOR);
+          notifyFailed(failure);
         }
       }, Threads.SAME_THREAD_EXECUTOR);
     }
