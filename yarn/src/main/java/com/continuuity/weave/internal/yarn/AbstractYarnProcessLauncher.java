@@ -25,6 +25,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.token.Token;
+import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -186,7 +187,7 @@ public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<
 
       @Override
       public MoreCommand redirectError(String stderr) {
-        commandBuilder.append(' ').append("2>").append(stderr);
+        redirect(2, stderr);
         return noError();
       }
 
@@ -199,13 +200,19 @@ public abstract class AbstractYarnProcessLauncher<T> implements ProcessLauncher<
 
       @Override
       public StdErrSetter redirectOutput(String stdout) {
-        commandBuilder.append(' ').append("1>").append(stdout);
+        redirect(1, stdout);
         return this;
       }
 
       @Override
       public StdErrSetter noOutput() {
         return this;
+      }
+
+      private void redirect(int type, String out) {
+        commandBuilder.append(' ')
+                      .append(type).append('>')
+                      .append(ApplicationConstants.LOG_DIR_EXPANSION_VAR).append('/').append(out);
       }
     }
   }

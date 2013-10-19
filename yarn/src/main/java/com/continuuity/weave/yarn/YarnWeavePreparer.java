@@ -73,7 +73,6 @@ import com.google.gson.GsonBuilder;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.slf4j.Logger;
@@ -273,8 +272,8 @@ final class YarnWeavePreparer implements WeavePreparer {
               Constants.Files.APP_MASTER_JAR,
               ApplicationMasterMain.class.getName(),
               Boolean.FALSE.toString())
-            .redirectOutput(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout")
-            .redirectError(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr")
+            .redirectOutput(Constants.STDOUT)
+            .redirectError(Constants.STDERR)
             .launch();
         }
       };
