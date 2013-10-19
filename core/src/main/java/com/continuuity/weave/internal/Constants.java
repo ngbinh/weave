@@ -32,6 +32,9 @@ public final class Constants {
 
   public static final double HEAP_MEMORY_DISCOUNT = 0.9d;
 
+  public static final String STDOUT = "stdout";
+  public static final String STDERR = "stderr";
+
   /**
    * Constants for names of internal files that are shared between client, AM and containers.
    */

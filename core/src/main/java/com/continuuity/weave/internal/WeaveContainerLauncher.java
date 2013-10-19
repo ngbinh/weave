@@ -31,26 +31,21 @@ import com.google.common.util.concurrent.ListenableFuture;
 public final class WeaveContainerLauncher {
 
   private final RuntimeSpecification runtimeSpec;
-  private final RunId runId;
   private final ProcessLauncher.PrepareLaunchContext launchContext;
   private final ZKClient zkClient;
-  private final int instanceId;
   private final int instanceCount;
   private final String jvmOpts;
 
-  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, RunId runId,
-                                ProcessLauncher.PrepareLaunchContext launchContext,
-                                ZKClient zkClient, int instanceId, int instanceCount, String jvmOpts) {
+  public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, ProcessLauncher.PrepareLaunchContext launchContext,
+                                ZKClient zkClient, int instanceCount, String jvmOpts) {
     this.runtimeSpec = runtimeSpec;
-    this.runId = runId;
     this.launchContext = launchContext;
     this.zkClient = zkClient;
-    this.instanceId = instanceId;
     this.instanceCount = instanceCount;
     this.jvmOpts = jvmOpts;
   }
 
-  public WeaveContainerController start(String stdout, String stderr) {
+  public WeaveContainerController start(RunId runId, int instanceId) {
     ProcessLauncher.PrepareLaunchContext.AfterResources afterResources = null;
     if (runtimeSpec.getLocalFiles().isEmpty()) {
       afterResources = launchContext.noResources();
@@ -83,7 +78,7 @@ public final class WeaveContainerLauncher {
            Constants.Files.CONTAINER_JAR,
            WeaveContainerMain.class.getName(),
            Boolean.TRUE.toString())
-      .redirectOutput(stdout).redirectError(stderr)
+      .redirectOutput(Constants.STDOUT).redirectError(Constants.STDERR)
       .launch();
 
     WeaveContainerControllerImpl controller = new WeaveContainerControllerImpl(zkClient, runId, processController);

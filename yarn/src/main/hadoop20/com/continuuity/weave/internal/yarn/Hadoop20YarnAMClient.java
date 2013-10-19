@@ -134,7 +134,6 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
         // This cast always works.
         RunnableProcessLauncher launcher = (RunnableProcessLauncher) l;
         if (!launcher.isLaunched()) {
-          // This cast always works.
           Container container = launcher.getContainerInfo().getContainer();
           LOG.info("Nothing to run in container, releasing it: {}", container);
           amrmClient.releaseAssignedContainer(container.getId());

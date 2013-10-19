@@ -30,7 +30,6 @@ import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
-import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.json.LocalFileCodec;
@@ -79,7 +78,6 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.util.Records;
@@ -235,7 +233,7 @@ public final class ApplicationMasterService implements Service {
   private void doStop() throws Exception {
     Thread.interrupted();     // This is just to clear the interrupt flag
 
-    LOG.info("Stop application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
+    LOG.info("Stop application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec), new Throwable());
 
     instanceChangeExecutor.shutdownNow();
 
@@ -321,7 +319,7 @@ public final class ApplicationMasterService implements Service {
   private void doRun() throws Exception {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
-    final Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
+    final Queue<RuntimeSpecification> provisioning = Lists.newLinkedList();
     int requestFailCount = 0;
     YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
       @Override
@@ -356,15 +354,8 @@ public final class ApplicationMasterService implements Service {
       }
       // Nothing in provision, makes the next batch of provision request
       if (provisioning.isEmpty() && currentRequest != null) {
-        if (!addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning)) {
-          if (requestFailCount++ > CONTAINER_REQUEST_MAX_FAILURE) {
-            // TODO: Allow user decision.
-            LOG.warn("Failed to request for containers. Shutting down application.");
-            break;
-          }
-        } else {
-          currentRequest = null;
-        }
+        addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning);
+        currentRequest = null;
       }
 
       TimeUnit.SECONDS.sleep(1);
@@ -430,38 +421,38 @@ public final class ApplicationMasterService implements Service {
   /**
    * Adds container requests with the given resource capability for each runtime.
    */
-  private boolean addContainerRequests(Resource capability,
+  private void addContainerRequests(Resource capability,
                                        Collection<RuntimeSpecification> runtimeSpecs,
-                                       Queue<ProvisionRequest> provisioning) {
+                                       Queue<RuntimeSpecification> provisioning) {
     for (RuntimeSpecification runtimeSpec : runtimeSpecs) {
       String name = runtimeSpec.getName();
-      int containerCount = instanceCounts.get(name) - runningContainers.count(name);
-      provisioning.add(new ProvisionRequest(runtimeSpec, runningContainers.getBaseRunId(name)));
+      int newContainers = instanceCounts.get(name) - runningContainers.count(name);
+      if (newContainers > 0) {
+        provisioning.add(runtimeSpec);
 
-      // TODO: Allow user to set priority?
-      amClient.addContainerRequest(capability, containerCount).setPriority(0).apply();
+        // TODO: Allow user to set priority?
+        LOG.info("Request {} container with capability {}", newContainers, capability);
+        amClient.addContainerRequest(capability, newContainers).setPriority(0).apply();
+      }
     }
-    return true;
   }
 
   /**
    * Launches runnables in the provisioned containers.
    */
   private void launchRunnable(List<ProcessLauncher<YarnContainerInfo>> launchers,
-                              Queue<ProvisionRequest> provisioning) {
+                              Queue<RuntimeSpecification> provisioning) {
     for (ProcessLauncher<YarnContainerInfo> processLauncher : launchers) {
-      ProvisionRequest provisionRequest = provisioning.peek();
+      LOG.info("Got container {}", processLauncher.getContainerInfo().getId());
+      RuntimeSpecification provisionRequest = provisioning.peek();
       if (provisionRequest == null) {
         continue;
       }
 
-      String runnableName = provisionRequest.getRuntimeSpec().getName();
+      String runnableName = provisionRequest.getName();
       LOG.info("Starting runnable {} with {}", runnableName, processLauncher);
 
-      int containerCount = instanceCounts.get(provisionRequest.getRuntimeSpec().getName());
-      int instanceId = runningContainers.count(runnableName);
-
-      RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
+      int containerCount = instanceCounts.get(runnableName);
 
       ProcessLauncher.PrepareLaunchContext launchContext = processLauncher.prepareLaunch(
         ImmutableMap.of(
@@ -473,13 +464,11 @@ public final class ApplicationMasterService implements Service {
       );
 
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(
-        weaveSpec.getRunnables().get(runnableName), containerRunId, launchContext,
+        weaveSpec.getRunnables().get(runnableName), launchContext,
         ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
-        instanceId, instanceCounts.get(runnableName), jvmOpts);
+        containerCount, jvmOpts);
 
-      runningContainers.add(runnableName, processLauncher.getContainerInfo(), instanceId,
-                            launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
-                                           ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
+      runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
 
       if (runningContainers.count(runnableName) == containerCount) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");
