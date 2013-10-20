@@ -27,6 +27,7 @@ import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.ApplicationBundler;
 import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Configs;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultRuntimeSpecification;
@@ -118,6 +119,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
   private final Credentials credentials;
+  private final double maxHeapRatio;
   private String user;
 
   YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
@@ -132,6 +134,8 @@ final class YarnWeavePreparer implements WeavePreparer {
     this.controllerFactory = controllerFactory;
     this.runId = RunIds.generate();
     this.credentials = createCredentials();
+    this.maxHeapRatio = Double.parseDouble(yarnConfig.get(Configs.Keys.JAVA_MAX_HEAP_RATIO,
+                                           Double.toString(Configs.Defaults.JAVA_MAX_HEAP_RATIO)));
     this.user = System.getProperty("user.name");
   }
 
@@ -251,12 +255,13 @@ final class YarnWeavePreparer implements WeavePreparer {
           //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
           //     false
           return launcher.prepareLaunch(
-            ImmutableMap.of(
-              EnvKeys.WEAVE_FS_USER, fsUser,
-              EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString(),
-              EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
-              EnvKeys.WEAVE_RUN_ID, runId.getId(),
-              EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()),
+            ImmutableMap.<String, String>builder()
+              .put(EnvKeys.WEAVE_FS_USER, fsUser)
+              .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+              .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+              .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+              .put(EnvKeys.WEAVE_MAX_HEAP_RATIO, Double.toString(maxHeapRatio))
+              .put(EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()).build(),
             localFiles.values(), credentials)
             .noResources()
             .noEnvironment()
@@ -266,7 +271,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               "-Dyarn.appId=$" + EnvKeys.YARN_APP_ID_STR,
               "-Dweave.app=$" + EnvKeys.WEAVE_APP_NAME,
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
-              "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+              "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * maxHeapRatio) + "m",
               vmOpts,
               WeaveLauncher.class.getName(),
               Constants.Files.APP_MASTER_JAR,

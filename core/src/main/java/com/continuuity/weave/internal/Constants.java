@@ -30,8 +30,6 @@ public final class Constants {
   /** Memory size of AM */
   public static final int APP_MASTER_MEMORY_MB = 512;
 
-  public static final double HEAP_MEMORY_DISCOUNT = 0.9d;
-
   public static final String STDOUT = "stdout";
   public static final String STDERR = "stderr";
 

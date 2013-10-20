@@ -35,14 +35,16 @@ public final class WeaveContainerLauncher {
   private final ZKClient zkClient;
   private final int instanceCount;
   private final String jvmOpts;
+  private final double maxHeapRatio;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, ProcessLauncher.PrepareLaunchContext launchContext,
-                                ZKClient zkClient, int instanceCount, String jvmOpts) {
+                                ZKClient zkClient, int instanceCount, String jvmOpts, double maxHeapRatio) {
     this.runtimeSpec = runtimeSpec;
     this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceCount = instanceCount;
     this.jvmOpts = jvmOpts;
+    this.maxHeapRatio = maxHeapRatio;
   }
 
   public WeaveContainerController start(RunId runId, int instanceId) {
@@ -72,7 +74,7 @@ public final class WeaveContainerLauncher {
            "-Dyarn.container=$" + EnvKeys.YARN_CONTAINER_ID,
            "-Dweave.runnable=$" + EnvKeys.WEAVE_APP_NAME + ".$" + EnvKeys.WEAVE_RUNNABLE_NAME,
            "-cp", Constants.Files.LAUNCHER_JAR,
-           "-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+           "-Xmx" + (int) Math.ceil(memory * maxHeapRatio) + "m",
            jvmOpts,
            WeaveLauncher.class.getName(),
            Constants.Files.CONTAINER_JAR,

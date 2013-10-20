@@ -26,6 +26,7 @@ import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.internal.Configs;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
@@ -126,6 +127,7 @@ public final class ApplicationMasterService implements Service {
   private final YarnAMClient amClient;
   private final Credentials credentials;
   private final String jvmOpts;
+  private final double maxHeapRatio;
 
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
@@ -140,6 +142,7 @@ public final class ApplicationMasterService implements Service {
     this.amClient = amClientFactory.create();
     this.credentials = createCredentials();
     this.jvmOpts = loadJvmOptions();
+    this.maxHeapRatio = getMaxHeapRatio();
 
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.YARN_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.YARN_APP_ID_CLUSTER_TIME)),
@@ -169,6 +172,18 @@ public final class ApplicationMasterService implements Service {
         return new FileReader(jvmOptsFile);
       }
     });
+  }
+
+  private double getMaxHeapRatio() {
+    String value = System.getenv(EnvKeys.WEAVE_MAX_HEAP_RATIO);
+    if (value == null) {
+      return Configs.Defaults.JAVA_MAX_HEAP_RATIO;
+    }
+    try {
+      return Double.parseDouble(value);
+    } catch (Exception e) {
+      return Configs.Defaults.JAVA_MAX_HEAP_RATIO;
+    }
   }
 
   private Supplier<? extends JsonElement> createLiveNodeDataSupplier() {
@@ -465,7 +480,7 @@ public final class ApplicationMasterService implements Service {
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(
         weaveSpec.getRunnables().get(runnableName), launchContext,
         ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
-        containerCount, jvmOpts);
+        containerCount, jvmOpts, maxHeapRatio);
 
       runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
 

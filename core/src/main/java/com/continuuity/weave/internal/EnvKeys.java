@@ -25,6 +25,7 @@ public final class EnvKeys {
   public static final String WEAVE_RUN_ID = "WEAVE_RUN_ID";
   public static final String WEAVE_INSTANCE_ID = "WEAVE_INSTANCE_ID";
   public static final String WEAVE_INSTANCE_COUNT = "WEAVE_INSTANCE_COUNT";
+  public static final String WEAVE_MAX_HEAP_RATIO = "WEAVE_MAX_HEAP_RATIO";
 
   public static final String WEAVE_FS_USER = "WEAVE_FS_USER";
 
