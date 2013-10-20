@@ -89,10 +89,23 @@ public class FailureRestartTestRun {
 
   public static final class FailureRunnable extends SocketServer {
 
+    private volatile boolean killed;
+
+    @Override
+    public void run() {
+      killed = false;
+      super.run();
+      if (killed) {
+        throw new RuntimeException("Exception");
+      }
+    }
+
     @Override
     public void handleCommand(Command command) throws Exception {
       if (command.getCommand().equals("kill" + getContext().getInstanceId())) {
-        System.exit(1);
+        killed = true;
+        running = false;
+        serverSocket.close();
       }
     }
 

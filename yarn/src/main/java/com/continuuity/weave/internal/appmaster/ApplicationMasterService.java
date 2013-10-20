@@ -233,7 +233,7 @@ public final class ApplicationMasterService implements Service {
   private void doStop() throws Exception {
     Thread.interrupted();     // This is just to clear the interrupt flag
 
-    LOG.info("Stop application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec), new Throwable());
+    LOG.info("Stop application master with spec: {}", WeaveSpecificationAdapter.create().toJson(weaveSpec));
 
     instanceChangeExecutor.shutdownNow();
 
@@ -319,7 +319,7 @@ public final class ApplicationMasterService implements Service {
   private void doRun() throws Exception {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
-    final Queue<RuntimeSpecification> provisioning = Lists.newLinkedList();
+    final Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
     int requestFailCount = 0;
     YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
       @Override
@@ -422,17 +422,16 @@ public final class ApplicationMasterService implements Service {
    * Adds container requests with the given resource capability for each runtime.
    */
   private void addContainerRequests(Resource capability,
-                                       Collection<RuntimeSpecification> runtimeSpecs,
-                                       Queue<RuntimeSpecification> provisioning) {
+                                    Collection<RuntimeSpecification> runtimeSpecs,
+                                    Queue<ProvisionRequest> provisioning) {
     for (RuntimeSpecification runtimeSpec : runtimeSpecs) {
       String name = runtimeSpec.getName();
       int newContainers = instanceCounts.get(name) - runningContainers.count(name);
       if (newContainers > 0) {
-        provisioning.add(runtimeSpec);
-
         // TODO: Allow user to set priority?
         LOG.info("Request {} container with capability {}", newContainers, capability);
-        amClient.addContainerRequest(capability, newContainers).setPriority(0).apply();
+        String requestId = amClient.addContainerRequest(capability, newContainers).setPriority(0).apply();
+        provisioning.add(new ProvisionRequest(runtimeSpec, requestId, newContainers));
       }
     }
   }
@@ -441,15 +440,15 @@ public final class ApplicationMasterService implements Service {
    * Launches runnables in the provisioned containers.
    */
   private void launchRunnable(List<ProcessLauncher<YarnContainerInfo>> launchers,
-                              Queue<RuntimeSpecification> provisioning) {
+                              Queue<ProvisionRequest> provisioning) {
     for (ProcessLauncher<YarnContainerInfo> processLauncher : launchers) {
       LOG.info("Got container {}", processLauncher.getContainerInfo().getId());
-      RuntimeSpecification provisionRequest = provisioning.peek();
+      ProvisionRequest provisionRequest = provisioning.peek();
       if (provisionRequest == null) {
         continue;
       }
 
-      String runnableName = provisionRequest.getName();
+      String runnableName = provisionRequest.getRuntimeSpec().getName();
       LOG.info("Starting runnable {} with {}", runnableName, processLauncher);
 
       int containerCount = instanceCounts.get(runnableName);
@@ -469,6 +468,11 @@ public final class ApplicationMasterService implements Service {
         containerCount, jvmOpts);
 
       runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
+
+      // Need to call complete to workaround bug in YARN AMRMClient
+      if (provisionRequest.containerAcquired()) {
+        amClient.completeContainerRequest(provisionRequest.getRequestId());
+      }
 
       if (runningContainers.count(runnableName) == containerCount) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");
