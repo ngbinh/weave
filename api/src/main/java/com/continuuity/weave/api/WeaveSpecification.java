@@ -26,6 +26,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.net.URI;
 import java.util.Collection;
@@ -48,20 +49,35 @@ public interface WeaveSpecification {
       COMPLETED
     }
 
+    /**
+     * @return Set of {@link WeaveRunnable} name that belongs to this order.
+     */
     Set<String> getNames();
 
     Type getType();
   }
 
-
+  /**
+   * @return Name of the application.
+   */
   String getName();
 
+  /**
+   * @return A map from {@link WeaveRunnable} name to {@link RuntimeSpecification}.
+   */
   Map<String, RuntimeSpecification> getRunnables();
 
   /**
    * @return Returns a list of runnable names that should be executed in the given order.
    */
   List<Order> getOrders();
+
+  /**
+   * @return The {@link EventHandlerSpecification} for the {@link EventHandler} to be used for this application,
+   *         or {@code null} if no event handler has been provided.
+   */
+  @Nullable
+  EventHandlerSpecification getEventHandler();
 
   /**
    * Builder for constructing instance of {@link WeaveSpecification}.
@@ -71,6 +87,7 @@ public interface WeaveSpecification {
     private String name;
     private Map<String, RuntimeSpecification> runnables = Maps.newHashMap();
     private List<Order> orders = Lists.newArrayList();
+    private EventHandlerSpecification eventHandler;
 
     public static NameSetter with() {
       return new Builder().new NameSetter();
@@ -244,6 +261,8 @@ public interface WeaveSpecification {
     }
 
     public interface AfterOrder {
+      AfterOrder withEventHandler(EventHandler handler);
+
       WeaveSpecification build();
     }
 
@@ -267,6 +286,12 @@ public interface WeaveSpecification {
       }
 
       @Override
+      public AfterOrder withEventHandler(EventHandler handler) {
+        eventHandler = handler.configure();
+        return this;
+      }
+
+      @Override
       public WeaveSpecification build() {
         // Set to track with runnable hasn't been assigned an order.
         Set<String> runnableNames = Sets.newHashSet(runnables.keySet());
@@ -277,7 +302,7 @@ public interface WeaveSpecification {
         // For all unordered runnables, add it to the end of orders list
         orders.add(new DefaultWeaveSpecification.DefaultOrder(runnableNames, Order.Type.STARTED));
 
-        return new DefaultWeaveSpecification(name, runnables, orders);
+        return new DefaultWeaveSpecification(name, runnables, orders, eventHandler);
       }
 
       private void addOrder(final Order.Type type, String name, String...names) {

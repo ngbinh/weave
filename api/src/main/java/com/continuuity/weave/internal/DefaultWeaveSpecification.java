@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal;
 
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.google.common.base.Objects;
@@ -22,6 +23,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
+import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,12 +36,14 @@ public final class DefaultWeaveSpecification implements WeaveSpecification {
   private final String name;
   private final Map<String, RuntimeSpecification> runnables;
   private final List<Order> orders;
+  private final EventHandlerSpecification eventHandler;
 
   public DefaultWeaveSpecification(String name, Map<String, RuntimeSpecification> runnables,
-                                   List<Order> orders) {
+                                   List<Order> orders, EventHandlerSpecification eventHandler) {
     this.name = name;
     this.runnables = ImmutableMap.copyOf(runnables);
     this.orders = ImmutableList.copyOf(orders);
+    this.eventHandler = eventHandler;
   }
 
   @Override
@@ -55,6 +59,12 @@ public final class DefaultWeaveSpecification implements WeaveSpecification {
   @Override
   public List<Order> getOrders() {
     return orders;
+  }
+
+  @Nullable
+  @Override
+  public EventHandlerSpecification getEventHandler() {
+    return eventHandler;
   }
 
   /**

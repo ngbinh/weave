@@ -15,11 +15,14 @@
  */
 package com.continuuity.weave.internal.utils;
 
+import com.google.common.base.Defaults;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Throwables;
+import com.google.common.reflect.TypeToken;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 /**
@@ -67,11 +70,33 @@ public final class Instances {
       } catch (Exception e) {
         // Try to use Unsafe
         Preconditions.checkState(UNSAFE != null, "Fail to instantiate with Unsafe.");
-        return (T) UNSAFE_NEW_INSTANCE.invoke(UNSAFE, clz);
+        return unsafeCreate(clz);
       }
     } catch (Exception e) {
       throw Throwables.propagate(e);
     }
+  }
+
+
+  /**
+   * Creates an instance of the given using Unsafe. It also initialize all fields into default values.
+   */
+  private static <T> T unsafeCreate(Class<T> clz) throws InvocationTargetException, IllegalAccessException {
+    T instance = (T) UNSAFE_NEW_INSTANCE.invoke(UNSAFE, clz);
+
+    for (TypeToken<?> type : TypeToken.of(clz).getTypes().classes()) {
+      if (Object.class.equals(type.getRawType())) {
+        break;
+      }
+      for (Field field : type.getRawType().getDeclaredFields()) {
+        if (!field.isAccessible()) {
+          field.setAccessible(true);
+        }
+        field.set(instance, Defaults.defaultValue(field.getType()));
+      }
+    }
+
+    return instance;
   }
 
 
