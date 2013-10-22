@@ -129,7 +129,7 @@ public final class ApplicationMasterService implements Service {
   private final YarnAMClient amClient;
   private final Credentials credentials;
   private final String jvmOpts;
-  private final double maxHeapRatio;
+  private final int reservedMemory;
   private final EventHandler eventHandler;
 
   private EmbeddedKafkaServer kafkaServer;
@@ -145,7 +145,7 @@ public final class ApplicationMasterService implements Service {
     this.amClient = amClientFactory.create();
     this.credentials = createCredentials();
     this.jvmOpts = loadJvmOptions();
-    this.maxHeapRatio = getMaxHeapRatio();
+    this.reservedMemory = getReservedMemory();
 
     amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.YARN_APP_ID)),
                                                    Long.parseLong(System.getenv(EnvKeys.YARN_APP_ID_CLUSTER_TIME)),
@@ -178,15 +178,15 @@ public final class ApplicationMasterService implements Service {
     });
   }
 
-  private double getMaxHeapRatio() {
-    String value = System.getenv(EnvKeys.WEAVE_MAX_HEAP_RATIO);
+  private int getReservedMemory() {
+    String value = System.getenv(EnvKeys.WEAVE_RESERVED_MEMORY_MB);
     if (value == null) {
-      return Configs.Defaults.JAVA_MAX_HEAP_RATIO;
+      return Configs.Defaults.JAVA_RESERVED_MEMORY_MB;
     }
     try {
-      return Double.parseDouble(value);
+      return Integer.parseInt(value);
     } catch (Exception e) {
-      return Configs.Defaults.JAVA_MAX_HEAP_RATIO;
+      return Configs.Defaults.JAVA_RESERVED_MEMORY_MB;
     }
   }
 
@@ -552,7 +552,7 @@ public final class ApplicationMasterService implements Service {
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(
         weaveSpec.getRunnables().get(runnableName), launchContext,
         ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
-        containerCount, jvmOpts, maxHeapRatio);
+        containerCount, jvmOpts, reservedMemory);
 
       runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
 

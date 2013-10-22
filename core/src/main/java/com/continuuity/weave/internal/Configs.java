@@ -22,16 +22,17 @@ public final class Configs {
 
   public static final class Keys {
     /**
-     * Ratio between of maximum java heap size to container physical memory size.
+     * Size in MB of reserved memory for Java process (non-heap memory).
      */
-    public static final String JAVA_MAX_HEAP_RATIO = "weave.java.max.heap.ratio";
+    public static final String JAVA_RESERVED_MEMORY_MB = "weave.java.reserved.memory.mb";
 
     private Keys() {
     }
   }
 
   public static final class Defaults {
-    public static final double JAVA_MAX_HEAP_RATIO = 0.85d;
+    // By default have 200MB reserved for Java process.
+    public static final int JAVA_RESERVED_MEMORY_MB = 200;
 
     private Defaults() {
     }

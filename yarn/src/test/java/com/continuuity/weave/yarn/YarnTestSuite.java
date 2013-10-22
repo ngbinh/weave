@@ -41,12 +41,12 @@ import java.util.concurrent.TimeUnit;
  */
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
-//                      EchoServerTestRun.class,
-//                      ResourceReportTestRun.class,
-//                      TaskCompletedTestRun.class,
-//                      DistributeShellTestRun.class,
-//                      LocalFileTestRun.class,
-//                      FailureRestartTestRun.class,
+                      EchoServerTestRun.class,
+                      ResourceReportTestRun.class,
+                      TaskCompletedTestRun.class,
+                      DistributeShellTestRun.class,
+                      LocalFileTestRun.class,
+                      FailureRestartTestRun.class,
                       ProvisionTimeoutTestRun.class
                     })
 public class YarnTestSuite {

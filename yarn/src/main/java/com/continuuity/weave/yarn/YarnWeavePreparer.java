@@ -121,7 +121,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
   private final Credentials credentials;
-  private final double maxHeapRatio;
+  private final int reservedMemory;
   private String user;
 
   YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
@@ -136,8 +136,8 @@ final class YarnWeavePreparer implements WeavePreparer {
     this.controllerFactory = controllerFactory;
     this.runId = RunIds.generate();
     this.credentials = createCredentials();
-    this.maxHeapRatio = Double.parseDouble(yarnConfig.get(Configs.Keys.JAVA_MAX_HEAP_RATIO,
-                                           Double.toString(Configs.Defaults.JAVA_MAX_HEAP_RATIO)));
+    this.reservedMemory = yarnConfig.getInt(Configs.Keys.JAVA_RESERVED_MEMORY_MB,
+                                            Configs.Defaults.JAVA_RESERVED_MEMORY_MB);
     this.user = System.getProperty("user.name");
   }
 
@@ -262,7 +262,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
               .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
               .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-              .put(EnvKeys.WEAVE_MAX_HEAP_RATIO, Double.toString(maxHeapRatio))
+              .put(EnvKeys.WEAVE_RESERVED_MEMORY_MB, Integer.toString(reservedMemory))
               .put(EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()).build(),
             localFiles.values(), credentials)
             .noResources()
@@ -273,7 +273,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               "-Dyarn.appId=$" + EnvKeys.YARN_APP_ID_STR,
               "-Dweave.app=$" + EnvKeys.WEAVE_APP_NAME,
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
-              "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * maxHeapRatio) + "m",
+              "-Xmx" + (Constants.APP_MASTER_MEMORY_MB - Constants.APP_MASTER_RESERVED_MEMORY_MB) + "m",
               vmOpts,
               WeaveLauncher.class.getName(),
               Constants.Files.APP_MASTER_JAR,
