@@ -457,12 +457,16 @@ public final class ApplicationMasterService implements Service {
     }
 
     if (!timeoutEvents.isEmpty()) {
-      EventHandler.TimeoutAction action = eventHandler.launchTimeout(timeoutEvents);
-      if (action.getTimeout() < 0) {
-        // Abort application
-        stop();
-      } else {
-        return nextTimeoutCheck + action.getTimeout();
+      try {
+        EventHandler.TimeoutAction action = eventHandler.launchTimeout(timeoutEvents);
+        if (action.getTimeout() < 0) {
+          // Abort application
+          stop();
+        } else {
+          return nextTimeoutCheck + action.getTimeout();
+        }
+      } catch (Throwable t) {
+        LOG.warn("Exception when calling EventHandler {}. Ignore the result.", t);
       }
     }
     return nextTimeoutCheck + Constants.PROVISION_TIMEOUT;
