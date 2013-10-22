@@ -465,7 +465,7 @@ public final class ApplicationMasterService implements Service {
         return nextTimeoutCheck + action.getTimeout();
       }
     }
-    return nextTimeoutCheck;
+    return nextTimeoutCheck + Constants.PROVISION_TIMEOUT;
   }
 
   private Credentials createCredentials() {

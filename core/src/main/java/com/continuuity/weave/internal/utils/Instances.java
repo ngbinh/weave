@@ -24,6 +24,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 /**
  * Utility class to help instantiate object instance from class.
@@ -89,6 +90,9 @@ public final class Instances {
         break;
       }
       for (Field field : type.getRawType().getDeclaredFields()) {
+        if (Modifier.isStatic(field.getModifiers())) {
+          continue;
+        }
         if (!field.isAccessible()) {
           field.setAccessible(true);
         }
