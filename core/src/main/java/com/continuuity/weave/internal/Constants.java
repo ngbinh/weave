@@ -27,10 +27,12 @@ public final class Constants {
   /** Maximum number of seconds for AM to stop. */
   public static final int APPLICATION_MAX_STOP_SECONDS = 60;
 
+  public static final long PROVISION_TIMEOUT = 30000;
+
   /** Memory size of AM */
   public static final int APP_MASTER_MEMORY_MB = 512;
 
-  public static final double HEAP_MEMORY_DISCOUNT = 0.9d;
+  public static final int APP_MASTER_RESERVED_MEMORY_MB = 150;
 
   public static final String STDOUT = "stdout";
   public static final String STDERR = "stderr";

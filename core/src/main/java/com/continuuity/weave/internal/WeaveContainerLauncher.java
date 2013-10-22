@@ -30,19 +30,23 @@ import com.google.common.util.concurrent.ListenableFuture;
  */
 public final class WeaveContainerLauncher {
 
+  private static final double HEAP_MIN_RATIO = 0.6d;
+
   private final RuntimeSpecification runtimeSpec;
   private final ProcessLauncher.PrepareLaunchContext launchContext;
   private final ZKClient zkClient;
   private final int instanceCount;
   private final String jvmOpts;
+  private final int reservedMemory;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, ProcessLauncher.PrepareLaunchContext launchContext,
-                                ZKClient zkClient, int instanceCount, String jvmOpts) {
+                                ZKClient zkClient, int instanceCount, String jvmOpts, int reservedMemory) {
     this.runtimeSpec = runtimeSpec;
     this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceCount = instanceCount;
     this.jvmOpts = jvmOpts;
+    this.reservedMemory = reservedMemory;
   }
 
   public WeaveContainerController start(RunId runId, int instanceId) {
@@ -58,6 +62,10 @@ public final class WeaveContainerLauncher {
     }
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
+    if (((double) (memory - reservedMemory) / memory) >= HEAP_MIN_RATIO) {
+      // If it is a really small VM, just let it run with desired memory size. Otherwise, make room for reserved memory.
+      memory = runtimeSpec.getResourceSpecification().getMemorySize() - reservedMemory;
+    }
 
     // Currently no reporting is supported for runnable containers
     ProcessController<Void> processController = afterResources
@@ -72,7 +80,7 @@ public final class WeaveContainerLauncher {
            "-Dyarn.container=$" + EnvKeys.YARN_CONTAINER_ID,
            "-Dweave.runnable=$" + EnvKeys.WEAVE_APP_NAME + ".$" + EnvKeys.WEAVE_RUNNABLE_NAME,
            "-cp", Constants.Files.LAUNCHER_JAR,
-           "-Xmx" + (int) Math.ceil(memory * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+           "-Xmx" + memory + "m",
            jvmOpts,
            WeaveLauncher.class.getName(),
            Constants.Files.CONTAINER_JAR,

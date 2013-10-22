@@ -22,9 +22,11 @@ import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
@@ -43,6 +45,7 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.net.URL;
 import java.util.List;
+import java.util.UUID;
 
 /**
  *
@@ -62,6 +65,7 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
   }
 
   private final ContainerId containerId;
+  private final Multimap<String, AMRMClient.ContainerRequest> containerRequests;
   private final AMRMClient amrmClient;
   private final YarnNMClient nmClient;
   private InetSocketAddress trackerAddr;
@@ -74,6 +78,7 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
     Preconditions.checkArgument(masterContainerId != null,
                                 "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
     this.containerId = ConverterUtils.toContainerId(masterContainerId);
+    this.containerRequests = ArrayListMultimap.create();
 
     this.amrmClient = new AMRMClientImpl(containerId.getApplicationAttemptId());
     this.amrmClient.init(conf);
@@ -154,20 +159,34 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
   }
 
   @Override
-  public synchronized ContainerRequestBuilder addContainerRequest(Resource capability, int count) {
+  public ContainerRequestBuilder addContainerRequest(Resource capability, int count) {
     return new ContainerRequestBuilder(adjustCapability(capability), count) {
       @Override
-      public void apply() {
-        String[] hosts = this.hosts.isEmpty() ? null : this.hosts.toArray(new String[this.hosts.size()]);
-        String[] racks = this.racks.isEmpty() ? null : this.racks.toArray(new String[this.racks.size()]);
+      public String apply() {
+        synchronized (Hadoop20YarnAMClient.this) {
+          String id = UUID.randomUUID().toString();
 
-        for (int i = 0; i < count; i++) {
-          AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, hosts, racks,
-                                                                                priority, 1);
-          amrmClient.addContainerRequest(request);
+          String[] hosts = this.hosts.isEmpty() ? null : this.hosts.toArray(new String[this.hosts.size()]);
+          String[] racks = this.racks.isEmpty() ? null : this.racks.toArray(new String[this.racks.size()]);
+
+          for (int i = 0; i < count; i++) {
+            AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, hosts, racks,
+                                                                                  priority, 1);
+            containerRequests.put(id, request);
+            amrmClient.addContainerRequest(request);
+          }
+
+          return id;
         }
       }
     };
+  }
+
+  @Override
+  public synchronized void completeContainerRequest(String id) {
+    for (AMRMClient.ContainerRequest request : containerRequests.removeAll(id)) {
+      amrmClient.removeContainerRequest(request);
+    }
   }
 
   private Resource adjustCapability(Resource resource) {

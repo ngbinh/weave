@@ -15,8 +15,10 @@
  */
 package com.continuuity.weave.internal.json;
 
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
+import com.continuuity.weave.internal.DefaultEventHandlerSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.JsonDeserializationContext;
@@ -46,6 +48,10 @@ final class WeaveSpecificationCodec implements JsonSerializer<WeaveSpecification
                                             new TypeToken<Map<String, RuntimeSpecification>>(){}.getType()));
     json.add("orders", context.serialize(src.getOrders(),
                                          new TypeToken<List<WeaveSpecification.Order>>(){}.getType()));
+    EventHandlerSpecification eventHandler = src.getEventHandler();
+    if (eventHandler != null) {
+      json.add("handler", context.serialize(eventHandler, EventHandlerSpecification.class));
+    }
 
     return json;
   }
@@ -61,7 +67,13 @@ final class WeaveSpecificationCodec implements JsonSerializer<WeaveSpecification
     List<WeaveSpecification.Order> orders = context.deserialize(
       jsonObj.get("orders"), new TypeToken<List<WeaveSpecification.Order>>(){}.getType());
 
-    return new DefaultWeaveSpecification(name, runnables, orders);
+    JsonElement handler = jsonObj.get("handler");
+    EventHandlerSpecification eventHandler = null;
+    if (handler != null && !handler.isJsonNull()) {
+      eventHandler = context.deserialize(handler, EventHandlerSpecification.class);
+    }
+
+    return new DefaultWeaveSpecification(name, runnables, orders, eventHandler);
   }
 
   static final class WeaveSpecificationOrderCoder implements JsonSerializer<WeaveSpecification.Order>,
@@ -84,6 +96,30 @@ final class WeaveSpecificationCodec implements JsonSerializer<WeaveSpecification
       WeaveSpecification.Order.Type type = WeaveSpecification.Order.Type.valueOf(jsonObj.get("type").getAsString());
 
       return new DefaultWeaveSpecification.DefaultOrder(names, type);
+    }
+  }
+
+  static final class EventHandlerSpecificationCoder implements JsonSerializer<EventHandlerSpecification>,
+                                                               JsonDeserializer<EventHandlerSpecification> {
+
+    @Override
+    public JsonElement serialize(EventHandlerSpecification src, Type typeOfSrc, JsonSerializationContext context) {
+      JsonObject json = new JsonObject();
+      json.addProperty("classname", src.getClassName());
+      json.add("configs", context.serialize(src.getConfigs(), new TypeToken<Map<String, String>>(){}.getType()));
+      return json;
+    }
+
+    @Override
+    public EventHandlerSpecification deserialize(JsonElement json, Type typeOfT,
+                                                 JsonDeserializationContext context) throws JsonParseException {
+      JsonObject jsonObj = json.getAsJsonObject();
+      String className = jsonObj.get("classname").getAsString();
+      Map<String, String> configs = context.deserialize(jsonObj.get("configs"),
+                                                        new TypeToken<Map<String, String>>() {
+                                                        }.getType());
+
+      return new DefaultEventHandlerSpecification(className, configs);
     }
   }
 }

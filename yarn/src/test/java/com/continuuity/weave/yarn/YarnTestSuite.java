@@ -46,7 +46,8 @@ import java.util.concurrent.TimeUnit;
                       TaskCompletedTestRun.class,
                       DistributeShellTestRun.class,
                       LocalFileTestRun.class,
-                      FailureRestartTestRun.class
+                      FailureRestartTestRun.class,
+                      ProvisionTimeoutTestRun.class
                     })
 public class YarnTestSuite {
   private static final Logger LOG = LoggerFactory.getLogger(YarnTestSuite.class);

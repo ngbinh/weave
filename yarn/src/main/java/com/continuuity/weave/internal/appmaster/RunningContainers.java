@@ -27,8 +27,10 @@ import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.yarn.YarnContainerStatus;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.HashBasedTable;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -59,6 +61,16 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 final class RunningContainers {
   private static final Logger LOG = LoggerFactory.getLogger(RunningContainers.class);
+
+  /**
+   * Function to return cardinality of a given BitSet.
+   */
+  private static final Function<BitSet, Integer> BITSET_CARDINALITY = new Function<BitSet, Integer>() {
+    @Override
+    public Integer apply(BitSet input) {
+      return input.cardinality();
+    }
+  };
 
   // Error status code if the container exit with an user error.
   private static final int RUNNABLE_ERROR = -100;
@@ -175,10 +187,25 @@ final class RunningContainers {
     }
   }
 
+  /**
+   * Returns the number of running instances of the given runnable.
+   */
   int count(String runnableName) {
     containerLock.lock();
     try {
       return getRunningInstances(runnableName);
+    } finally {
+      containerLock.unlock();
+    }
+  }
+
+  /**
+   * Returns a Map contains running instances of all runnables.
+   */
+  Map<String, Integer> countAll() {
+    containerLock.lock();
+    try {
+      return ImmutableMap.copyOf(Maps.transformValues(runnableInstances, BITSET_CARDINALITY));
     } finally {
       containerLock.unlock();
     }

@@ -73,6 +73,7 @@ public abstract class ServiceMain {
       LOG.info("Service {} completed.", serviceName);
     } catch (Throwable t) {
       LOG.warn("Exception thrown from service {}.", serviceName, t);
+      throw Throwables.propagate(t);
     } finally {
       ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
       if (loggerFactory instanceof LoggerContext) {

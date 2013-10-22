@@ -65,10 +65,10 @@ public class LocalFileTestRun {
     }
 
     WeaveController controller = runner.prepare(new LocalFileApplication())
-    .withApplicationArguments("local")
-    .withArguments("LocalFileSocketServer", "local2")
-    .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
-    .start();
+      .withApplicationArguments("local")
+      .withArguments("LocalFileSocketServer", "local2")
+      .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
+      .start();
 
     if (runner instanceof YarnWeaveRunnerService) {
       ((YarnWeaveRunnerService) runner).setJVMOptions("");

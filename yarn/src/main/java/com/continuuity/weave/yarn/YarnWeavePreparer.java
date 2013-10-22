@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.yarn;
 
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
@@ -27,11 +28,13 @@ import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.ApplicationBundler;
 import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Configs;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultRuntimeSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.EnvKeys;
+import com.continuuity.weave.internal.LogOnlyEventHandler;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
@@ -118,6 +121,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
   private final Credentials credentials;
+  private final int reservedMemory;
   private String user;
 
   YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
@@ -132,6 +136,8 @@ final class YarnWeavePreparer implements WeavePreparer {
     this.controllerFactory = controllerFactory;
     this.runId = RunIds.generate();
     this.credentials = createCredentials();
+    this.reservedMemory = yarnConfig.getInt(Configs.Keys.JAVA_RESERVED_MEMORY_MB,
+                                            Configs.Defaults.JAVA_RESERVED_MEMORY_MB);
     this.user = System.getProperty("user.name");
   }
 
@@ -251,12 +257,13 @@ final class YarnWeavePreparer implements WeavePreparer {
           //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
           //     false
           return launcher.prepareLaunch(
-            ImmutableMap.of(
-              EnvKeys.WEAVE_FS_USER, fsUser,
-              EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString(),
-              EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
-              EnvKeys.WEAVE_RUN_ID, runId.getId(),
-              EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()),
+            ImmutableMap.<String, String>builder()
+              .put(EnvKeys.WEAVE_FS_USER, fsUser)
+              .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+              .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+              .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+              .put(EnvKeys.WEAVE_RESERVED_MEMORY_MB, Integer.toString(reservedMemory))
+              .put(EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()).build(),
             localFiles.values(), credentials)
             .noResources()
             .noEnvironment()
@@ -266,7 +273,7 @@ final class YarnWeavePreparer implements WeavePreparer {
               "-Dyarn.appId=$" + EnvKeys.YARN_APP_ID_STR,
               "-Dweave.app=$" + EnvKeys.WEAVE_APP_NAME,
               "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
-              "-Xmx" + (int) Math.ceil(Constants.APP_MASTER_MEMORY_MB * Constants.HEAP_MEMORY_DISCOUNT) + "m",
+              "-Xmx" + (Constants.APP_MASTER_MEMORY_MB - Constants.APP_MASTER_RESERVED_MEMORY_MB) + "m",
               vmOpts,
               WeaveLauncher.class.getName(),
               Constants.Files.APP_MASTER_JAR,
@@ -316,13 +323,28 @@ final class YarnWeavePreparer implements WeavePreparer {
   }
 
   private void createAppMasterJar(ApplicationBundler bundler, Map<String, LocalFile> localFiles) throws IOException {
-    LOG.debug("Create and copy {}", Constants.Files.APP_MASTER_JAR);
-    Location location = createTempLocation(Constants.Files.APP_MASTER_JAR);
-    // Stuck in the yarnAppClient class to make bundler being able to pickup the right yarn-client version
-    bundler.createBundle(location, ApplicationMasterMain.class, yarnAppClient.getClass());
-    LOG.debug("Done {}", Constants.Files.APP_MASTER_JAR);
+    try {
+      LOG.debug("Create and copy {}", Constants.Files.APP_MASTER_JAR);
+      Location location = createTempLocation(Constants.Files.APP_MASTER_JAR);
 
-    localFiles.put(Constants.Files.APP_MASTER_JAR, createLocalFile(Constants.Files.APP_MASTER_JAR, location));
+      List<Class<?>> classes = Lists.newArrayList();
+      classes.add(ApplicationMasterMain.class);
+
+      // Stuck in the yarnAppClient class to make bundler being able to pickup the right yarn-client version
+      classes.add(yarnAppClient.getClass());
+
+      // Add the WeaveRunnableEventHandler class
+      if (weaveSpec.getEventHandler() != null) {
+        classes.add(getClassLoader().loadClass(weaveSpec.getEventHandler().getClassName()));
+      }
+
+      bundler.createBundle(location, classes);
+      LOG.debug("Done {}", Constants.Files.APP_MASTER_JAR);
+
+      localFiles.put(Constants.Files.APP_MASTER_JAR, createLocalFile(Constants.Files.APP_MASTER_JAR, location));
+    } catch (ClassNotFoundException e) {
+      throw Throwables.propagate(e);
+    }
   }
 
   private void createContainerJar(ApplicationBundler bundler, Map<String, LocalFile> localFiles) throws IOException {
@@ -331,7 +353,7 @@ final class YarnWeavePreparer implements WeavePreparer {
       classes.add(WeaveContainerMain.class);
       classes.addAll(dependencies);
 
-      ClassLoader classLoader = getClass().getClassLoader();
+      ClassLoader classLoader = getClassLoader();
       for (RuntimeSpecification spec : weaveSpec.getRunnables().values()) {
         classes.add(classLoader.loadClass(spec.getRunnableSpecification().getClassName()));
       }
@@ -400,8 +422,14 @@ final class YarnWeavePreparer implements WeavePreparer {
     Location location = createTempLocation(Constants.Files.WEAVE_SPEC);
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
-      WeaveSpecificationAdapter.create().toJson(new DefaultWeaveSpecification(spec.getName(), runtimeSpec,
-                                                                              spec.getOrders()), writer);
+      EventHandlerSpecification eventHandler = spec.getEventHandler();
+      if (eventHandler == null) {
+        eventHandler = new LogOnlyEventHandler().configure();
+      }
+
+      WeaveSpecificationAdapter.create().toJson(
+        new DefaultWeaveSpecification(spec.getName(), runtimeSpec, spec.getOrders(), eventHandler),
+        writer);
     } finally {
       writer.close();
     }
@@ -558,5 +586,13 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private Location getAppLocation() {
     return locationFactory.create(String.format("/%s/%s", weaveSpec.getName(), runId.getId()));
+  }
+
+  /**
+   * Returns the context ClassLoader if there is any, otherwise, returns ClassLoader of this class.
+   */
+  private ClassLoader getClassLoader() {
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+    return classLoader == null ? getClass().getClassLoader() : classLoader;
   }
 }
