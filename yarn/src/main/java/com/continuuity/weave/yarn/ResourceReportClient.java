@@ -13,58 +13,49 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
+package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.ResourceReport;
 import com.continuuity.weave.internal.json.ResourceReportAdapter;
 import com.google.common.base.Charsets;
+import com.google.common.io.Closeables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
+import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.net.HttpURLConnection;
 import java.net.URL;
 
 /**
- * Client to get {@link ResourceReport} from the application master.
+ * Package private class to get {@link ResourceReport} from the application master.
  */
-public class ResourceReportClient {
+final class ResourceReportClient {
   private static final Logger LOG = LoggerFactory.getLogger(ResourceReportClient.class);
 
   private final ResourceReportAdapter reportAdapter;
   private final URL resourceUrl;
 
-  public ResourceReportClient(URL resourceUrl) {
+  ResourceReportClient(URL resourceUrl) {
     this.resourceUrl = resourceUrl;
     this.reportAdapter = ResourceReportAdapter.create();
   }
 
+  /**
+   * Returns the resource usage of the application fetched from the resource endpoint URL.
+   * @return A {@link ResourceReport} or {@code null} if failed to fetch the report.
+   */
   public ResourceReport get() {
-    ResourceReport report = null;
-    Reader reader = null;
-    HttpURLConnection conn = null;
     try {
-      conn = (HttpURLConnection) resourceUrl.openConnection();
-      conn.setRequestMethod("GET");
-
-      reader = new InputStreamReader(conn.getInputStream(), Charsets.UTF_8);
-      report = reportAdapter.fromJson(reader);
-    } catch (IOException e) {
+      Reader reader = new BufferedReader(new InputStreamReader(resourceUrl.openStream(), Charsets.UTF_8));
+      try {
+        return reportAdapter.fromJson(reader);
+      } finally {
+        Closeables.closeQuietly(reader);
+      }
+    } catch (Exception e) {
       LOG.error("Exception getting resource report from {}.", resourceUrl, e);
-    } finally {
-      if (reader != null) {
-        try {
-          reader.close();
-        } catch (IOException e) {
-          LOG.error("Exception closing reader", e);
-        }
-      }
-      if (conn != null) {
-        conn.disconnect();
-      }
+      return null;
     }
-    return report;
   }
 }
