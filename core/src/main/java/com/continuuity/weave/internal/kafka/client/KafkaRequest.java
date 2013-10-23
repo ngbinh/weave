@@ -55,6 +55,10 @@ final class KafkaRequest {
     return new KafkaRequest(Type.FETCH, topic, partition, body, handler);
   }
 
+  public static KafkaRequest createOffsets(String topic, int partition, ChannelBuffer body, ResponseHandler handler) {
+    return new KafkaRequest(Type.OFFSETS, topic, partition, body, handler);
+  }
+
   private KafkaRequest(Type type, String topic, int partition, ChannelBuffer body, ResponseHandler responseHandler) {
     this.type = type;
     this.topic = topic;

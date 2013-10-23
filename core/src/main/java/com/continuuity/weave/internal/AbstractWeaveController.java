@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A abstract base class for {@link WeaveController} implementation that uses Zookeeper to controller a
@@ -49,20 +50,22 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public abstract class AbstractWeaveController extends AbstractZKServiceController implements WeaveController {
 
   private static final Logger LOG = LoggerFactory.getLogger(AbstractWeaveController.class);
+  private static final int MAX_KAFKA_FETCH_SIZE = 1048576;
   private static final long SHUTDOWN_TIMEOUT_MS = 2000;
+  private static final long LOG_FETCH_TIMEOUT_MS = 5000;
 
   private final Queue<LogHandler> logHandlers;
   private final KafkaClient kafkaClient;
   private final DiscoveryServiceClient discoveryServiceClient;
-  private final Thread logPoller;
+  private final LogPollerThread logPoller;
 
   public AbstractWeaveController(RunId runId, ZKClient zkClient, Iterable<LogHandler> logHandlers) {
     super(runId, zkClient);
     this.logHandlers = new ConcurrentLinkedQueue<LogHandler>();
     this.kafkaClient = new SimpleKafkaClient(ZKClients.namespace(zkClient, "/" + runId.getId() + "/kafka"));
     this.discoveryServiceClient = new ZKDiscoveryService(zkClient);
-    this.logPoller = createLogPoller();
     Iterables.addAll(this.logHandlers, logHandlers);
+    this.logPoller = new LogPollerThread(runId, kafkaClient, logHandlers);
   }
 
   @Override
@@ -74,7 +77,7 @@ public abstract class AbstractWeaveController extends AbstractZKServiceControlle
 
   @Override
   protected void doShutDown() {
-    logPoller.interrupt();
+    logPoller.terminate();
     try {
       // Wait for the poller thread to stop.
       logPoller.join(SHUTDOWN_TIMEOUT_MS);
@@ -101,38 +104,75 @@ public abstract class AbstractWeaveController extends AbstractZKServiceControlle
     return sendMessage(SystemMessages.setInstances(runnable, newCount), newCount);
   }
 
-  private Thread createLogPoller() {
-    Thread poller = new Thread("weave-log-poller") {
-      @Override
-      public void run() {
-        LOG.info("Weave log poller thread started.");
-        kafkaClient.startAndWait();
-        Gson gson = new GsonBuilder().registerTypeAdapter(LogEntry.class, new LogEntryDecoder())
-                                     .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
-                                     .create();
-        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(Constants.LOG_TOPIC, 0, 0, 1048576);
-        while (messageIterator.hasNext()) {
-          String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
-          try {
-            LogEntry entry = gson.fromJson(json, LogEntry.class);
-            if (entry != null) {
-              invokeHandlers(entry);
-            }
-          } catch (Exception e) {
-            LOG.error("Failed to decode log entry {}", json, e);
-          }
+  private static final class LogPollerThread extends Thread {
+
+    private final KafkaClient kafkaClient;
+    private final Iterable<LogHandler> logHandlers;
+    private volatile boolean running = true;
+
+    LogPollerThread(RunId runId, KafkaClient kafkaClient, Iterable<LogHandler> logHandlers) {
+      super("weave-log-poller-" + runId.getId());
+      setDaemon(true);
+      this.kafkaClient = kafkaClient;
+      this.logHandlers = logHandlers;
+    }
+
+    @Override
+    public void run() {
+      LOG.info("Weave log poller thread '{}' started.", getName());
+      kafkaClient.startAndWait();
+      Gson gson = new GsonBuilder().registerTypeAdapter(LogEntry.class, new LogEntryDecoder())
+        .registerTypeAdapter(StackTraceElement.class, new StackTraceElementCodec())
+        .create();
+
+      while (running && !isInterrupted()) {
+        long offset;
+        try {
+          // Get the earliest offset
+          long[] offsets = kafkaClient.getOffset(Constants.LOG_TOPIC, 0, -2, 1).get(LOG_FETCH_TIMEOUT_MS,
+                                                                                    TimeUnit.MILLISECONDS);
+          // Should have one entry
+          offset = offsets[0];
+        } catch (Throwable t) {
+          // Keep retrying
+          LOG.warn("Failed to fetch offsets from Kafka. Retrying.", t);
+          continue;
         }
-        kafkaClient.stopAndWait();
-        LOG.info("Weave log poller thread stopped.");
+
+        // Now fetch log messages from Kafka
+        Iterator<FetchedMessage> messageIterator = kafkaClient.consume(Constants.LOG_TOPIC, 0,
+                                                                       offset, MAX_KAFKA_FETCH_SIZE);
+        try {
+          while (messageIterator.hasNext()) {
+            String json = Charsets.UTF_8.decode(messageIterator.next().getBuffer()).toString();
+            try {
+              LogEntry entry = gson.fromJson(json, LogEntry.class);
+              if (entry != null) {
+                invokeHandlers(entry);
+              }
+            } catch (Exception e) {
+              LOG.error("Failed to decode log entry {}", json, e);
+            }
+          }
+        } catch (Throwable t) {
+          LOG.warn("Exception while fetching log message from Kafka. Retrying.", t);
+          continue;
+        }
       }
 
-      private void invokeHandlers(LogEntry entry) {
-        for (LogHandler handler : logHandlers) {
-          handler.onLog(entry);
-        }
+      kafkaClient.stopAndWait();
+      LOG.info("Weave log poller thread stopped.");
+    }
+
+    void terminate() {
+      running = false;
+      interrupt();
+    }
+
+    private void invokeHandlers(LogEntry entry) {
+      for (LogHandler handler : logHandlers) {
+        handler.onLog(entry);
       }
-    };
-    poller.setDaemon(true);
-    return poller;
+    }
   }
 }
