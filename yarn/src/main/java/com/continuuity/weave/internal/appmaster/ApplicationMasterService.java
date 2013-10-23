@@ -365,7 +365,7 @@ public final class ApplicationMasterService implements Service {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
     final Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
-    int requestFailCount = 0;
+
     YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
       @Override
       public void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers) {
@@ -429,6 +429,10 @@ public final class ApplicationMasterService implements Service {
         runnableContainerRequests.add(createRunnableContainerRequest(entry.getElement()));
       }
     }
+
+    // For all runnables that needs to re-request for containers, update the expected count timestamp
+    // so that the EventHandler would triggered with the right expiration timestamp.
+    expectedContainers.updateRequestTime(restartRunnables.elementSet());
   }
 
   /**
@@ -565,7 +569,7 @@ public final class ApplicationMasterService implements Service {
         amClient.completeContainerRequest(provisionRequest.getRequestId());
       }
 
-      if (expectedContainers.sameAsExpected(runnableName, runningContainers.count(runnableName))) {
+      if (expectedContainers.getExpected(runnableName) == runningContainers.count(runnableName)) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");
         provisioning.poll();
       }
