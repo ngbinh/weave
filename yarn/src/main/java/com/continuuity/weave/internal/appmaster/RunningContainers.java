@@ -72,9 +72,6 @@ final class RunningContainers {
     }
   };
 
-  // Error status code if the container exit with an user error.
-  private static final int RUNNABLE_ERROR = -100;
-
   // Table of <runnableName, containerId, controller>
   private final Table<String, String, WeaveContainerController> containers;
 
@@ -309,13 +306,9 @@ final class RunningContainers {
       }
 
       if (exitStatus != 0) {
-        if (exitStatus == RUNNABLE_ERROR) {
-          LOG.warn("Container {} exited abnormally with state {}, exit code {}.", containerId, state, exitStatus);
-        } else {
-          LOG.warn("Container {} exited unexpected with state {}, exit code{}. Re-request the container.",
-                   containerId, state, exitStatus);
-          restartRunnables.add(lookup.keySet().iterator().next());
-        }
+        LOG.warn("Container {} exited abnormally with state {}, exit code {}. Re-request the container.",
+                 containerId, state, exitStatus);
+        restartRunnables.add(lookup.keySet().iterator().next());
       } else {
         LOG.info("Container {} exited normally with state {}", containerId, state);
       }

@@ -42,17 +42,14 @@ final class ExpectedContainers {
   }
 
   /**
-   * Updates the ExpectCount timestamp to current time if the running count is the same as expected count.
-   * @param runnable Name of runnable
-   * @param running Number of running instances.
-   * @return {@code true} if the running count match with expected count, {@code false} otherwise.
+   * Updates the ExpectCount timestamp to current time.
+   * @param runnables List of runnable names.
    */
-  synchronized boolean sameAsExpected(String runnable, int running) {
-    if (expectedCounts.get(runnable).getCount() == running) {
-      expectedCounts.put(runnable, new ExpectedCount(running, System.currentTimeMillis()));
-      return true;
+  synchronized void updateRequestTime(Iterable<String> runnables) {
+    for (String runnable : runnables) {
+      ExpectedCount oldCount = expectedCounts.get(runnable);
+      expectedCounts.put(runnable, new ExpectedCount(oldCount.getCount(), System.currentTimeMillis()));
     }
-    return false;
   }
 
   synchronized int getExpected(String runnable) {
