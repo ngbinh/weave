@@ -77,13 +77,13 @@ then
     git push origin release/$VERSION
 
     # Compile the Hadoop-2.0 version
-    mvn compile -P hadoop-2.0
+    mvn compile -P hadoop-2.0,-hadoop-2.2
 
-    # Compile and package Hadoop-2.1 classes
-    mvn package -DskipTests=true -P hadoop-2.1
+    # Compile and package Hadoop-2.2 classes
+    mvn package -DskipTests=true -P hadoop-2.2
 
     # Publish artifacts
-    mvn deploy -DskipTests=true -P hadoop-2.1
+    mvn deploy -DskipTests=true -P hadoop-2.2
 fi
 
 echo "Release completed"
@@ -104,11 +104,11 @@ then
     git push origin develop
 
     # Compile the Hadoop-2.0 version
-    mvn compile -P hadoop-2.0
+    mvn compile -P hadoop-2.0,-hadoop-2.2
 
-    # Compile and package Hadoop-2.1 classes
-    mvn package -DskipTests=true -P hadoop-2.1
+    # Compile and package Hadoop-2.2 classes
+    mvn package -DskipTests=true -P hadoop-2.2
 
     # Publish first SNAPSHOT artifacts
-    mvn deploy -DskipTests=true -P hadoop-2.1
+    mvn deploy -DskipTests=true -P hadoop-2.2
 fi
