@@ -24,7 +24,7 @@ import java.io.Reader;
 import java.io.Writer;
 
 /**
- *
+ * This class provides utility to help encode/decode {@link ResourceReport} to/from Json.
  */
 public final class ResourceReportAdapter {
 

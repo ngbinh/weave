@@ -22,7 +22,6 @@ import com.continuuity.weave.api.logging.LogHandler;
 import com.continuuity.weave.internal.AbstractWeaveController;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.ProcessController;
-import com.continuuity.weave.internal.appmaster.ResourceReportClient;
 import com.continuuity.weave.internal.appmaster.TrackerService;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.internal.yarn.YarnApplicationReport;

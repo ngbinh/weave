@@ -30,7 +30,7 @@ import com.google.common.util.concurrent.ListenableFuture;
  */
 public final class WeaveContainerLauncher {
 
-  private static final double HEAP_MIN_RATIO = 0.6d;
+  private static final double HEAP_MIN_RATIO = 0.7d;
 
   private final RuntimeSpecification runtimeSpec;
   private final ProcessLauncher.PrepareLaunchContext launchContext;
@@ -63,8 +63,11 @@ public final class WeaveContainerLauncher {
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();
     if (((double) (memory - reservedMemory) / memory) >= HEAP_MIN_RATIO) {
-      // If it is a really small VM, just let it run with desired memory size. Otherwise, make room for reserved memory.
+      // Reduce -Xmx by the reserved memory size.
       memory = runtimeSpec.getResourceSpecification().getMemorySize() - reservedMemory;
+    } else {
+      // If it is a small VM, just discount it by the min ratio.
+      memory = (int) Math.ceil(memory * HEAP_MIN_RATIO);
     }
 
     // Currently no reporting is supported for runnable containers

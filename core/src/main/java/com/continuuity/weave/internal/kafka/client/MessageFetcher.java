@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal.kafka.client;
 
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.kafka.client.FetchException;
 import com.continuuity.weave.kafka.client.FetchedMessage;
 import com.google.common.base.Throwables;
 import com.google.common.collect.AbstractIterator;
@@ -70,8 +71,9 @@ final class MessageFetcher extends AbstractIterator<FetchedMessage> implements R
 
   @Override
   public void received(KafkaResponse response) {
-    if (response.getErrorCode() != KafkaResponse.ErrorCode.OK) {
-      messages.add(FetchResult.failure(new IllegalStateException("Error in fetching: " + response.getErrorCode())));
+    if (response.getErrorCode() != FetchException.ErrorCode.OK) {
+      messages.add(FetchResult.failure(new FetchException("Error in fetching: " + response.getErrorCode(),
+                                                          response.getErrorCode())));
       return;
     }
 

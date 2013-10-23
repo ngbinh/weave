@@ -20,9 +20,21 @@ package com.continuuity.weave.api;
  */
 public interface WeaveRunner {
 
+  /**
+   * Interface to represents information of a live application.
+   */
   interface LiveInfo {
+
+    /**
+     * Returns name of the application.
+     * @return Application name as a {@link String}.
+     */
     String getApplicationName();
 
+    /**
+     * Returns {@link WeaveController}s for all live instances of the application.
+     * @return An {@link Iterable} of {@link WeaveController}.
+     */
     Iterable<WeaveController> getControllers();
   }
 
