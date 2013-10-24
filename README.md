@@ -90,7 +90,7 @@ Start the Weave Runner Service
 In order to run EchoServer on the YARN cluster we must create a WeaveRunnerService, which is similar to ExecutorService. Then we specify the YARN cluster configuration and a connection string to a running instance of a Zookeeper service:
 
     WeaveRunnerService runnerService = new YarnWeaveRunnerService(
-        new YarnConfiguration(), zkServer.getConnectionString());
+        new YarnConfiguration(), zkConnectStr);
     runnerService.startAndWait();
 
 Start the Weave Controller and Add a Log Handler
