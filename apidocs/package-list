@@ -2,14 +2,9 @@ com.continuuity.weave.api
 com.continuuity.weave.api.logging
 com.continuuity.weave.common
 com.continuuity.weave.discovery
-com.continuuity.weave.internal
-com.continuuity.weave.internal.json
-com.continuuity.weave.internal.kafka.client
-com.continuuity.weave.internal.logging
-com.continuuity.weave.internal.state
-com.continuuity.weave.internal.utils
-com.continuuity.weave.internal.zookeeper
+com.continuuity.weave.filesystem
 com.continuuity.weave.kafka.client
+com.continuuity.weave.launcher
 com.continuuity.weave.yarn
 com.continuuity.weave.yarn.utils
 com.continuuity.weave.zookeeper
