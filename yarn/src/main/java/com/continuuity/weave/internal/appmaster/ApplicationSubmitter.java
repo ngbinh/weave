@@ -13,22 +13,17 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.utils;
+package com.continuuity.weave.internal.appmaster;
 
-import com.google.common.collect.ImmutableList;
-import org.junit.Assert;
-import org.junit.Test;
+import com.continuuity.weave.internal.ProcessController;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
+import com.continuuity.weave.internal.yarn.YarnLaunchContext;
+import org.apache.hadoop.yarn.api.records.Resource;
 
 /**
- *
+ * Interface for submitting a new application to run.
  */
-public final class PathsTest {
+public interface ApplicationSubmitter {
 
-  @Test
-  public void testPath() {
-    Assert.assertEquals("a:b:c", Paths.getClassPath(ImmutableList.of("a", "b", "c")));
-    Assert.assertEquals("a:b:c", Paths.getClassPath(ImmutableList.of("a ", "  b  ", "  c")));
-    Assert.assertEquals("a:b:c", Paths.getClassPath(ImmutableList.of("a ", "  b  \n", "\n  c")));
-    Assert.assertEquals("a b:a b:a c", Paths.getClassPath(ImmutableList.of("a b ", "  a b  \n", "\n  a c")));
-  }
+  ProcessController<YarnApplicationReport> submit(YarnLaunchContext launchContext, Resource capability);
 }

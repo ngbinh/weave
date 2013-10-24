@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal.kafka.client;
 
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.kafka.client.FetchException;
 import com.continuuity.weave.kafka.client.FetchedMessage;
 import com.continuuity.weave.kafka.client.KafkaClient;
 import com.continuuity.weave.kafka.client.PreparePublish;
@@ -23,6 +24,8 @@ import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.AbstractIdleService;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -36,7 +39,10 @@ import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
 import org.jboss.netty.channel.Channels;
+import org.jboss.netty.channel.socket.nio.NioClientBossPool;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.channel.socket.nio.NioWorkerPool;
+import org.jboss.netty.util.HashedWheelTimer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,8 +75,11 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
   protected void startUp() throws Exception {
     brokerCache.startAndWait();
     ThreadFactory threadFactory = Threads.createDaemonThreadFactory("kafka-client-netty-%d");
-    bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(Executors.newSingleThreadExecutor(threadFactory),
-                                                                      Executors.newFixedThreadPool(4, threadFactory)));
+    NioClientBossPool bossPool = new NioClientBossPool(Executors.newSingleThreadExecutor(threadFactory), 1,
+                                                       new HashedWheelTimer(threadFactory), null);
+    NioWorkerPool workerPool = new NioWorkerPool(Executors.newFixedThreadPool(4, threadFactory), 4);
+
+    bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(bossPool, workerPool));
     bootstrap.setPipelineFactory(new KafkaChannelPipelineFactory());
     connectionPool = new ConnectionPool(bootstrap);
   }
@@ -176,6 +185,62 @@ public final class SimpleKafkaClient extends AbstractIdleService implements Kafk
         }
       }
     });
+  }
+
+  @Override
+  public ListenableFuture<long[]> getOffset(final String topic, final int partition, long time, int maxOffsets) {
+    final SettableFuture<long[]> resultFuture = SettableFuture.create();
+    final ChannelBuffer body = ChannelBuffers.buffer(Longs.BYTES + Ints.BYTES);
+    body.writeLong(time);
+    body.writeInt(maxOffsets);
+
+    connectionPool.connect(getTopicBroker(topic, partition).getAddress())
+                  .getChannelFuture().addListener(new ChannelFutureListener() {
+      @Override
+      public void operationComplete(ChannelFuture future) throws Exception {
+        if (checkFailure(future)) {
+          return;
+        }
+
+        future.getChannel().write(KafkaRequest.createOffsets(topic, partition, body, new ResponseHandler() {
+          @Override
+          public void received(KafkaResponse response) {
+            if (response.getErrorCode() != FetchException.ErrorCode.OK) {
+              resultFuture.setException(new FetchException("Failed to fetch offset.", response.getErrorCode()));
+            } else {
+              // Decode the offset response, which contains 4 bytes number of offsets, followed by number of offsets,
+              // each 8 bytes in size.
+              ChannelBuffer resultBuffer = response.getBody();
+              int size = resultBuffer.readInt();
+              long[] result = new long[size];
+              for (int i = 0; i < size; i++) {
+                result[i] = resultBuffer.readLong();
+              }
+              resultFuture.set(result);
+            }
+          }
+        })).addListener(new ChannelFutureListener() {
+          @Override
+          public void operationComplete(ChannelFuture future) throws Exception {
+            checkFailure(future);
+          }
+        });
+      }
+
+      private boolean checkFailure(ChannelFuture future) {
+        if (!future.isSuccess()) {
+          if (future.isCancelled()) {
+            resultFuture.cancel(true);
+          } else {
+            resultFuture.setException(future.getCause());
+          }
+          return true;
+        }
+        return false;
+      }
+    });
+
+    return resultFuture;
   }
 
   private TopicBroker getTopicBroker(String topic, int partition) {

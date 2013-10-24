@@ -25,7 +25,36 @@ public final class Constants {
   /** Maximum number of seconds for AM to start. */
   public static final int APPLICATION_MAX_START_SECONDS = 60;
   /** Maximum number of seconds for AM to stop. */
-  public static final int APPLICATION_MAX_STOP_SECONDS = 30;
+  public static final int APPLICATION_MAX_STOP_SECONDS = 60;
+
+  public static final long PROVISION_TIMEOUT = 30000;
+
+  /** Memory size of AM */
+  public static final int APP_MASTER_MEMORY_MB = 512;
+
+  public static final int APP_MASTER_RESERVED_MEMORY_MB = 150;
+
+  public static final String STDOUT = "stdout";
+  public static final String STDERR = "stderr";
+
+  /**
+   * Constants for names of internal files that are shared between client, AM and containers.
+   */
+  public static final class Files {
+
+    public static final String LAUNCHER_JAR = "launcher.jar";
+    public static final String APP_MASTER_JAR = "appMaster.jar";
+    public static final String CONTAINER_JAR = "container.jar";
+    public static final String LOCALIZE_FILES = "localizeFiles.json";
+    public static final String WEAVE_SPEC = "weaveSpec.json";
+    public static final String ARGUMENTS = "arguments.json";
+    public static final String LOGBACK_TEMPLATE = "logback-template.xml";
+    public static final String KAFKA = "kafka.tgz";
+    public static final String JVM_OPTIONS = "jvm.opts";
+
+    private Files() {
+    }
+  }
 
   private Constants() {
   }

@@ -54,6 +54,11 @@ public abstract class AbstractWeaveRunnable implements WeaveRunnable {
     // No-op by default. Left for children class to override.
   }
 
+  @Override
+  public void destroy() {
+    // No-op by default. Left for children class to override.
+  }
+
   protected Map<String, String> getArguments() {
     return args;
   }

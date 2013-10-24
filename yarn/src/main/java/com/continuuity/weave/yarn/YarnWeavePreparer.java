@@ -15,9 +15,11 @@
  */
 package com.continuuity.weave.yarn;
 
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
+import com.continuuity.weave.api.SecureStore;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeavePreparer;
 import com.continuuity.weave.api.WeaveSpecification;
@@ -26,10 +28,15 @@ import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
 import com.continuuity.weave.internal.ApplicationBundler;
 import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Configs;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultLocalFile;
 import com.continuuity.weave.internal.DefaultRuntimeSpecification;
 import com.continuuity.weave.internal.DefaultWeaveSpecification;
 import com.continuuity.weave.internal.EnvKeys;
+import com.continuuity.weave.internal.LogOnlyEventHandler;
+import com.continuuity.weave.internal.ProcessController;
+import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerMain;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
@@ -37,6 +44,9 @@ import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.utils.Dependencies;
+import com.continuuity.weave.internal.utils.Paths;
+import com.continuuity.weave.internal.yarn.YarnAppClient;
+import com.continuuity.weave.internal.yarn.YarnApplicationReport;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
@@ -45,6 +55,7 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicates;
+import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.HashMultimap;
@@ -58,19 +69,15 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.io.ByteStreams;
+import com.google.common.io.CharStreams;
+import com.google.common.io.OutputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.gson.GsonBuilder;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
-import org.apache.hadoop.yarn.api.protocolrecords.GetNewApplicationResponse;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
-import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
-import org.apache.hadoop.yarn.api.records.ContainerLaunchContext;
-import org.apache.hadoop.yarn.api.records.LocalResource;
-import org.apache.hadoop.yarn.api.records.LocalResourceType;
-import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.client.YarnClient;
-import org.apache.hadoop.yarn.util.ConverterUtils;
-import org.apache.hadoop.yarn.util.Records;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -86,6 +93,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
@@ -96,12 +104,13 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private static final Logger LOG = LoggerFactory.getLogger(YarnWeavePreparer.class);
   private static final String KAFKA_ARCHIVE = "kafka-0.7.2.tgz";
-  private static final int APP_MASTER_MEMORY_MB = 1024;
 
+  private final YarnConfiguration yarnConfig;
   private final WeaveSpecification weaveSpec;
-  private final YarnClient yarnClient;
+  private final YarnAppClient yarnAppClient;
   private final ZKClient zkClient;
   private final LocationFactory locationFactory;
+  private final Supplier<String> jvmOpts;
   private final YarnWeaveControllerFactory controllerFactory;
   private final RunId runId;
 
@@ -111,21 +120,36 @@ final class YarnWeavePreparer implements WeavePreparer {
   private final List<URI> resources = Lists.newArrayList();
   private final List<String> classPaths = Lists.newArrayList();
   private final ListMultimap<String, String> runnableArgs = ArrayListMultimap.create();
+  private final Credentials credentials;
+  private final int reservedMemory;
+  private String user;
 
-  YarnWeavePreparer(WeaveSpecification weaveSpec, YarnClient yarnClient,
-                    ZKClient zkClient, LocationFactory locationFactory,
+  YarnWeavePreparer(YarnConfiguration yarnConfig, WeaveSpecification weaveSpec, YarnAppClient yarnAppClient,
+                    ZKClient zkClient, LocationFactory locationFactory, Supplier<String> jvmOpts,
                     YarnWeaveControllerFactory controllerFactory) {
+    this.yarnConfig = yarnConfig;
     this.weaveSpec = weaveSpec;
-    this.yarnClient = yarnClient;
+    this.yarnAppClient = yarnAppClient;
     this.zkClient = ZKClients.namespace(zkClient, "/" + weaveSpec.getName());
     this.locationFactory = locationFactory;
-    this.runId = RunIds.generate();
+    this.jvmOpts = jvmOpts;
     this.controllerFactory = controllerFactory;
+    this.runId = RunIds.generate();
+    this.credentials = createCredentials();
+    this.reservedMemory = yarnConfig.getInt(Configs.Keys.JAVA_RESERVED_MEMORY_MB,
+                                            Configs.Defaults.JAVA_RESERVED_MEMORY_MB);
+    this.user = System.getProperty("user.name");
   }
 
   @Override
   public WeavePreparer addLogHandler(LogHandler handler) {
     logHandlers.add(handler);
+    return this;
+  }
+
+  @Override
+  public WeavePreparer setUser(String user) {
+    this.user = user;
     return this;
   }
 
@@ -185,124 +209,161 @@ final class YarnWeavePreparer implements WeavePreparer {
   }
 
   @Override
+  public WeavePreparer addSecureStore(SecureStore secureStore) {
+    Preconditions.checkArgument(secureStore instanceof YarnSecureStore, "Only YarnSecureStore is supported.");
+    Credentials credentials = secureStore.getStore();
+    this.credentials.mergeAll(credentials);
+    return this;
+  }
+
+  @Override
   public WeaveController start() {
-    // TODO: Unify this with {@link ProcessLauncher}
     try {
-      GetNewApplicationResponse response = yarnClient.getNewApplication();
-      final ApplicationId applicationId = response.getApplicationId();
+      final ProcessLauncher<ApplicationId> launcher = yarnAppClient.createLauncher(user, weaveSpec);
+      final ApplicationId appId = launcher.getContainerInfo();
 
-      Runnable submitTask  = new Runnable() {
+      Callable<ProcessController<YarnApplicationReport>> submitTask =
+        new Callable<ProcessController<YarnApplicationReport>>() {
         @Override
-        public void run() {
-          try {
-            ApplicationSubmissionContext appSubmissionContext = Records.newRecord(ApplicationSubmissionContext.class);
-            appSubmissionContext.setApplicationId(applicationId);
-            appSubmissionContext.setApplicationName(weaveSpec.getName());
+        public ProcessController<YarnApplicationReport> call() throws Exception {
+          String fsUser = locationFactory.getHomeLocation().getName();
 
-            Map<String, LocalResource> localResources = Maps.newHashMap();
+          // Local files needed by AM
+          Map<String, LocalFile> localFiles = Maps.newHashMap();
+          // Local files declared by runnables
+          Multimap<String, LocalFile> runnableLocalFiles = HashMultimap.create();
 
-            Multimap<String, LocalFile> transformedLocalFiles = HashMultimap.create();
+          String vmOpts = jvmOpts.get();
 
-            createAppMasterJar(createBundler(), localResources);
-            createContainerJar(createBundler(), localResources);
-            populateRunnableResources(weaveSpec, transformedLocalFiles);
-            saveWeaveSpec(weaveSpec, transformedLocalFiles, localResources);
-            saveLogback(localResources);
-            saveLauncher(localResources);
-            saveKafka(localResources);
-            saveArguments(arguments, runnableArgs, localResources);
-            saveLocalFiles(localResources, ImmutableSet.of("weaveSpec.json",
-                                                           "logback-template.xml",
-                                                           "container.jar",
-                                                           "launcher.jar",
-                                                           "arguments.json"));
+          createAppMasterJar(createBundler(), localFiles);
+          createContainerJar(createBundler(), localFiles);
+          populateRunnableLocalFiles(weaveSpec, runnableLocalFiles);
+          saveWeaveSpec(weaveSpec, runnableLocalFiles, localFiles);
+          saveLogback(localFiles);
+          saveLauncher(localFiles);
+          saveKafka(localFiles);
+          saveVmOptions(vmOpts, localFiles);
+          saveArguments(new Arguments(arguments, runnableArgs), localFiles);
+          saveLocalFiles(localFiles, ImmutableSet.of(Constants.Files.WEAVE_SPEC,
+                                                     Constants.Files.LOGBACK_TEMPLATE,
+                                                     Constants.Files.CONTAINER_JAR,
+                                                     Constants.Files.LAUNCHER_JAR,
+                                                     Constants.Files.ARGUMENTS));
 
-            ContainerLaunchContext containerLaunchContext = Records.newRecord(ContainerLaunchContext.class);
-            containerLaunchContext.setLocalResources(localResources);
-
-            // java -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
-            //     com.continuuity.weave.internal.WeaveLauncher
-            //     appMaster.jar
-            //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
-            //     false
-            containerLaunchContext.setCommands(ImmutableList.of(
+          LOG.debug("Submit AM container spec: {}", appId);
+          // java -Djava.io.tmpdir=tmp -cp launcher.jar:$HADOOP_CONF_DIR -XmxMemory
+          //     com.continuuity.weave.internal.WeaveLauncher
+          //     appMaster.jar
+          //     com.continuuity.weave.internal.appmaster.ApplicationMasterMain
+          //     false
+          return launcher.prepareLaunch(
+            ImmutableMap.<String, String>builder()
+              .put(EnvKeys.WEAVE_FS_USER, fsUser)
+              .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
+              .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+              .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
+              .put(EnvKeys.WEAVE_RESERVED_MEMORY_MB, Integer.toString(reservedMemory))
+              .put(EnvKeys.WEAVE_APP_NAME, weaveSpec.getName()).build(),
+            localFiles.values(), credentials)
+            .noResources()
+            .noEnvironment()
+            .withCommands().add(
               "java",
-              "-cp", "launcher.jar:$HADOOP_CONF_DIR",
-              "-Xmx" + APP_MASTER_MEMORY_MB + "m",
+              "-Djava.io.tmpdir=tmp",
+              "-Dyarn.appId=$" + EnvKeys.YARN_APP_ID_STR,
+              "-Dweave.app=$" + EnvKeys.WEAVE_APP_NAME,
+              "-cp", Constants.Files.LAUNCHER_JAR + ":$HADOOP_CONF_DIR",
+              "-Xmx" + (Constants.APP_MASTER_MEMORY_MB - Constants.APP_MASTER_RESERVED_MEMORY_MB) + "m",
+              vmOpts,
               WeaveLauncher.class.getName(),
-              "appMaster.jar",
+              Constants.Files.APP_MASTER_JAR,
               ApplicationMasterMain.class.getName(),
-              Boolean.FALSE.toString(),
-              " 1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
-              " 2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"
-            ));
-
-            containerLaunchContext.setEnvironment(ImmutableMap.<String, String>builder()
-                                                    .put(EnvKeys.WEAVE_APP_ID, Integer.toString(applicationId.getId()))
-                                                    .put(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME,
-                                                         Long.toString(applicationId.getClusterTimestamp()))
-                                                    .put(EnvKeys.WEAVE_APP_DIR, getAppLocation().toURI().toASCIIString())
-                                                    .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-                                                    .put(EnvKeys.WEAVE_RUN_ID, runId.getId())
-                                                    .build()
-            );
-            Resource capability = Records.newRecord(Resource.class);
-            capability.setMemory(APP_MASTER_MEMORY_MB);
-            containerLaunchContext.setResource(capability);
-
-            appSubmissionContext.setAMContainerSpec(containerLaunchContext);
-
-            LOG.debug("Submit AM container spec: {}", applicationId);
-            ApplicationId appId = yarnClient.submitApplication(appSubmissionContext);
-            LOG.debug("AM container spec submitted: {}", appId);
-
-          } catch (Exception e) {
-            throw Throwables.propagate(e);
-          }
+              Boolean.FALSE.toString())
+            .redirectOutput(Constants.STDOUT)
+            .redirectError(Constants.STDERR)
+            .launch();
         }
       };
 
-      YarnWeaveController controller = controllerFactory.create(runId, logHandlers, applicationId, submitTask);
+      YarnWeaveController controller = controllerFactory.create(runId, logHandlers, submitTask);
       controller.start();
       return controller;
-
     } catch (Exception e) {
+      LOG.error("Failed to submit application {}", weaveSpec.getName(), e);
       throw Throwables.propagate(e);
     }
+  }
+
+  private Credentials createCredentials() {
+    Credentials credentials = new Credentials();
+
+    try {
+      credentials.addAll(UserGroupInformation.getCurrentUser().getCredentials());
+
+      List<Token<?>> tokens = YarnUtils.addDelegationTokens(yarnConfig, locationFactory, credentials);
+      for (Token<?> token : tokens) {
+        LOG.debug("Delegation token acquired for {}, {}", locationFactory.getHomeLocation().toURI(), token);
+      }
+    } catch (IOException e) {
+      LOG.warn("Failed to check for secure login type. Not gathering any delegation token.", e);
+    }
+    return credentials;
   }
 
   private ApplicationBundler createBundler() {
     return new ApplicationBundler(ImmutableList.<String>of());
   }
 
-  private void createAppMasterJar(ApplicationBundler bundler,
-                                  Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy appMaster.jar");
-    Location location = createTempLocation("appMaster", ".jar");
-    bundler.createBundle(location, ApplicationMasterMain.class);
-    LOG.debug("Done appMaster.jar");
-
-    localResources.put("appMaster.jar", YarnUtils.createLocalResource(location));
+  private LocalFile createLocalFile(String name, Location location) throws IOException {
+    return createLocalFile(name, location, false);
   }
 
-  private void createContainerJar(ApplicationBundler bundler,
-                                  Map<String, LocalResource> localResources) throws IOException {
+  private LocalFile createLocalFile(String name, Location location, boolean archive) throws IOException {
+    return new DefaultLocalFile(name, location.toURI(), location.lastModified(), location.length(), archive, null);
+  }
+
+  private void createAppMasterJar(ApplicationBundler bundler, Map<String, LocalFile> localFiles) throws IOException {
+    try {
+      LOG.debug("Create and copy {}", Constants.Files.APP_MASTER_JAR);
+      Location location = createTempLocation(Constants.Files.APP_MASTER_JAR);
+
+      List<Class<?>> classes = Lists.newArrayList();
+      classes.add(ApplicationMasterMain.class);
+
+      // Stuck in the yarnAppClient class to make bundler being able to pickup the right yarn-client version
+      classes.add(yarnAppClient.getClass());
+
+      // Add the WeaveRunnableEventHandler class
+      if (weaveSpec.getEventHandler() != null) {
+        classes.add(getClassLoader().loadClass(weaveSpec.getEventHandler().getClassName()));
+      }
+
+      bundler.createBundle(location, classes);
+      LOG.debug("Done {}", Constants.Files.APP_MASTER_JAR);
+
+      localFiles.put(Constants.Files.APP_MASTER_JAR, createLocalFile(Constants.Files.APP_MASTER_JAR, location));
+    } catch (ClassNotFoundException e) {
+      throw Throwables.propagate(e);
+    }
+  }
+
+  private void createContainerJar(ApplicationBundler bundler, Map<String, LocalFile> localFiles) throws IOException {
     try {
       Set<Class<?>> classes = Sets.newIdentityHashSet();
       classes.add(WeaveContainerMain.class);
       classes.addAll(dependencies);
 
-      ClassLoader classLoader = getClass().getClassLoader();
+      ClassLoader classLoader = getClassLoader();
       for (RuntimeSpecification spec : weaveSpec.getRunnables().values()) {
         classes.add(classLoader.loadClass(spec.getRunnableSpecification().getClassName()));
       }
 
-      LOG.debug("Create and copy container.jar");
-      Location location = createTempLocation("container", ".jar");
+      LOG.debug("Create and copy {}", Constants.Files.CONTAINER_JAR);
+      Location location = createTempLocation(Constants.Files.CONTAINER_JAR);
       bundler.createBundle(location, classes, resources);
-      LOG.debug("Done container.jar");
+      LOG.debug("Done {}", Constants.Files.CONTAINER_JAR);
 
-      localResources.put("container.jar", YarnUtils.createLocalResource(location));
+      localFiles.put(Constants.Files.CONTAINER_JAR, createLocalFile(Constants.Files.CONTAINER_JAR, location));
 
     } catch (ClassNotFoundException e) {
       throw Throwables.propagate(e);
@@ -315,12 +376,12 @@ final class YarnWeavePreparer implements WeavePreparer {
    * @param localFiles A Multimap to store runnable name to transformed LocalFiles.
    * @throws IOException
    */
-  private void populateRunnableResources(WeaveSpecification weaveSpec,
-                                         Multimap<String, LocalFile> localFiles) throws IOException {
+  private void populateRunnableLocalFiles(WeaveSpecification weaveSpec,
+                                          Multimap<String, LocalFile> localFiles) throws IOException {
 
     LOG.debug("Populating Runnable LocalFiles");
     for (Map.Entry<String, RuntimeSpecification> entry: weaveSpec.getRunnables().entrySet()) {
-      String name = entry.getKey();
+      String runnableName = entry.getKey();
       for (LocalFile localFile : entry.getValue().getLocalFiles()) {
         Location location;
 
@@ -330,62 +391,69 @@ final class YarnWeavePreparer implements WeavePreparer {
           location = locationFactory.create(uri);
         } else {
           URL url = uri.toURL();
-          LOG.debug("Create and copy {} : {}", name, url);
-          // Temp file suffix is repeated with the file name to preserve original suffix for expansion.
-          String path = url.getFile();
-          location = copyFromURL(url, createTempLocation(localFile.getName(),
-                                                         path.substring(path.lastIndexOf('/') + 1)));
-          LOG.debug("Done {} : {}", name, url);
+          LOG.debug("Create and copy {} : {}", runnableName, url);
+          // Preserves original suffix for expansion.
+          location = copyFromURL(url, createTempLocation(Paths.appendSuffix(url.getFile(), localFile.getName())));
+          LOG.debug("Done {} : {}", runnableName, url);
         }
 
-        localFiles.put(name, new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
-                                                  location.length(), localFile.isArchive(), localFile.getPattern()));
+        localFiles.put(runnableName,
+                       new DefaultLocalFile(localFile.getName(), location.toURI(), location.lastModified(),
+                                            location.length(), localFile.isArchive(), localFile.getPattern()));
       }
     }
     LOG.debug("Done Runnable LocalFiles");
   }
 
-  private void saveWeaveSpec(WeaveSpecification spec, final Multimap<String, LocalFile> localFiles,
-                             Map<String, LocalResource> localResources) throws IOException {
+  private void saveWeaveSpec(WeaveSpecification spec, final Multimap<String, LocalFile> runnableLocalFiles,
+                             Map<String, LocalFile> localFiles) throws IOException {
     // Rewrite LocalFiles inside weaveSpec
     Map<String, RuntimeSpecification> runtimeSpec = Maps.transformEntries(
       spec.getRunnables(), new Maps.EntryTransformer<String, RuntimeSpecification, RuntimeSpecification>() {
       @Override
       public RuntimeSpecification transformEntry(String key, RuntimeSpecification value) {
         return new DefaultRuntimeSpecification(value.getName(), value.getRunnableSpecification(),
-                                               value.getResourceSpecification(), localFiles.get(key));
+                                               value.getResourceSpecification(), runnableLocalFiles.get(key));
       }
     });
 
     // Serialize into a local temp file.
-    LOG.debug("Create and copy weaveSpec.json");
-    Location location = createTempLocation("weaveSpec", ".json");
+    LOG.debug("Create and copy {}", Constants.Files.WEAVE_SPEC);
+    Location location = createTempLocation(Constants.Files.WEAVE_SPEC);
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
-      WeaveSpecificationAdapter.create().toJson(new DefaultWeaveSpecification(spec.getName(), runtimeSpec,
-                                                                              spec.getOrders()), writer);
+      EventHandlerSpecification eventHandler = spec.getEventHandler();
+      if (eventHandler == null) {
+        eventHandler = new LogOnlyEventHandler().configure();
+      }
+
+      WeaveSpecificationAdapter.create().toJson(
+        new DefaultWeaveSpecification(spec.getName(), runtimeSpec, spec.getOrders(), eventHandler),
+        writer);
     } finally {
       writer.close();
     }
-    LOG.debug("Done weaveSpec.json");
-    localResources.put("weaveSpec.json", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.WEAVE_SPEC);
+
+    localFiles.put(Constants.Files.WEAVE_SPEC, createLocalFile(Constants.Files.WEAVE_SPEC, location));
   }
 
-  private void saveLogback(Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy logback-template.xml");
-    Location location = copyFromURL(getClass().getClassLoader().getResource("logback-template.xml"),
-                                    createTempLocation("logback-template", ".xml"));
-    LOG.debug("Done logback-template.xml");
-    localResources.put("logback-template.xml", YarnUtils.createLocalResource(location));
+  private void saveLogback(Map<String, LocalFile> localFiles) throws IOException {
+    LOG.debug("Create and copy {}", Constants.Files.LOGBACK_TEMPLATE);
+    Location location = copyFromURL(getClass().getClassLoader().getResource(Constants.Files.LOGBACK_TEMPLATE),
+                                    createTempLocation(Constants.Files.LOGBACK_TEMPLATE));
+    LOG.debug("Done {}", Constants.Files.LOGBACK_TEMPLATE);
+
+    localFiles.put(Constants.Files.LOGBACK_TEMPLATE, createLocalFile(Constants.Files.LOGBACK_TEMPLATE, location));
   }
 
   /**
-   * Creates the launcher.jar.
+   * Creates the launcher.jar for launch the main application.
    */
-  private void saveLauncher(Map<String, LocalResource> localResources) throws URISyntaxException, IOException {
+  private void saveLauncher(Map<String, LocalFile> localFiles) throws URISyntaxException, IOException {
 
-    LOG.debug("Create and copy launcher.jar");
-    Location location = createTempLocation("launcher", ".jar");
+    LOG.debug("Create and copy {}", Constants.Files.LAUNCHER_JAR);
+    Location location = createTempLocation(Constants.Files.LAUNCHER_JAR);
 
     final String launcherName = WeaveLauncher.class.getName();
 
@@ -423,64 +491,69 @@ final class YarnWeavePreparer implements WeavePreparer {
     } finally {
       jarOut.close();
     }
-    LOG.debug("Done launcher.jar");
-    localResources.put("launcher.jar", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.LAUNCHER_JAR);
+
+    localFiles.put(Constants.Files.LAUNCHER_JAR, createLocalFile(Constants.Files.LAUNCHER_JAR, location));
   }
 
-  private void saveKafka(Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Copy kafka.tgz");
+  private void saveKafka(Map<String, LocalFile> localFiles) throws IOException {
+    LOG.debug("Copy {}", Constants.Files.KAFKA);
     Location location = copyFromURL(getClass().getClassLoader().getResource(KAFKA_ARCHIVE),
-                                    createTempLocation("kafka", ".tgz"));
-    LOG.debug("Done kafka.tgz");
-    LocalResource localResource = YarnUtils.createLocalResource(location);
-    localResource.setType(LocalResourceType.ARCHIVE);
-    localResources.put("kafka.tgz", localResource);
+                                    createTempLocation(Constants.Files.KAFKA));
+    LOG.debug("Done {}", Constants.Files.KAFKA);
+
+    localFiles.put(Constants.Files.KAFKA, createLocalFile(Constants.Files.KAFKA, location, true));
   }
 
-  private void saveArguments(List<String> appArgs, Multimap<String, String> runnableArgs,
-                             Map<String, LocalResource> localResources) throws IOException {
-    LOG.debug("Create and copy arguments.json");
-    Location location = createTempLocation("arguments", ".json");
-    Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
-    try {
-      new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().toJson(new Arguments(appArgs, runnableArgs), writer);
-    } finally {
-      writer.close();
+  private void saveVmOptions(String opts, Map<String, LocalFile> localFiles) throws IOException {
+    if (opts.isEmpty()) {
+      // If no vm options, no need to localize the file.
+      return;
     }
-
-    LOG.debug("Done arguments.json");
-    localResources.put("arguments.json", YarnUtils.createLocalResource(location));
-  }
-
-  private void saveLocalFiles(Map<String, LocalResource> localResources, Set<String> keys) throws IOException {
-    Map<String, LocalFile> localFiles = Maps.transformEntries(
-      Maps.filterKeys(localResources, Predicates.in(keys)),
-      new Maps.EntryTransformer<String, LocalResource, LocalFile>() {
+    LOG.debug("Copy {}", Constants.Files.JVM_OPTIONS);
+    final Location location = createTempLocation(Constants.Files.JVM_OPTIONS);
+    CharStreams.write(opts, new OutputSupplier<Writer>() {
       @Override
-      public LocalFile transformEntry(String key, LocalResource value) {
-        try {
-          return new DefaultLocalFile(key, ConverterUtils.getPathFromYarnURL(value.getResource()).toUri(),
-                                      value.getTimestamp(), value.getSize(),
-                                      value.getType() != LocalResourceType.FILE, value.getPattern());
-        } catch (URISyntaxException e) {
-          throw Throwables.propagate(e);
-        }
+      public Writer getOutput() throws IOException {
+        return new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
       }
     });
+    LOG.debug("Done {}", Constants.Files.JVM_OPTIONS);
 
-    LOG.debug("Create and copy localFiles.json");
-    Location location = createTempLocation("localFiles", ".json");
+    localFiles.put(Constants.Files.JVM_OPTIONS, createLocalFile(Constants.Files.JVM_OPTIONS, location));
+  }
+
+  private void saveArguments(Arguments arguments, Map<String, LocalFile> localFiles) throws IOException {
+    LOG.debug("Create and copy {}", Constants.Files.ARGUMENTS);
+    final Location location = createTempLocation(Constants.Files.ARGUMENTS);
+    ArgumentsCodec.encode(arguments, new OutputSupplier<Writer>() {
+      @Override
+      public Writer getOutput() throws IOException {
+        return new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
+      }
+    });
+    LOG.debug("Done {}", Constants.Files.ARGUMENTS);
+
+    localFiles.put(Constants.Files.ARGUMENTS, createLocalFile(Constants.Files.ARGUMENTS, location));
+  }
+
+  /**
+   * Serializes the list of files that needs to localize from AM to Container.
+   */
+  private void saveLocalFiles(Map<String, LocalFile> localFiles, Set<String> includes) throws IOException {
+    Map<String, LocalFile> localize = ImmutableMap.copyOf(Maps.filterKeys(localFiles, Predicates.in(includes)));
+    LOG.debug("Create and copy {}", Constants.Files.LOCALIZE_FILES);
+    Location location = createTempLocation(Constants.Files.LOCALIZE_FILES);
     Writer writer = new OutputStreamWriter(location.getOutputStream(), Charsets.UTF_8);
     try {
       new GsonBuilder().registerTypeAdapter(LocalFile.class, new LocalFileCodec())
-        .create().toJson(localFiles.values(), new TypeToken<List<LocalFile>>() {
+        .create().toJson(localize.values(), new TypeToken<List<LocalFile>>() {
       }.getType(), writer);
     } finally {
       writer.close();
     }
-    LOG.debug("Done localFiles.json");
-    localResources.put("localFiles.json", YarnUtils.createLocalResource(location));
+    LOG.debug("Done {}", Constants.Files.LOCALIZE_FILES);
+    localFiles.put(Constants.Files.LOCALIZE_FILES, createLocalFile(Constants.Files.LOCALIZE_FILES, location));
   }
 
   private Location copyFromURL(URL url, Location target) throws IOException {
@@ -498,9 +571,14 @@ final class YarnWeavePreparer implements WeavePreparer {
     return target;
   }
 
-  private Location createTempLocation(String path, String suffix) {
+  private Location createTempLocation(String fileName) {
+    String name;
+    String suffix = Paths.getExtension(fileName);
+
+    name = fileName.substring(0, fileName.length() - suffix.length() - 1);
+
     try {
-      return getAppLocation().append(path).getTempFile(suffix);
+      return getAppLocation().append(name).getTempFile('.' + suffix);
     } catch (IOException e) {
       throw Throwables.propagate(e);
     }
@@ -508,5 +586,13 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   private Location getAppLocation() {
     return locationFactory.create(String.format("/%s/%s", weaveSpec.getName(), runId.getId()));
+  }
+
+  /**
+   * Returns the context ClassLoader if there is any, otherwise, returns ClassLoader of this class.
+   */
+  private ClassLoader getClassLoader() {
+    ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+    return classLoader == null ? getClass().getClassLoader() : classLoader;
   }
 }

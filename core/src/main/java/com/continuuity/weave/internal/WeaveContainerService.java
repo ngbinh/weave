@@ -20,6 +20,7 @@ import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveRunnable;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.utils.Instances;
@@ -157,13 +158,23 @@ public final class WeaveContainerService implements Service {
     }
 
     @Override
+    protected void shutDown() throws Exception {
+      runnable.destroy();
+      Loggings.forceFlush();
+    }
+
+    @Override
     protected void run() throws Exception {
       runnable.run();
     }
 
     @Override
     public ListenableFuture<String> onReceived(String messageId, Message message) {
-      return processMessage(messageId, message);
+      if (state() == State.RUNNING) {
+        // Only process message if the service is still alive
+        return processMessage(messageId, message);
+      }
+      return Futures.immediateFuture(messageId);
     }
   }
 }

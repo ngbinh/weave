@@ -33,13 +33,10 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
-import com.google.gson.GsonBuilder;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -53,7 +50,7 @@ public final class WeaveContainerMain extends ServiceMain {
    */
   public static void main(final String[] args) throws Exception {
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
-    File weaveSpecFile = new File("weaveSpec.json");
+    File weaveSpecFile = new File(Constants.Files.WEAVE_SPEC);
     RunId appRunId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_APP_RUN_ID));
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
     String runnableName = System.getenv(EnvKeys.WEAVE_RUNNABLE_NAME);
@@ -71,18 +68,20 @@ public final class WeaveContainerMain extends ServiceMain {
     renameLocalFiles(weaveSpec.getRunnables().get(runnableName));
     
     WeaveRunnableSpecification runnableSpec = weaveSpec.getRunnables().get(runnableName).getRunnableSpecification();
-    ContainerInfo containerInfo = new ContainerInfo();
-    BasicWeaveContext context = new BasicWeaveContext(runId, appRunId, containerInfo.getHost(), args,
-                                                  decodeArgs(),
-                                                  runnableSpec, instanceId, discoveryService, instanceCount);
+    ContainerInfo containerInfo = new EnvContainerInfo();
+    Arguments arguments = decodeArgs();
+    BasicWeaveContext context = new BasicWeaveContext(
+      runId, appRunId, containerInfo.getHost(),
+      arguments.getRunnableArguments().get(runnableName).toArray(new String[0]),
+      arguments.getArguments().toArray(new String[0]),
+      runnableSpec, instanceId, discoveryService, instanceCount,
+      containerInfo.getMemoryMB(), containerInfo.getVirtualCores()
+    );
 
-    Service service = new ZKServiceWrapper(
-      zkClientService,
-      new WeaveContainerService(context, containerInfo,
-                                getContainerZKClient(zkClientService, appRunId, runnableName),
-                                runId, runnableSpec, getClassLoader()));
-
-    new WeaveContainerMain().doMain(service);
+    Service service = new WeaveContainerService(context, containerInfo,
+                                                getContainerZKClient(zkClientService, appRunId, runnableName),
+                                                runId, runnableSpec, getClassLoader());
+    new WeaveContainerMain().doMain(zkClientService, service);
   }
 
   private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {
@@ -121,15 +120,8 @@ public final class WeaveContainerMain extends ServiceMain {
     }
   }
 
-  private static String[] decodeArgs() throws IOException {
-    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
-    try {
-      List<String> args = new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().fromJson(reader, Arguments.class).getArguments();
-      return args.toArray(new String[args.size()]);
-    } finally {
-      reader.close();
-    }
+  private static Arguments decodeArgs() throws IOException {
+    return ArgumentsCodec.decode(Files.newReaderSupplier(new File(Constants.Files.ARGUMENTS), Charsets.UTF_8));
   }
 
   @Override

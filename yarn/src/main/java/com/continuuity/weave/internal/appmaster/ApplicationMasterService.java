@@ -16,34 +16,40 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.Command;
+import com.continuuity.weave.api.EventHandler;
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
+import com.continuuity.weave.api.WeaveRunResources;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
-import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.Configs;
+import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.ProcessLauncher;
-import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
 import com.continuuity.weave.internal.ZKServiceDecorator;
-import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.internal.kafka.EmbeddedKafkaServer;
+import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
+import com.continuuity.weave.internal.utils.Instances;
 import com.continuuity.weave.internal.utils.Networks;
-import com.continuuity.weave.internal.yarn.ports.AMRMClient;
-import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
+import com.continuuity.weave.internal.yarn.YarnAMClient;
+import com.continuuity.weave.internal.yarn.YarnAMClientFactory;
+import com.continuuity.weave.internal.yarn.YarnContainerInfo;
+import com.continuuity.weave.internal.yarn.YarnContainerStatus;
+import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.continuuity.weave.zookeeper.ZKClients;
-import ch.qos.logback.classic.LoggerContext;
-import ch.qos.logback.classic.spi.LoggerContextListener;
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
@@ -56,10 +62,11 @@ import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.Sets;
+import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
+import com.google.common.io.InputSupplier;
 import com.google.common.reflect.TypeToken;
 import com.google.common.util.concurrent.AbstractExecutionThreadService;
 import com.google.common.util.concurrent.Futures;
@@ -69,32 +76,27 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import org.apache.hadoop.yarn.api.ApplicationConstants;
-import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
-import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
-import org.apache.hadoop.yarn.api.records.AMResponse;
-import org.apache.hadoop.yarn.api.records.Container;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.yarn.api.records.ContainerId;
-import org.apache.hadoop.yarn.api.records.ContainerStatus;
-import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
-import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
-import org.apache.hadoop.yarn.conf.YarnConfiguration;
-import org.apache.hadoop.yarn.ipc.YarnRPC;
-import org.apache.hadoop.yarn.util.ConverterUtils;
 import org.apache.hadoop.yarn.util.Records;
 import org.apache.zookeeper.CreateMode;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
-import java.lang.reflect.Method;
 import java.net.URI;
+import java.net.URL;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -111,55 +113,95 @@ import java.util.concurrent.TimeUnit;
 public final class ApplicationMasterService implements Service {
 
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
-  private static final int CONTAINER_REQUEST_MAX_FAILURE = 30;
+
+  // Copied from org.apache.hadoop.yarn.security.AMRMTokenIdentifier.KIND_NAME since it's missing in Hadoop-2.0
+  private static final Text AMRM_TOKEN_KIND_NAME = new Text("YARN_AM_RM_TOKEN");
 
   private final RunId runId;
   private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
-  private final Multimap<String, String> runnableArgs;
-  private final YarnConfiguration yarnConf;
-  private final AMRMClient amrmClient;
+  private final Configuration conf;
   private final ApplicationMasterLiveNodeData amLiveNode;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
-  private final Map<String, Integer> instanceCounts;
+  private final ExpectedContainers expectedContainers;
+  private final TrackerService trackerService;
+  private final YarnAMClient amClient;
+  private final Credentials credentials;
+  private final String jvmOpts;
+  private final int reservedMemory;
+  private final EventHandler eventHandler;
 
-  private YarnRPC yarnRPC;
-  private Resource maxCapability;
-  private Resource minCapability;
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
   private ExecutorService instanceChangeExecutor;
 
-
-  public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile) throws IOException {
+  public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile, Configuration conf,
+                                  YarnAMClientFactory amClientFactory) throws Exception {
     this.runId = runId;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
-    this.runnableArgs = decodeRunnableArgs();
-    this.yarnConf = new YarnConfiguration();
+    this.conf = conf;
     this.zkClient = zkClient;
+    this.amClient = amClientFactory.create();
+    this.credentials = createCredentials();
+    this.jvmOpts = loadJvmOptions();
+    this.reservedMemory = getReservedMemory();
 
-    // Get the container ID and convert it to ApplicationAttemptId
-    String masterContainerId = System.getenv().get(ApplicationConstants.AM_CONTAINER_ID_ENV);
-    Preconditions.checkArgument(masterContainerId != null,
-                                "Missing %s from environment", ApplicationConstants.AM_CONTAINER_ID_ENV);
-    amrmClient = new AMRMClientImpl(ConverterUtils.toContainerId(masterContainerId).getApplicationAttemptId());
-    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.WEAVE_APP_ID)),
-                                                   Long.parseLong(System.getenv(EnvKeys.WEAVE_APP_ID_CLUSTER_TIME)),
-                                                   masterContainerId);
-    runningContainers = new RunningContainers();
+    amLiveNode = new ApplicationMasterLiveNodeData(Integer.parseInt(System.getenv(EnvKeys.YARN_APP_ID)),
+                                                   Long.parseLong(System.getenv(EnvKeys.YARN_APP_ID_CLUSTER_TIME)),
+                                                   amClient.getContainerId().toString());
 
-    serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(), new ServiceDelegate());
-    instanceCounts = initInstanceCounts(weaveSpec, Maps.<String, Integer>newConcurrentMap());
+    serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeDataSupplier(),
+                                             new ServiceDelegate(), new Runnable() {
+      @Override
+      public void run() {
+        amClient.stopAndWait();
+      }
+    });
+    expectedContainers = initExpectedContainers(weaveSpec);
+    runningContainers = initRunningContainers(amClient.getContainerId(), amClient.getHost());
+    trackerService = new TrackerService(runningContainers.getResourceReport(), amClient.getHost());
+    eventHandler = createEventHandler(weaveSpec);
   }
 
-  private Multimap<String, String> decodeRunnableArgs() throws IOException {
-    BufferedReader reader = Files.newReader(new File("arguments.json"), Charsets.UTF_8);
+  private String loadJvmOptions() throws IOException {
+    final File jvmOptsFile = new File(Constants.Files.JVM_OPTIONS);
+    if (!jvmOptsFile.exists()) {
+      return "";
+    }
+
+    return CharStreams.toString(new InputSupplier<Reader>() {
+      @Override
+      public Reader getInput() throws IOException {
+        return new FileReader(jvmOptsFile);
+      }
+    });
+  }
+
+  private int getReservedMemory() {
+    String value = System.getenv(EnvKeys.WEAVE_RESERVED_MEMORY_MB);
+    if (value == null) {
+      return Configs.Defaults.JAVA_RESERVED_MEMORY_MB;
+    }
     try {
-      return new GsonBuilder().registerTypeAdapter(Arguments.class, new ArgumentsCodec())
-        .create().fromJson(reader, Arguments.class).getRunnableArguments();
-    } finally {
-      reader.close();
+      return Integer.parseInt(value);
+    } catch (Exception e) {
+      return Configs.Defaults.JAVA_RESERVED_MEMORY_MB;
+    }
+  }
+
+  private EventHandler createEventHandler(WeaveSpecification weaveSpec) {
+    try {
+      // Should be able to load by this class ClassLoader, as they packaged in the same jar.
+      EventHandlerSpecification handlerSpec = weaveSpec.getEventHandler();
+
+      Class<?> handlerClass = getClass().getClassLoader().loadClass(handlerSpec.getClassName());
+      Preconditions.checkArgument(EventHandler.class.isAssignableFrom(handlerClass),
+                                  "Class {} does not implements {}",
+                                  handlerClass, EventHandler.class.getName());
+      return Instances.newInstance((Class<? extends EventHandler>) handlerClass);
+    } catch (Exception e) {
+      throw Throwables.propagate(e);
     }
   }
 
@@ -172,28 +214,44 @@ public final class ApplicationMasterService implements Service {
     };
   }
 
-  private Map<String, Integer> initInstanceCounts(WeaveSpecification weaveSpec, Map<String, Integer> result) {
+  private RunningContainers initRunningContainers(ContainerId appMasterContainerId,
+                                                  String appMasterHost) throws Exception {
+    WeaveRunResources appMasterResources = new DefaultWeaveRunResources(
+      0,
+      appMasterContainerId.toString(),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_VIRTUAL_CORES)),
+      Integer.parseInt(System.getenv(EnvKeys.YARN_CONTAINER_MEMORY_MB)),
+      appMasterHost);
+    String appId = appMasterContainerId.getApplicationAttemptId().getApplicationId().toString();
+    return new RunningContainers(appId, appMasterResources);
+  }
+
+  private ExpectedContainers initExpectedContainers(WeaveSpecification weaveSpec) {
+    Map<String, Integer> expectedCounts = Maps.newHashMap();
     for (RuntimeSpecification runtimeSpec : weaveSpec.getRunnables().values()) {
-      result.put(runtimeSpec.getName(), runtimeSpec.getResourceSpecification().getInstances());
+      expectedCounts.put(runtimeSpec.getName(), runtimeSpec.getResourceSpecification().getInstances());
     }
-    return result;
+    return new ExpectedContainers(expectedCounts);
   }
 
   private void doStart() throws Exception {
     LOG.info("Start application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
 
+    // initialize the event handler, if it fails, it will fail the application.
+    eventHandler.initialize(new BasicEventHandlerContext(weaveSpec.getEventHandler()));
+
     instanceChangeExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("instanceChanger"));
-    yarnRPC = YarnRPC.create(yarnConf);
 
-    amrmClient.init(yarnConf);
-    amrmClient.start();
-    // TODO: Have RPC host and port
-    RegisterApplicationMasterResponse response = amrmClient.registerApplicationMaster("", 0, null);
-    maxCapability = response.getMaximumResourceCapability();
-    minCapability = response.getMinimumResourceCapability();
+    kafkaServer = new EmbeddedKafkaServer(new File(Constants.Files.KAFKA), generateKafkaConfig());
 
-    LOG.info("Maximum resource capability: " + maxCapability);
-    LOG.info("Minimum resource capability: " + minCapability);
+    // Must start tracker before start AMClient
+    LOG.info("Starting application master tracker server");
+    trackerService.startAndWait();
+    URL trackerUrl = trackerService.getUrl();
+    LOG.info("Started application master tracker server on " + trackerUrl);
+
+    amClient.setTracker(trackerService.getBindAddress(), trackerUrl);
+    amClient.startAndWait();
 
     // Creates ZK path for runnable and kafka logging service
     Futures.allAsList(ImmutableList.of(
@@ -203,7 +261,7 @@ public final class ApplicationMasterService implements Service {
 
     // Starts kafka server
     LOG.info("Starting kafka server");
-    kafkaServer = new EmbeddedKafkaServer(new File("kafka.tgz"), generateKafkaConfig());
+
     kafkaServer.startAndWait();
     LOG.info("Kafka server started");
 
@@ -213,97 +271,117 @@ public final class ApplicationMasterService implements Service {
   private void doStop() throws Exception {
     Thread.interrupted();     // This is just to clear the interrupt flag
 
-    LOG.info("Stop application master with spec: " + WeaveSpecificationAdapter.create().toJson(weaveSpec));
+    LOG.info("Stop application master with spec: {}", WeaveSpecificationAdapter.create().toJson(weaveSpec));
+
+    try {
+      // call event handler destroy. If there is error, only log and not affected stop sequence.
+      eventHandler.destroy();
+    } catch (Throwable t) {
+      LOG.warn("Exception when calling {}.destroy()", weaveSpec.getEventHandler().getClassName(), t);
+    }
 
     instanceChangeExecutor.shutdownNow();
 
-    Set<ContainerId> ids = Sets.newHashSet(runningContainers.getContainerIds());
+    // For checking if all containers are stopped.
+    final Set<String> ids = Sets.newHashSet(runningContainers.getContainerIds());
+    YarnAMClient.AllocateHandler handler = new YarnAMClient.AllocateHandler() {
+      @Override
+      public void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers) {
+        // no-op
+      }
+
+      @Override
+      public void completed(List<YarnContainerStatus> completed) {
+        for (YarnContainerStatus status : completed) {
+          ids.remove(status.getContainerId());
+        }
+      }
+    };
+
     runningContainers.stopAll();
 
+    // Poll for 5 seconds to wait for containers to stop.
     int count = 0;
     while (!ids.isEmpty() && count++ < 5) {
-      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
-      for (ContainerStatus status : allocateResponse.getAMResponse().getCompletedContainersStatuses()) {
-        ids.remove(status.getContainerId());
-      }
+      amClient.allocate(0.0f, handler);
       TimeUnit.SECONDS.sleep(1);
     }
 
-    amrmClient.unregisterApplicationMaster(FinalApplicationStatus.SUCCEEDED, null, null);
-    amrmClient.stop();
-
-    // App location cleanup
-    cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
-
-    // When logger context is stopped, stop the kafka server as well.
-    ILoggerFactory loggerFactory = LoggerFactory.getILoggerFactory();
-    if (loggerFactory instanceof LoggerContext) {
-      ((LoggerContext) loggerFactory).addListener(getLoggerStopListener());
-    } else {
-      kafkaServer.stopAndWait();
+    LOG.info("Stopping application master tracker server");
+    try {
+      trackerService.stopAndWait();
+      LOG.info("Stopped application master tracker server");
+    } catch (Exception e) {
+      LOG.error("Failed to stop tracker service.", e);
+    } finally {
+      try {
+        // App location cleanup
+        cleanupDir(URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR)));
+        Loggings.forceFlush();
+        // Sleep a short while to let kafka clients to have chance to fetch the log
+        TimeUnit.SECONDS.sleep(1);
+      } finally {
+        kafkaServer.stopAndWait();
+        LOG.info("Kafka server stopped");
+      }
     }
   }
 
   private void cleanupDir(URI appDir) {
     // Cleanup based on the uri schema.
     // Note: It's a little bit hacky, refactor it later.
-    Location location;
-    if ("file".equals(appDir.getScheme())) {
-      location = new LocalLocationFactory().create(appDir);
-    } else if ("hdfs".equals(appDir.getScheme())) {
-      location = new HDFSLocationFactory(yarnConf).create(appDir);
-    } else {
-      LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
-      return;
-    }
-
     try {
+      Location location;
+      if ("file".equals(appDir.getScheme())) {
+        location = new LocalLocationFactory().create(appDir);
+      } else if ("hdfs".equals(appDir.getScheme())) {
+        if (UserGroupInformation.isSecurityEnabled()) {
+          location = new HDFSLocationFactory(FileSystem.get(conf)).create(appDir);
+        } else {
+          String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
+          if (fsUser == null) {
+            fsUser = System.getProperty("user.name");
+          }
+          location = new HDFSLocationFactory(
+            FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
+        }
+      } else {
+        LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
+        return;
+      }
+
       if (location.delete(true)) {
         LOG.info("Application directory deleted: {}", appDir);
       } else {
         LOG.warn("Failed to cleanup directory {}.", appDir);
       }
-    } catch (IOException e) {
+    } catch (Exception e) {
       LOG.warn("Exception while cleanup directory {}.", appDir, e);
     }
   }
 
-  private LoggerContextListener getLoggerStopListener() {
-    return new LoggerContextListenerAdapter(true) {
-      @Override
-      public void onStop(LoggerContext context) {
-        // Sleep a bit before stopping kafka to have chance for client to fetch the last log.
-        try {
-          TimeUnit.SECONDS.sleep(2);
-        } catch (InterruptedException e) {
-          // Ignored.
-        } finally {
-          try {
-            kafkaServer.stop().get(5, TimeUnit.SECONDS);
-          } catch (Exception e) {
-            // Cannot use logger here
-            e.printStackTrace(System.err);
-          }
-        }
-      }
-    };
-  }
 
   private void doRun() throws Exception {
     // The main loop
     Map.Entry<Resource, ? extends Collection<RuntimeSpecification>> currentRequest = null;
-    Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
-    int requestFailCount = 0;
+    final Queue<ProvisionRequest> provisioning = Lists.newLinkedList();
 
+    YarnAMClient.AllocateHandler allocateHandler = new YarnAMClient.AllocateHandler() {
+      @Override
+      public void acquired(List<ProcessLauncher<YarnContainerInfo>> launchers) {
+        launchRunnable(launchers, provisioning);
+      }
+
+      @Override
+      public void completed(List<YarnContainerStatus> completed) {
+        handleCompleted(completed);
+      }
+    };
+
+    long nextTimeoutCheck = System.currentTimeMillis() + Constants.PROVISION_TIMEOUT;
     while (isRunning()) {
       // Call allocate. It has to be made at first in order to be able to get cluster resource availability.
-      AllocateResponse allocateResponse = amrmClient.allocate(0.0f);
-      allocateResponse.getAMResponse().getResponseId();
-      AMResponse amResponse = allocateResponse.getAMResponse();
-
-      // Assign runnable to container
-      launchRunnable(amResponse.getAllocatedContainers(), provisioning);
-      handleCompleted(amResponse.getCompletedContainersStatuses());
+      amClient.allocate(0.0f, allocateHandler);
 
       // Looks for containers requests.
       if (provisioning.isEmpty() && runnableContainerRequests.isEmpty() && runningContainers.isEmpty()) {
@@ -322,27 +400,26 @@ public final class ApplicationMasterService implements Service {
       }
       // Nothing in provision, makes the next batch of provision request
       if (provisioning.isEmpty() && currentRequest != null) {
-        if (!addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning)) {
-          if (requestFailCount++ > CONTAINER_REQUEST_MAX_FAILURE) {
-            // TODO: Allow user decision.
-            LOG.warn("Failed to request for containers. Shutting down application.");
-            break;
-          }
-        } else {
-          currentRequest = null;
-        }
+        addContainerRequests(currentRequest.getKey(), currentRequest.getValue(), provisioning);
+        currentRequest = null;
       }
 
-      TimeUnit.SECONDS.sleep(1);
+      nextTimeoutCheck = checkProvisionTimeout(nextTimeoutCheck);
+
+      if (isRunning()) {
+        TimeUnit.SECONDS.sleep(1);
+      }
     }
   }
 
   /**
    * Handling containers that are completed.
    */
-  private void handleCompleted(List<ContainerStatus> completedContainersStatuses) {
+  private void handleCompleted(List<YarnContainerStatus> completedContainersStatuses) {
     Multiset<String> restartRunnables = HashMultiset.create();
-    for (ContainerStatus status : completedContainersStatuses) {
+    for (YarnContainerStatus status : completedContainersStatuses) {
+      LOG.info("Container {} completed with {}:{}.",
+               status.getContainerId(), status.getState(), status.getDiagnostics());
       runningContainers.handleCompleted(status, restartRunnables);
     }
 
@@ -352,6 +429,71 @@ public final class ApplicationMasterService implements Service {
         runnableContainerRequests.add(createRunnableContainerRequest(entry.getElement()));
       }
     }
+
+    // For all runnables that needs to re-request for containers, update the expected count timestamp
+    // so that the EventHandler would triggered with the right expiration timestamp.
+    expectedContainers.updateRequestTime(restartRunnables.elementSet());
+  }
+
+  /**
+   * Check for containers provision timeout and invoke eventHandler if necessary.
+   *
+   * @return the timestamp for the next time this method needs to be called.
+   */
+  private long checkProvisionTimeout(long nextTimeoutCheck) {
+    if (System.currentTimeMillis() < nextTimeoutCheck) {
+      return nextTimeoutCheck;
+    }
+
+    // Invoke event handler for provision request timeout
+    Map<String, ExpectedContainers.ExpectedCount> expiredRequests = expectedContainers.getAll();
+    Map<String, Integer> runningCounts = runningContainers.countAll();
+
+    List<EventHandler.TimeoutEvent> timeoutEvents = Lists.newArrayList();
+    for (Map.Entry<String, ExpectedContainers.ExpectedCount> entry : expiredRequests.entrySet()) {
+      String runnableName = entry.getKey();
+      ExpectedContainers.ExpectedCount expectedCount = entry.getValue();
+      int runningCount = runningCounts.containsKey(runnableName) ? runningCounts.get(runnableName) : 0;
+      if (expectedCount.getCount() != runningCount) {
+        timeoutEvents.add(new EventHandler.TimeoutEvent(runnableName, expectedCount.getCount(),
+                                                                   runningCount, expectedCount.getTimestamp()));
+      }
+    }
+
+    if (!timeoutEvents.isEmpty()) {
+      try {
+        EventHandler.TimeoutAction action = eventHandler.launchTimeout(timeoutEvents);
+        if (action.getTimeout() < 0) {
+          // Abort application
+          stop();
+        } else {
+          return nextTimeoutCheck + action.getTimeout();
+        }
+      } catch (Throwable t) {
+        LOG.warn("Exception when calling EventHandler {}. Ignore the result.", t);
+      }
+    }
+    return nextTimeoutCheck + Constants.PROVISION_TIMEOUT;
+  }
+
+  private Credentials createCredentials() {
+    Credentials credentials = new Credentials();
+    try {
+      credentials.addAll(UserGroupInformation.getCurrentUser().getCredentials());
+
+      // Remove the AM->RM tokens
+      Iterator<Token<?>> iter = credentials.getAllTokens().iterator();
+      while (iter.hasNext()) {
+        Token<?> token = iter.next();
+        if (token.getKind().equals(AMRM_TOKEN_KIND_NAME)) {
+          iter.remove();
+        }
+      }
+    } catch (IOException e) {
+      LOG.warn("Failed to get current user. No credentials will be provided to containers.", e);
+    }
+
+    return credentials;
   }
 
   private Queue<RunnableContainerRequest> initContainerRequests() {
@@ -372,92 +514,71 @@ public final class ApplicationMasterService implements Service {
   }
 
   /**
-   * Adds {@link AMRMClient.ContainerRequest}s with the given resource capability for each runtime.
+   * Adds container requests with the given resource capability for each runtime.
    */
-  private boolean addContainerRequests(Resource capability,
-                                       Collection<RuntimeSpecification> runtimeSpecs,
-                                       Queue<ProvisionRequest> provisioning) {
+  private void addContainerRequests(Resource capability,
+                                    Collection<RuntimeSpecification> runtimeSpecs,
+                                    Queue<ProvisionRequest> provisioning) {
     for (RuntimeSpecification runtimeSpec : runtimeSpecs) {
-      // TODO: Allow user to set priority?
-      Priority priority = Records.newRecord(Priority.class);
-      priority.setPriority(0);
-
       String name = runtimeSpec.getName();
-      int containerCount = instanceCounts.get(name) - runningContainers.count(name);
-
-      // Check if the cluster has enough capacity.
-      Resource availableResources = amrmClient.getClusterAvailableResources();
-      if (capability.getMemory() * containerCount > availableResources.getMemory()
-            || getVirtualCores(capability) * containerCount > getVirtualCores(availableResources)) {
-        LOG.warn("Not enough cluster capacity for {} memory and {} cores for {} containers. " +
-                 "Only {} memory and {} cores available.",
-                 capability.getMemory(), capability.getVirtualCores(), containerCount,
-                 availableResources.getMemory(), availableResources.getVirtualCores());
-        return false;
+      int newContainers = expectedContainers.getExpected(name) - runningContainers.count(name);
+      if (newContainers > 0) {
+        // TODO: Allow user to set priority?
+        LOG.info("Request {} container with capability {}", newContainers, capability);
+        String requestId = amClient.addContainerRequest(capability, newContainers).setPriority(0).apply();
+        provisioning.add(new ProvisionRequest(runtimeSpec, requestId, newContainers));
       }
-
-      AMRMClient.ContainerRequest request = new AMRMClient.ContainerRequest(capability, null, null,
-                                                                            priority, containerCount);
-
-
-      LOG.info("Request for container: " + request);
-      provisioning.add(new ProvisionRequest(request, runtimeSpec, runningContainers.getBaseRunId(name)));
-      amrmClient.addContainerRequest(request);
     }
-    return true;
   }
 
   /**
    * Launches runnables in the provisioned containers.
    */
-  private void launchRunnable(List<Container> containers, Queue<ProvisionRequest> provisioning) {
-    for (Container container : containers) {
+  private void launchRunnable(List<ProcessLauncher<YarnContainerInfo>> launchers,
+                              Queue<ProvisionRequest> provisioning) {
+    for (ProcessLauncher<YarnContainerInfo> processLauncher : launchers) {
+      LOG.info("Got container {}", processLauncher.getContainerInfo().getId());
       ProvisionRequest provisionRequest = provisioning.peek();
       if (provisionRequest == null) {
-        LOG.info("Nothing to run in container, releasing it: " + container);
-        amrmClient.releaseAssignedContainer(container.getId());
         continue;
       }
 
       String runnableName = provisionRequest.getRuntimeSpec().getName();
-      int containerCount = instanceCounts.get(provisionRequest.getRuntimeSpec().getName());
-      int instanceId = runningContainers.count(runnableName);
+      LOG.info("Starting runnable {} with {}", runnableName, processLauncher);
 
-      RunId containerRunId = RunIds.fromString(provisionRequest.getBaseRunId().getId() + "-" + instanceId);
-      ProcessLauncher processLauncher = new DefaultProcessLauncher(
-        container, yarnRPC, yarnConf, getLocalFiles(),
-        ImmutableMap.<String, String>builder()
-         .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
-         .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
-         .put(EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect())
-         .build()
-        );
+      int containerCount = expectedContainers.getExpected(runnableName);
 
-      LOG.info("Starting runnable " + runnableName + " in container " + container);
+      ProcessLauncher.PrepareLaunchContext launchContext = processLauncher.prepareLaunch(
+        ImmutableMap.of(
+          EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
+          EnvKeys.WEAVE_APP_NAME, weaveSpec.getName(),
+          EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
+          EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect()
+        ), getLocalizeFiles(), credentials
+      );
 
-      WeaveContainerLauncher launcher = new WeaveContainerLauncher(weaveSpec.getRunnables().get(runnableName),
-                                                                   containerRunId, processLauncher,
-                                                                   ZKClients.namespace(zkClient,
-                                                                                       getZKNamespace(runnableName)),
-                                                                   runnableArgs.get(runnableName),
-                                                                   instanceId, instanceCounts.get(runnableName));
-      runningContainers.add(runnableName, container.getId(),
-                            launcher.start(ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
-                                           ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr"));
+      WeaveContainerLauncher launcher = new WeaveContainerLauncher(
+        weaveSpec.getRunnables().get(runnableName), launchContext,
+        ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
+        containerCount, jvmOpts, reservedMemory);
 
-      // Seems like a bug in amrm causing manual removal is needed.
-      amrmClient.removeContainerRequest(provisionRequest.getRequest());
+      runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
 
-      if (runningContainers.count(runnableName) == containerCount) {
+      // Need to call complete to workaround bug in YARN AMRMClient
+      if (provisionRequest.containerAcquired()) {
+        amClient.completeContainerRequest(provisionRequest.getRequestId());
+      }
+
+      if (expectedContainers.getExpected(runnableName) == runningContainers.count(runnableName)) {
         LOG.info("Runnable " + runnableName + " fully provisioned with " + containerCount + " instances.");
         provisioning.poll();
       }
     }
   }
 
-  private List<LocalFile> getLocalFiles() {
+  private List<LocalFile> getLocalizeFiles() {
     try {
-      Reader reader = Files.newReader(new File("localFiles.json"), Charsets.UTF_8);
+      Reader reader = Files.newReader(new File(Constants.Files.LOCALIZE_FILES), Charsets.UTF_8);
       try {
         return new GsonBuilder().registerTypeAdapter(LocalFile.class, new LocalFileCodec())
                                 .create().fromJson(reader, new TypeToken<List<LocalFile>>() {}.getType());
@@ -493,7 +614,7 @@ public final class ApplicationMasterService implements Service {
     prop.setProperty("zk.connectiontimeout.ms", "1000000");
     prop.setProperty("socket.receive.buffer", "1048576");
     prop.setProperty("enable.zookeeper", "true");
-    prop.setProperty("log.retention.hours", "168");
+    prop.setProperty("log.retention.hours", "24");
     prop.setProperty("brokerid", "0");
     prop.setProperty("socket.send.buffer", "1048576");
     prop.setProperty("num.partitions", "1");
@@ -552,7 +673,7 @@ public final class ApplicationMasterService implements Service {
     }
 
     final int newCount = Integer.parseInt(options.get("count"));
-    final int oldCount = instanceCounts.get(runnableName);
+    final int oldCount = expectedContainers.getExpected(runnableName);
 
     LOG.info("Received change instances request for {}, from {} to {}.", runnableName, oldCount, newCount);
 
@@ -581,7 +702,7 @@ public final class ApplicationMasterService implements Service {
           runningContainers.waitForCount(runnableName, oldCount);
           LOG.info("Confirmed {} containers running for {}.", oldCount, runnableName);
 
-          instanceCounts.put(runnableName, newCount);
+          expectedContainers.setExpected(runnableName, newCount);
 
           try {
             if (newCount < oldCount) {
@@ -631,37 +752,12 @@ public final class ApplicationMasterService implements Service {
   private Resource createCapability(ResourceSpecification resourceSpec) {
     Resource capability = Records.newRecord(Resource.class);
 
-    int cores = resourceSpec.getCores();
-    // The following hack is to workaround the still unstable Resource interface.
-    // With the latest YARN API, it should be like this:
-//    int cores = Math.max(Math.min(resourceSpec.getCores(), maxCapability.getVirtualCores()),
-//                         minCapability.getVirtualCores());
-//    capability.setVirtualCores(cores);
-    try {
-      Method setVirtualCores = Resource.class.getMethod("setVirtualCores", int.class);
-
-      cores = Math.max(Math.min(cores, getVirtualCores(maxCapability)),
-                       getVirtualCores(minCapability));
-      setVirtualCores.invoke(capability, cores);
-    } catch (Exception e) {
-      // It's ok to ignore this exception, as it's using older version of API.
-      LOG.info("Virtual cores limit not supported.");
+    if (!YarnUtils.setVirtualCores(capability, resourceSpec.getVirtualCores())) {
+      LOG.debug("Virtual cores limit not supported.");
     }
 
-    int memory = Math.max(Math.min(resourceSpec.getMemorySize(), maxCapability.getMemory()),
-                          minCapability.getMemory());
-    capability.setMemory(memory);
-
+    capability.setMemory(resourceSpec.getMemorySize());
     return capability;
-  }
-
-  private int getVirtualCores(Resource resource) {
-    try {
-      Method getVirtualCores = Resource.class.getMethod("getVirtualCores");
-      return (Integer) getVirtualCores.invoke(resource);
-    } catch (Exception e) {
-      return 0;
-    }
   }
 
   @Override

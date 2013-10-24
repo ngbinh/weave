@@ -15,11 +15,13 @@
  */
 package com.continuuity.weave.internal.json;
 
+import com.continuuity.weave.api.EventHandlerSpecification;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
+import com.continuuity.weave.internal.json.WeaveSpecificationCodec.EventHandlerSpecificationCoder;
 import com.continuuity.weave.internal.json.WeaveSpecificationCodec.WeaveSpecificationOrderCoder;
 import com.google.common.base.Charsets;
 import com.google.common.collect.Maps;
@@ -57,6 +59,7 @@ public final class WeaveSpecificationAdapter {
               .serializeNulls()
               .registerTypeAdapter(WeaveSpecification.class, new WeaveSpecificationCodec())
               .registerTypeAdapter(WeaveSpecification.Order.class, new WeaveSpecificationOrderCoder())
+              .registerTypeAdapter(EventHandlerSpecification.class, new EventHandlerSpecificationCoder())
               .registerTypeAdapter(RuntimeSpecification.class, new RuntimeSpecificationCodec())
               .registerTypeAdapter(WeaveRunnableSpecification.class, new WeaveRunnableSpecificationCodec())
               .registerTypeAdapter(ResourceSpecification.class, new ResourceSpecificationCodec())

@@ -37,6 +37,11 @@ public abstract class ForwardingZKClient implements ZKClient {
   }
 
   @Override
+  public Long getSessionId() {
+    return delegate.getSessionId();
+  }
+
+  @Override
   public String getConnectString() {
     return delegate.getConnectString();
   }

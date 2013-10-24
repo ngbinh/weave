@@ -162,15 +162,14 @@ public final class KafkaAppender extends AppenderBase<ILoggingEvent> {
   public void stop() {
     super.stop();
     scheduler.shutdownNow();
-    zkClientService.stopAndWait();
-    // Flush the log one more time.
+    Futures.getUnchecked(Services.chainStop(kafkaClient, zkClientService));
+  }
 
+  public void forceFlush() {
     try {
       publishLogs().get(2, TimeUnit.SECONDS);
     } catch (Exception e) {
       LOG.error("Failed to publish last batch of log.", e);
-    } finally {
-      Futures.getUnchecked(Services.chainStop(kafkaClient, zkClientService));
     }
   }
 

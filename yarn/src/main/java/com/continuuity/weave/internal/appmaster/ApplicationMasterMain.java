@@ -16,15 +16,18 @@
 package com.continuuity.weave.internal.appmaster;
 
 import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.EnvKeys;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.ServiceMain;
-import com.continuuity.weave.internal.ZKServiceWrapper;
+import com.continuuity.weave.internal.yarn.VersionDetectYarnAMClientFactory;
 import com.continuuity.weave.zookeeper.RetryStrategies;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
 import java.io.File;
 import java.net.InetAddress;
@@ -47,7 +50,7 @@ public final class ApplicationMasterMain extends ServiceMain {
    */
   public static void main(String[] args) throws Exception {
     String zkConnect = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
-    File weaveSpec = new File("weaveSpec.json");
+    File weaveSpec = new File(Constants.Files.WEAVE_SPEC);
     RunId runId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_RUN_ID));
 
     ZKClientService zkClientService =
@@ -57,9 +60,10 @@ public final class ApplicationMasterMain extends ServiceMain {
             ZKClientService.Builder.of(zkConnect).build(),
             RetryStrategies.fixDelay(1, TimeUnit.SECONDS))));
 
-    Service service = new ZKServiceWrapper(zkClientService,
-                                           new ApplicationMasterService(runId, zkClientService, weaveSpec));
-    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(service);
+    Configuration conf = new YarnConfiguration();
+    Service service = new ApplicationMasterService(runId, zkClientService, weaveSpec, conf,
+                                                   new VersionDetectYarnAMClientFactory(conf));
+    new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(zkClientService, service);
   }
 
   @Override

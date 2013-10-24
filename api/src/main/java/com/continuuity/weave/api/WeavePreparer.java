@@ -32,6 +32,17 @@ public interface WeavePreparer {
   WeavePreparer addLogHandler(LogHandler handler);
 
   /**
+   * Sets the user name that runs the application. Default value is get from {@code "user.name"} by calling
+   * {@link System#getProperty(String)}.
+   * @param user User name
+   * @return This {@link WeavePreparer}.
+   *
+   * @deprecated This method will be removed in future version.
+   */
+  @Deprecated
+  WeavePreparer setUser(String user);
+
+  /**
    * Sets the list of arguments that will be passed to the application. The arguments can be retrieved
    * from {@link com.continuuity.weave.api.WeaveContext#getApplicationArguments()}.
    *
@@ -116,6 +127,14 @@ public interface WeavePreparer {
    * @return This {@link WeavePreparer}
    */
   WeavePreparer withClassPaths(Iterable<String> classPaths);
+
+  /**
+   * Adds security credentials for the runtime environment to gives application access to resources.
+   *
+   * @param secureStore Contains security token available for the runtime environment.
+   * @return This {@link WeavePreparer}.
+   */
+  WeavePreparer addSecureStore(SecureStore secureStore);
 
   /**
    * Starts the application.

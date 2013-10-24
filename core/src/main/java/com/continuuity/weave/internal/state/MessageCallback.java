@@ -28,5 +28,5 @@ public interface MessageCallback {
    * @return A {@link ListenableFuture} that would be completed when message processing is completed or failed.
    *         The result of the future should be the input message Id if succeeded.
    */
-  ListenableFuture<String> onReceived(String messagEId, Message message);
+  ListenableFuture<String> onReceived(String messageId, Message message);
 }

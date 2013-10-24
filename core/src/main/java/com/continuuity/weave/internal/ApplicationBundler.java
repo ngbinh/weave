@@ -53,6 +53,7 @@ import java.util.zip.CheckedOutputStream;
 public final class ApplicationBundler {
 
   private final List<String> excludePackages;
+  private final List<String> includePackages;
   private final Set<String> bootstrapClassPaths;
   private final CRC32 crc32;
 
@@ -62,7 +63,19 @@ public final class ApplicationBundler {
    * @param excludePackages Class packages to exclude
    */
   public ApplicationBundler(Iterable<String> excludePackages) {
+    this(excludePackages, ImmutableList.<String>of());
+  }
+
+  /**
+   * Constructs a ApplicationBundler.
+   *
+   * @param excludePackages Class packages to exclude
+   * @param includePackages Class packages that should be included. Anything in this list will override the
+   *                        one provided in excludePackages.
+   */
+  public ApplicationBundler(Iterable<String> excludePackages, Iterable<String> includePackages) {
     this.excludePackages = ImmutableList.copyOf(excludePackages);
+    this.includePackages = ImmutableList.copyOf(includePackages);
 
     ImmutableSet.Builder<String> builder = ImmutableSet.builder();
     for (String classpath : Splitter.on(File.pathSeparatorChar).split(System.getProperty("sun.boot.class.path"))) {
@@ -76,6 +89,7 @@ public final class ApplicationBundler {
     }
     this.bootstrapClassPaths = builder.build();
     this.crc32 = new CRC32();
+
   }
 
   public void createBundle(Location target, Iterable<Class<?>> classes) throws IOException {
@@ -150,11 +164,22 @@ public final class ApplicationBundler {
           return false;
         }
 
-        for (String exclude : excludePackages) {
-          if (className.startsWith(exclude)) {
-            return false;
+        boolean shouldInclude = false;
+        for (String include : includePackages) {
+          if (className.startsWith(include)) {
+            shouldInclude = true;
+            break;
           }
         }
+
+        if (!shouldInclude) {
+          for (String exclude : excludePackages) {
+            if (className.startsWith(exclude)) {
+              return false;
+            }
+          }
+        }
+
         putEntry(className, classUrl, classPathUrl, entries, jarOut);
         return true;
       }

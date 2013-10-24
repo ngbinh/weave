@@ -16,13 +16,12 @@
 package com.continuuity.weave.common;
 
 import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.Service;
 import com.google.common.util.concurrent.SettableFuture;
 
 import java.util.List;
-import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -58,6 +57,38 @@ public final class Services {
   public static ListenableFuture<List<ListenableFuture<Service.State>>> chainStop(Service firstService,
                                                                                   Service...moreServices) {
     return doChain(false, firstService, moreServices);
+  }
+
+  /**
+   * Returns a {@link ListenableFuture} that will be completed when the given service is stopped. If the service
+   * stopped due to error, the failure cause would be reflected in the future.
+   *
+   * @param service The {@link Service} to block on.
+   * @return A {@link ListenableFuture} that will be completed when the service is stopped.
+   */
+  public static ListenableFuture<Service.State> getCompletionFuture(Service service) {
+    final SettableFuture<Service.State> resultFuture = SettableFuture.create();
+
+    service.addListener(new ServiceListenerAdapter() {
+      @Override
+      public void terminated(Service.State from) {
+        resultFuture.set(Service.State.TERMINATED);
+      }
+
+      @Override
+      public void failed(Service.State from, Throwable failure) {
+        resultFuture.setException(failure);
+      }
+    }, Threads.SAME_THREAD_EXECUTOR);
+
+    Service.State state = service.state();
+    if (state == Service.State.TERMINATED) {
+      return Futures.immediateFuture(state);
+    } else if (state == Service.State.FAILED) {
+      return Futures.immediateFailedFuture(new IllegalStateException("Service failed with unknown exception."));
+    }
+
+    return resultFuture;
   }
 
   /**

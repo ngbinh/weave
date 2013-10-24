@@ -15,33 +15,36 @@
  */
 package com.continuuity.weave.internal.appmaster;
 
-import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
-import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 
 /**
- * Data structure to represent a container request in progress (provisioning).
+ * Package private class to help AM to track in progress container request.
  */
 final class ProvisionRequest {
-  private final AMRMClient.ContainerRequest request;
   private final RuntimeSpecification runtimeSpec;
-  private final RunId baseRunId;
+  private final String requestId;
+  private int requestCount;
 
-  ProvisionRequest(AMRMClient.ContainerRequest request, RuntimeSpecification runtimeSpec, RunId baseRunId) {
-    this.request = request;
+  ProvisionRequest(RuntimeSpecification runtimeSpec, String requestId, int requestCount) {
     this.runtimeSpec = runtimeSpec;
-    this.baseRunId = baseRunId;
-  }
-
-  AMRMClient.ContainerRequest getRequest() {
-    return request;
+    this.requestId = requestId;
+    this.requestCount = requestCount;
   }
 
   RuntimeSpecification getRuntimeSpec() {
     return runtimeSpec;
   }
 
-  RunId getBaseRunId() {
-    return baseRunId;
+  String getRequestId() {
+    return requestId;
+  }
+
+  /**
+   * Called to notify a container has been provision for this request.
+   * @return {@code true} if the requested container count has been provisioned.
+   */
+  boolean containerAcquired() {
+    requestCount--;
+    return requestCount == 0;
   }
 }

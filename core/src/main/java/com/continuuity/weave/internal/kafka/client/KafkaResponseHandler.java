@@ -15,6 +15,7 @@
  */
 package com.continuuity.weave.internal.kafka.client;
 
+import com.continuuity.weave.kafka.client.FetchException;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.Channels;
@@ -40,7 +41,7 @@ final class KafkaResponseHandler extends SimpleChannelHandler {
     ChannelBuffer buffer = bufferer.getNext();
     while (buffer.readable()) {
       // Send the response object upstream
-      Channels.fireMessageReceived(ctx, new KafkaResponse(KafkaResponse.ErrorCode.fromCode(buffer.readShort()),
+      Channels.fireMessageReceived(ctx, new KafkaResponse(FetchException.ErrorCode.fromCode(buffer.readShort()),
                                                           buffer, buffer.readableBytes() + 6));
       buffer = bufferer.getNext();
     }

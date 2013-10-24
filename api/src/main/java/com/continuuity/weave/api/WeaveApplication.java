@@ -16,9 +16,13 @@
 package com.continuuity.weave.api;
 
 /**
- *
+ * Represents a application that can be launched by Weave.
  */
 public interface WeaveApplication {
 
+  /**
+   * Invoked when launching the application on the client side.
+   * @return A {@link WeaveSpecification} specifying properties about this application.
+   */
   WeaveSpecification configure();
 }

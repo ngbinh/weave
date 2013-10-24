@@ -16,6 +16,7 @@
 package com.continuuity.weave.internal.logging;
 
 import com.continuuity.weave.api.logging.LogEntry;
+import com.continuuity.weave.internal.json.JsonUtils;
 import com.google.gson.JsonDeserializationContext;
 import com.google.gson.JsonDeserializer;
 import com.google.gson.JsonElement;
@@ -37,16 +38,22 @@ public final class LogEntryDecoder implements JsonDeserializer<LogEntry> {
     }
     JsonObject jsonObj = json.getAsJsonObject();
 
-    final String name = jsonObj.get("name").getAsString();
-    final String host = jsonObj.get("host").getAsString();
-    final long timestamp = Long.parseLong(jsonObj.get("timestamp").getAsString());
-    final LogEntry.Level level = LogEntry.Level.valueOf(jsonObj.get("level").getAsString());
-    final String className = jsonObj.get("className").getAsString();
-    final String method = jsonObj.get("method").getAsString();
-    final String file = jsonObj.get("file").getAsString();
-    final String line = jsonObj.get("line").getAsString();
-    final String thread = jsonObj.get("thread").getAsString();
-    final String message = jsonObj.get("message").getAsString();
+    final String name = JsonUtils.getAsString(jsonObj, "name");
+    final String host = JsonUtils.getAsString(jsonObj, "host");
+    final long timestamp = JsonUtils.getAsLong(jsonObj, "timestamp", 0);
+    LogEntry.Level l;
+    try {
+      l = LogEntry.Level.valueOf(JsonUtils.getAsString(jsonObj, "level"));
+    } catch (Exception e) {
+      l = LogEntry.Level.FATAL;
+    }
+    final LogEntry.Level logLevel = l;
+    final String className = JsonUtils.getAsString(jsonObj, "className");
+    final String method = JsonUtils.getAsString(jsonObj, "method");
+    final String file = JsonUtils.getAsString(jsonObj, "file");
+    final String line = JsonUtils.getAsString(jsonObj, "line");
+    final String thread = JsonUtils.getAsString(jsonObj, "thread");
+    final String message = JsonUtils.getAsString(jsonObj, "message");
 
     final StackTraceElement[] stackTraces = context.deserialize(jsonObj.get("stackTraces").getAsJsonArray(),
                                                                 StackTraceElement[].class);
@@ -69,7 +76,7 @@ public final class LogEntryDecoder implements JsonDeserializer<LogEntry> {
 
       @Override
       public Level getLogLevel() {
-        return level;
+        return logLevel;
       }
 
       @Override

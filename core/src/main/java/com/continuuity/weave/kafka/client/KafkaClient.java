@@ -16,6 +16,7 @@
 package com.continuuity.weave.kafka.client;
 
 import com.continuuity.weave.internal.kafka.client.Compression;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
 
 import java.util.Iterator;
@@ -31,4 +32,17 @@ public interface KafkaClient extends Service {
   PreparePublish preparePublish(String topic, Compression compression);
 
   Iterator<FetchedMessage> consume(String topic, int partition, long offset, int maxSize);
+
+  /**
+   * Fetches offset from the given topic and partition.
+   * @param topic Topic to fetch from.
+   * @param partition Partition to fetch from.
+   * @param time The first offset of every segment file for a given partition with a modified time less than time.
+   *             {@code -1} for latest offset, {@code -2} for earliest offset.
+   * @param maxOffsets Maximum number of offsets to fetch.
+   * @return A Future that carry the result as an array of offsets in descending order.
+   *         The size of the result array would not be larger than maxOffsets. If there is any error during the fetch,
+   *         the exception will be carried in the exception.
+   */
+  ListenableFuture<long[]> getOffset(String topic, int partition, long time, int maxOffsets);
 }

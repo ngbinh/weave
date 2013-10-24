@@ -85,6 +85,9 @@ final class HDFSLocation implements Location {
    */
   @Override
   public Location append(String child) throws IOException {
+    if (child.startsWith("/")) {
+      child = child.substring(1);
+    }
     return new HDFSLocation(fs, new Path(URI.create(path.toUri() + "/" + child)));
   }
 
@@ -136,9 +139,8 @@ final class HDFSLocation implements Location {
   @Override
   public Location renameTo(Location destination) throws IOException {
     // Destination will always be of the same type as this location.
-    boolean success;
     if (fs instanceof DistributedFileSystem) {
-      ((DistributedFileSystem)fs).rename(path, ((HDFSLocation) destination).path, Options.Rename.OVERWRITE);
+      ((DistributedFileSystem) fs).rename(path, ((HDFSLocation) destination).path, Options.Rename.OVERWRITE);
       return new HDFSLocation(fs, new Path(destination.toURI()));
     }
 
