@@ -30,7 +30,7 @@ then
     exit 1
 fi
 
-if [ "x$RELEASE" != "--release" ]
+if [ "x$RELEASE" != "x--release" ]
 then
     echo
     echo "DRY-RUN ONLY"
@@ -71,7 +71,7 @@ mvn versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false
 # Comit version changes
 git commit -m "Release version $VERSION artifacts" .
 
-if [ "x$RELEASE" == "--release" ]
+if [ "x$RELEASE" == "x--release" ]
 then
     # Push to remote release branch
     git push origin release/$VERSION
@@ -98,7 +98,7 @@ mvn versions:set -DnewVersion=$NEW_VERSION -DgenerateBackupPoms=false
 # Commit version change
 git commit -m "Bump SHAPSHOT version to $NEW_VERSION" .
 
-if [ "x$RELEASE" == "--release" ]
+if [ "x$RELEASE" == "x--release" ]
 then
     # Push to remote release branch
     git push origin develop
