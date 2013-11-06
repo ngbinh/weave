@@ -134,7 +134,7 @@ public interface WeavePreparer {
    * @param secureStore Contains security token available for the runtime environment.
    * @return This {@link WeavePreparer}.
    */
-  WeavePreparer addSecureStore(SecureStore<?> secureStore);
+  WeavePreparer addSecureStore(SecureStore secureStore);
 
   /**
    * Starts the application.

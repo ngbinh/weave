@@ -17,10 +17,8 @@ package com.continuuity.weave.api;
 
 /**
  * Represents storage of secure tokens.
- *
- * @param <T> Type of secure store.
  */
-public interface SecureStore<T> {
+public interface SecureStore {
 
-  T getStore();
+  <T> T getStore();
 }

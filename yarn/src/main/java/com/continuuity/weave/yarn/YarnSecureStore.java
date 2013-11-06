@@ -21,7 +21,7 @@ import org.apache.hadoop.security.Credentials;
 /**
  * A {@link SecureStore} for hadoop credentials.
  */
-public final class YarnSecureStore implements SecureStore<Credentials> {
+public final class YarnSecureStore implements SecureStore {
 
   private final Credentials credentials;
 

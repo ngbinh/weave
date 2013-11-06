@@ -209,7 +209,7 @@ final class YarnWeavePreparer implements WeavePreparer {
   }
 
   @Override
-  public WeavePreparer addSecureStore(SecureStore<?> secureStore) {
+  public WeavePreparer addSecureStore(SecureStore secureStore) {
     Object store = secureStore.getStore();
     Preconditions.checkArgument(store instanceof Credentials, "Only Hadoop Credentials is supported.");
     this.credentials.mergeAll((Credentials) store);
