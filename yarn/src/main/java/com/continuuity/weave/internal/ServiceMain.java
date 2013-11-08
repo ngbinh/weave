@@ -93,7 +93,11 @@ public abstract class ServiceMain {
 
   protected abstract String getKafkaZKConnect();
 
+  /**
+   * Returns the {@link Location} for the application based on the env {@link EnvKeys#WEAVE_APP_DIR}.
+   */
   protected static Location createAppLocation(Configuration conf) {
+    // Note: It's a little bit hacky based on the uri schema to create the LocationFactory, refactor it later.
     URI appDir = URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR));
 
     try {
@@ -108,7 +112,7 @@ public abstract class ServiceMain {
 
         String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
         if (fsUser == null) {
-          fsUser = System.getProperty("user.name");
+          throw new IllegalStateException("Missing environment variable " + EnvKeys.WEAVE_FS_USER);
         }
         return new HDFSLocationFactory(FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
       }

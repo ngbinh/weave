@@ -73,7 +73,7 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
    * Sends a message to application to notify the secure store has be updated.
    */
   ListenableFuture<Void> secureStoreUpdated() {
-    return sendMessage(SystemMessages.secureStoreUpdated(), null);
+    return sendMessage(SystemMessages.SECURE_STORE_UPDATED, null);
   }
 
   @Override

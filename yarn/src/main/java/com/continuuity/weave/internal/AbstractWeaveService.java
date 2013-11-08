@@ -54,7 +54,7 @@ public abstract class AbstractWeaveService implements Service {
    * @return {@code true} if the message requests for secure store update, {@code false} otherwise.
    */
   protected final boolean handleSecureStoreUpdate(Message message) {
-    if (message.getType() != Message.Type.SYSTEM || !SystemMessages.SECURE_STORE_UPDATED.equals(message.getCommand())) {
+    if (!SystemMessages.SECURE_STORE_UPDATED.equals(message)) {
       return false;
     }
 

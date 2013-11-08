@@ -24,7 +24,8 @@ import com.google.common.base.Preconditions;
 public final class SystemMessages {
 
   public static final Command STOP_COMMAND = Command.Builder.of("stop").build();
-  public static final Command SECURE_STORE_UPDATED = Command.Builder.of("secureStoreUpdated").build();
+  public static final Message SECURE_STORE_UPDATED = new SimpleMessage(
+    Message.Type.SYSTEM, Message.Scope.APPLICATION, null, Command.Builder.of("secureStoreUpdated").build());
 
   public static Message stopApplication() {
     return new SimpleMessage(Message.Type.SYSTEM, Message.Scope.APPLICATION, null, STOP_COMMAND);
@@ -38,10 +39,6 @@ public final class SystemMessages {
     Preconditions.checkArgument(instances > 0, "Instances should be > 0.");
     return new SimpleMessage(Message.Type.SYSTEM, Message.Scope.RUNNABLE, runnableName,
                              Command.Builder.of("instances").addOption("count", Integer.toString(instances)).build());
-  }
-
-  public static Message secureStoreUpdated() {
-    return new SimpleMessage(Message.Type.SYSTEM, Message.Scope.APPLICATION, null, SECURE_STORE_UPDATED);
   }
 
   private SystemMessages() {

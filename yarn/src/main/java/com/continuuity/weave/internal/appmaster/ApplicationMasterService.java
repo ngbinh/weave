@@ -326,8 +326,6 @@ public final class ApplicationMasterService extends AbstractWeaveService {
   }
 
   private void cleanupDir(URI appDir) {
-    // Cleanup based on the uri schema.
-    // Note: It's a little bit hacky, refactor it later.
     try {
       if (applicationLocation.delete(true)) {
         LOG.info("Application directory deleted: {}", appDir);
@@ -528,13 +526,15 @@ public final class ApplicationMasterService extends AbstractWeaveService {
       int containerCount = expectedContainers.getExpected(runnableName);
 
       ProcessLauncher.PrepareLaunchContext launchContext = processLauncher.prepareLaunch(
-        ImmutableMap.of(
-          EnvKeys.WEAVE_APP_DIR, System.getenv(EnvKeys.WEAVE_APP_DIR),
-          EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
-          EnvKeys.WEAVE_APP_NAME, weaveSpec.getName(),
-          EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
-          EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect()
-        ), getLocalizeFiles(), credentials
+        ImmutableMap.<String, String>builder()
+          .put(EnvKeys.WEAVE_APP_DIR, System.getenv(EnvKeys.WEAVE_APP_DIR))
+          .put(EnvKeys.WEAVE_FS_USER, System.getenv(EnvKeys.WEAVE_FS_USER))
+          .put(EnvKeys.WEAVE_APP_RUN_ID, runId.getId())
+          .put(EnvKeys.WEAVE_APP_NAME, weaveSpec.getName())
+          .put(EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString())
+          .put(EnvKeys.WEAVE_LOG_KAFKA_ZK, getKafkaZKConnect())
+          .build()
+        , getLocalizeFiles(), credentials
       );
 
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(
