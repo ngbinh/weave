@@ -532,7 +532,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
           }
         }
       } catch (Throwable t) {
-        LOG.warn("Failed to update secure store for {}.", cell);
+        LOG.warn("Failed to update secure store for {}.", cell, t);
       }
     }
   }
@@ -556,7 +556,9 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
     // Overwrite the credentials.
     Location tmpLocation = credentialsLocation.getTempFile(Constants.Files.CREDENTIALS);
-    DataOutputStream os = new DataOutputStream(new BufferedOutputStream(tmpLocation.getOutputStream()));
+
+    // Save the credentials store with user-only permission.
+    DataOutputStream os = new DataOutputStream(new BufferedOutputStream(tmpLocation.getOutputStream("600")));
     try {
       credentials.writeTokenStorageToStream(os);
     } finally {

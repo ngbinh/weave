@@ -81,6 +81,14 @@ final class LocalLocation implements Location {
   }
 
   /**
+   * Local location doesn't supports permission. It's the same as calling {@link #getOutputStream()}.
+   */
+  @Override
+  public OutputStream getOutputStream(String permission) throws IOException {
+    return getOutputStream();
+  }
+
+  /**
    * @return Returns the name of the file or directory denoteed by this abstract pathname.
    */
   @Override
