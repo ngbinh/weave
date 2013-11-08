@@ -18,7 +18,6 @@ package com.continuuity.weave.internal.utils;
 import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.ApplicationBundler;
-import com.continuuity.weave.internal.WeaveContainerMain;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.io.ByteStreams;
@@ -52,14 +51,14 @@ public class ApplicationBundlerTest {
 
     // Create a jar file with by tracing dependency
     ApplicationBundler bundler = new ApplicationBundler(ImmutableList.<String>of());
-    bundler.createBundle(location, WeaveContainerMain.class);
+    bundler.createBundle(location, ApplicationBundler.class);
 
     File targetDir = tmpDir.newFolder();
     unjar(new File(location.toURI()), targetDir);
 
     // Load the class back, it should be loaded by the custom classloader
     ClassLoader classLoader = createClassLoader(targetDir);
-    Class<?> clz = classLoader.loadClass(WeaveContainerMain.class.getName());
+    Class<?> clz = classLoader.loadClass(ApplicationBundler.class.getName());
     Assert.assertSame(classLoader, clz.getClassLoader());
 
     // For system classes, they shouldn't be packaged, hence loaded by different classloader.

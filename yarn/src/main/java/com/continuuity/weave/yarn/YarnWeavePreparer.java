@@ -38,7 +38,7 @@ import com.continuuity.weave.internal.LogOnlyEventHandler;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
-import com.continuuity.weave.internal.WeaveContainerMain;
+import com.continuuity.weave.internal.container.WeaveContainerMain;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;

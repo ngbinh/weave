@@ -1,0 +1,117 @@
+/*
+ * Copyright 2012-2013 Continuuity,Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+package com.continuuity.weave.internal;
+
+import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.internal.state.Message;
+import com.continuuity.weave.internal.state.SystemMessages;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedInputStream;
+import java.io.DataInputStream;
+import java.util.concurrent.Executor;
+
+/**
+ * A base implementation of {@link Service} handle secure token update.
+ */
+public abstract class AbstractWeaveService implements Service {
+
+  private static final Logger LOG = LoggerFactory.getLogger(AbstractWeaveService.class);
+
+  protected final Location applicationLocation;
+
+  protected volatile Credentials credentials;
+
+  protected AbstractWeaveService(Location applicationLocation) {
+    this.applicationLocation = applicationLocation;
+  }
+
+  protected abstract Service getServiceDelegate();
+
+  /**
+   * Attempts to handle secure store update.
+   *
+   * @param message The message received
+   * @return {@code true} if the message requests for secure store update, {@code false} otherwise.
+   */
+  protected final boolean handleSecureStoreUpdate(Message message) {
+    if (message.getType() != Message.Type.SYSTEM || !SystemMessages.SECURE_STORE_UPDATED.equals(message.getCommand())) {
+      return false;
+    }
+
+    try {
+      Credentials credentials = new Credentials();
+      Location location = applicationLocation.append(Constants.Files.CREDENTIALS);
+      DataInputStream input = new DataInputStream(new BufferedInputStream(location.getInputStream()));
+      try {
+        credentials.readTokenStorageStream(input);
+      } finally {
+        input.close();
+      }
+
+      UserGroupInformation.getCurrentUser().addCredentials(credentials);
+      this.credentials = credentials;
+
+      LOG.info("Secure store updated from {}.", location.toURI());
+
+    } catch (Exception e) {
+      LOG.error("Failed to update secure store.", e);
+    }
+
+    return true;
+  }
+
+  @Override
+  public final ListenableFuture<State> start() {
+    return getServiceDelegate().start();
+  }
+
+  @Override
+  public final State startAndWait() {
+    return Futures.getUnchecked(start());
+  }
+
+  @Override
+  public final boolean isRunning() {
+    return getServiceDelegate().isRunning();
+  }
+
+  @Override
+  public final State state() {
+    return getServiceDelegate().state();
+  }
+
+  @Override
+  public final ListenableFuture<State> stop() {
+    return getServiceDelegate().stop();
+  }
+
+  @Override
+  public final State stopAndWait() {
+    return Futures.getUnchecked(stop());
+  }
+
+  @Override
+  public final void addListener(Listener listener, Executor executor) {
+    getServiceDelegate().addListener(listener, executor);
+  }
+}

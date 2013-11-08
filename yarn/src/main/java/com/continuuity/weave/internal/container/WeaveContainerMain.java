@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal;
+package com.continuuity.weave.internal.container;
 
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
@@ -22,6 +22,14 @@ import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.discovery.DiscoveryService;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
+import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.BasicWeaveContext;
+import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.ContainerInfo;
+import com.continuuity.weave.internal.EnvContainerInfo;
+import com.continuuity.weave.internal.EnvKeys;
+import com.continuuity.weave.internal.RunIds;
+import com.continuuity.weave.internal.ServiceMain;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.zookeeper.RetryStrategies;
@@ -33,6 +41,9 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hdfs.HdfsConfiguration;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
 import java.io.File;
 import java.io.IOException;
@@ -45,7 +56,7 @@ import java.util.concurrent.TimeUnit;
 public final class WeaveContainerMain extends ServiceMain {
 
   /**
-   * Main method for launching a {@link com.continuuity.weave.internal.WeaveContainerService} which runs
+   * Main method for launching a {@link WeaveContainerService} which runs
    * a {@link com.continuuity.weave.api.WeaveRunnable}.
    */
   public static void main(final String[] args) throws Exception {
@@ -78,9 +89,11 @@ public final class WeaveContainerMain extends ServiceMain {
       containerInfo.getMemoryMB(), containerInfo.getVirtualCores()
     );
 
+    Configuration conf = new YarnConfiguration(new HdfsConfiguration(new Configuration()));
     Service service = new WeaveContainerService(context, containerInfo,
                                                 getContainerZKClient(zkClientService, appRunId, runnableName),
-                                                runId, runnableSpec, getClassLoader());
+                                                runId, runnableSpec, getClassLoader(),
+                                                createAppLocation(conf));
     new WeaveContainerMain().doMain(zkClientService, service);
   }
 

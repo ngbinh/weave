@@ -18,6 +18,7 @@ package com.continuuity.weave.yarn;
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.SecureStore;
+import com.continuuity.weave.api.SecureStoreUpdater;
 import com.continuuity.weave.api.WeaveApplication;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeavePreparer;
@@ -92,9 +93,9 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -112,13 +113,20 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       return RunIds.fromString(input);
     }
   };
+  private static final Function<YarnWeaveController, WeaveController> CAST_CONTROLLER =
+    new Function<YarnWeaveController, WeaveController>() {
+    @Override
+    public WeaveController apply(YarnWeaveController controller) {
+      return controller;
+    }
+  };
 
   private final YarnConfiguration yarnConfig;
   private final YarnAppClient yarnAppClient;
   private final ZKClientService zkClientService;
   private final LocationFactory locationFactory;
-  private final Table<String, RunId, WeaveController> controllers;
-  private final ScheduledExecutorService secureStoreScheduler;
+  private final Table<String, RunId, YarnWeaveController> controllers;
+  private ScheduledExecutorService secureStoreScheduler;
 
   private Iterable<LiveInfo> liveInfos;
   private Cancellable watchCancellable;
@@ -134,8 +142,6 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     this.locationFactory = locationFactory;
     this.zkClientService = getZKClientService(zkConnect);
     this.controllers = HashBasedTable.create();
-    this.secureStoreScheduler =
-      new ScheduledThreadPoolExecutor(0, Threads.createDaemonThreadFactory("secure-store-updater-%d"));
   }
 
   /**
@@ -153,28 +159,32 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     this.jvmOptions = options;
   }
 
-  /**
-   * Schedules a periodic update of SecureStore. The first call to the given {@link SecureStoreUpdater} will be made
-   * after {@code initialDelay}, and subsequently with the given {@code delay} between completion of one update
-   * and starting of the next. If exception is thrown on call
-   * {@link SecureStoreUpdater#update(String, com.continuuity.weave.api.RunId)}, the exception will only get logged
-   * and won't suppress the next update call.
-   *
-   * @param updater A {@link SecureStoreUpdater} for creating new SecureStore.
-   * @param initialDelay Delay before the first call to update method.
-   * @param delay Delay between completion of one update call to the next one.
-   * @param unit time unit for the initialDelay and delay.
-   * @return A {@link Cancellable} for cancelling the scheduled update.
-   */
+  @Override
   public Cancellable scheduleSecureStoreUpdate(final SecureStoreUpdater updater,
                                                long initialDelay, long delay, TimeUnit unit) {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return new Cancellable() {
+        @Override
+        public void cancel() {
+          // No-op
+        }
+      };
+    }
+
+    synchronized (this) {
+      if (secureStoreScheduler == null) {
+        secureStoreScheduler = Executors.newSingleThreadScheduledExecutor(
+          Threads.createDaemonThreadFactory("secure-store-updater"));
+      }
+    }
+
     final ScheduledFuture<?> future = secureStoreScheduler.scheduleWithFixedDelay(new Runnable() {
       @Override
       public void run() {
         // Collects all <application, runId> pairs first
         Multimap<String, RunId> liveApps = HashMultimap.create();
         synchronized (YarnWeaveRunnerService.this) {
-          for (Table.Cell<String, RunId, WeaveController> cell : controllers.cellSet()) {
+          for (Table.Cell<String, RunId, YarnWeaveController> cell : controllers.cellSet()) {
             liveApps.put(cell.getRowKey(), cell.getColumnKey());
           }
         }
@@ -248,7 +258,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       @Override
       public Iterator<WeaveController> iterator() {
         synchronized (YarnWeaveRunnerService.this) {
-          return ImmutableList.copyOf(controllers.row(applicationName).values()).iterator();
+          return Iterators.transform(ImmutableList.copyOf(controllers.row(applicationName).values()).iterator(),
+                                     CAST_CONTROLLER);
         }
       }
     };
@@ -287,6 +298,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     // running. However, this assumes that this WeaveRunnerService is a long running service and you only stop it
     // when the JVM process is about to exit. Hence it is important that threads created in the controllers are
     // daemon threads.
+    synchronized (this) {
+      if (secureStoreScheduler != null) {
+        secureStoreScheduler.shutdownNow();
+      }
+    }
     watchCancellable.cancel();
     zkClientService.stopAndWait();
     yarnAppClient.stopAndWait();
@@ -401,11 +417,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
       @Override
       public Iterator<LiveInfo> iterator() {
-        Map<String, Map<RunId, WeaveController>> controllerMap = ImmutableTable.copyOf(controllers).rowMap();
+        Map<String, Map<RunId, YarnWeaveController>> controllerMap = ImmutableTable.copyOf(controllers).rowMap();
         return Iterators.transform(controllerMap.entrySet().iterator(),
-                                   new Function<Map.Entry<String, Map<RunId, WeaveController>>, LiveInfo>() {
+                                   new Function<Map.Entry<String, Map<RunId, YarnWeaveController>>, LiveInfo>() {
           @Override
-          public LiveInfo apply(final Map.Entry<String, Map<RunId, WeaveController>> entry) {
+          public LiveInfo apply(final Map.Entry<String, Map<RunId, YarnWeaveController>> entry) {
             return new LiveInfo() {
               @Override
               public String getApplicationName() {
@@ -414,7 +430,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
               @Override
               public Iterable<WeaveController> getControllers() {
-                return entry.getValue().values();
+                return Iterables.transform(entry.getValue().values(), CAST_CONTROLLER);
               }
             };
           }
@@ -508,6 +524,13 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
       try {
         updateCredentials(cell.getRowKey(), cell.getColumnKey(), credentials);
+        synchronized (YarnWeaveRunnerService.this) {
+          // Notify the application for secure store updates if it is still running.
+          YarnWeaveController controller = controllers.get(cell.getRowKey(), cell.getColumnKey());
+          if (controller != null) {
+            controller.secureStoreUpdated();
+          }
+        }
       } catch (Throwable t) {
         LOG.warn("Failed to update secure store for {}.", cell);
       }
@@ -542,6 +565,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
     // Rename the tmp file into the credentials location
     tmpLocation.renameTo(credentialsLocation);
+
+    LOG.debug("Secure store for {} {} saved to {}.", application, runId, credentialsLocation.toURI());
   }
 
   private static FileSystem getFileSystem(YarnConfiguration configuration) {

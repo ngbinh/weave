@@ -13,24 +13,19 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal.appmaster;
-
-import com.continuuity.weave.api.EventHandlerContext;
-import com.continuuity.weave.api.EventHandlerSpecification;
+package com.continuuity.weave.api;
 
 /**
- *
+ * Represents class capable of creating update of {@link SecureStore} for live applications.
  */
-final class BasicEventHandlerContext implements EventHandlerContext {
+public interface SecureStoreUpdater {
 
-  private final EventHandlerSpecification specification;
-
-  BasicEventHandlerContext(EventHandlerSpecification specification) {
-    this.specification = specification;
-  }
-
-  @Override
-  public EventHandlerSpecification getSpecification() {
-    return specification;
-  }
+  /**
+   * Invoked when an update to SecureStore is needed.
+   *
+   * @param application The name of the application.
+   * @param runId The runId of the live application.
+   * @return A new {@link SecureStore}.
+   */
+  SecureStore update(String application, RunId runId);
 }

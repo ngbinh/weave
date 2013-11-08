@@ -25,6 +25,7 @@ import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
 import com.continuuity.weave.internal.state.MessageCodec;
 import com.continuuity.weave.internal.state.StateNode;
+import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.zookeeper.NodeChildren;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.OperationFuture;
@@ -261,7 +262,7 @@ public final class ZKServiceDecorator extends AbstractService {
   }
 
   private <V> boolean handleStopMessage(Message message, final Supplier<OperationFuture<V>> postHandleSupplier) {
-    if (message.getType() == Message.Type.SYSTEM && "stop".equalsIgnoreCase(message.getCommand().getCommand())) {
+    if (message.getType() == Message.Type.SYSTEM && SystemMessages.STOP_COMMAND.equals(message.getCommand())) {
       callbackExecutor.execute(new Runnable() {
         @Override
         public void run() {

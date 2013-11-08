@@ -49,7 +49,7 @@ public final class WeaveContainerLauncher {
     this.reservedMemory = reservedMemory;
   }
 
-  public WeaveContainerController start(RunId runId, int instanceId) {
+  public WeaveContainerController start(RunId runId, int instanceId, Class<?> mainClass, String classPath) {
     ProcessLauncher.PrepareLaunchContext.AfterResources afterResources = null;
     if (runtimeSpec.getLocalFiles().isEmpty()) {
       afterResources = launchContext.noResources();
@@ -82,12 +82,12 @@ public final class WeaveContainerLauncher {
            "-Djava.io.tmpdir=tmp",
            "-Dyarn.container=$" + EnvKeys.YARN_CONTAINER_ID,
            "-Dweave.runnable=$" + EnvKeys.WEAVE_APP_NAME + ".$" + EnvKeys.WEAVE_RUNNABLE_NAME,
-           "-cp", Constants.Files.LAUNCHER_JAR,
+           "-cp", Constants.Files.LAUNCHER_JAR + ":" + classPath,
            "-Xmx" + memory + "m",
            jvmOpts,
            WeaveLauncher.class.getName(),
            Constants.Files.CONTAINER_JAR,
-           WeaveContainerMain.class.getName(),
+           mainClass.getName(),
            Boolean.TRUE.toString())
       .redirectOutput(Constants.STDOUT).redirectError(Constants.STDERR)
       .launch();

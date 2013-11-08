@@ -25,9 +25,8 @@ import com.continuuity.weave.api.RuntimeSpecification;
 import com.continuuity.weave.api.WeaveRunResources;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.common.Threads;
-import com.continuuity.weave.filesystem.HDFSLocationFactory;
-import com.continuuity.weave.filesystem.LocalLocationFactory;
 import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.internal.AbstractWeaveService;
 import com.continuuity.weave.internal.Configs;
 import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.DefaultWeaveRunResources;
@@ -77,7 +76,6 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -102,7 +100,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Queue;
 import java.util.Set;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -110,7 +107,7 @@ import java.util.concurrent.TimeUnit;
 /**
  *
  */
-public final class ApplicationMasterService implements Service {
+public final class ApplicationMasterService extends AbstractWeaveService {
 
   private static final Logger LOG = LoggerFactory.getLogger(ApplicationMasterService.class);
 
@@ -120,28 +117,29 @@ public final class ApplicationMasterService implements Service {
   private final RunId runId;
   private final ZKClient zkClient;
   private final WeaveSpecification weaveSpec;
-  private final Configuration conf;
   private final ApplicationMasterLiveNodeData amLiveNode;
   private final ZKServiceDecorator serviceDelegate;
   private final RunningContainers runningContainers;
   private final ExpectedContainers expectedContainers;
   private final TrackerService trackerService;
   private final YarnAMClient amClient;
-  private final Credentials credentials;
   private final String jvmOpts;
   private final int reservedMemory;
   private final EventHandler eventHandler;
+  private final Location applicationLocation;
 
   private EmbeddedKafkaServer kafkaServer;
   private Queue<RunnableContainerRequest> runnableContainerRequests;
   private ExecutorService instanceChangeExecutor;
 
-  public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile, Configuration conf,
-                                  YarnAMClientFactory amClientFactory) throws Exception {
+  public ApplicationMasterService(RunId runId, ZKClient zkClient, File weaveSpecFile,
+                                  YarnAMClientFactory amClientFactory, Location applicationLocation) throws Exception {
+    super(applicationLocation);
+
     this.runId = runId;
     this.weaveSpec = WeaveSpecificationAdapter.create().fromJson(weaveSpecFile);
-    this.conf = conf;
     this.zkClient = zkClient;
+    this.applicationLocation = applicationLocation;
     this.amClient = amClientFactory.create();
     this.credentials = createCredentials();
     this.jvmOpts = loadJvmOptions();
@@ -331,26 +329,7 @@ public final class ApplicationMasterService implements Service {
     // Cleanup based on the uri schema.
     // Note: It's a little bit hacky, refactor it later.
     try {
-      Location location;
-      if ("file".equals(appDir.getScheme())) {
-        location = new LocalLocationFactory().create(appDir);
-      } else if ("hdfs".equals(appDir.getScheme())) {
-        if (UserGroupInformation.isSecurityEnabled()) {
-          location = new HDFSLocationFactory(FileSystem.get(conf)).create(appDir);
-        } else {
-          String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
-          if (fsUser == null) {
-            fsUser = System.getProperty("user.name");
-          }
-          location = new HDFSLocationFactory(
-            FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
-        }
-      } else {
-        LOG.warn("Unsupported location type {}. Cleanup not performed.", appDir);
-        return;
-      }
-
-      if (location.delete(true)) {
+      if (applicationLocation.delete(true)) {
         LOG.info("Application directory deleted: {}", appDir);
       } else {
         LOG.warn("Failed to cleanup directory {}.", appDir);
@@ -550,6 +529,7 @@ public final class ApplicationMasterService implements Service {
 
       ProcessLauncher.PrepareLaunchContext launchContext = processLauncher.prepareLaunch(
         ImmutableMap.of(
+          EnvKeys.WEAVE_APP_DIR, System.getenv(EnvKeys.WEAVE_APP_DIR),
           EnvKeys.WEAVE_APP_RUN_ID, runId.getId(),
           EnvKeys.WEAVE_APP_NAME, weaveSpec.getName(),
           EnvKeys.WEAVE_ZK_CONNECT, zkClient.getConnectString(),
@@ -624,12 +604,16 @@ public final class ApplicationMasterService implements Service {
   }
 
   private ListenableFuture<String> processMessage(final String messageId, Message message) {
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Message received: " + messageId + " " + message);
-    }
+    LOG.debug("Message received: {} {}.", messageId, message);
 
     SettableFuture<String> result = SettableFuture.create();
     Runnable completion = getMessageCompletion(messageId, result);
+
+    if (handleSecureStoreUpdate(message)) {
+      runningContainers.sendToAll(message, completion);
+      return result;
+    }
+
     if (handleSetInstances(message, completion)) {
       return result;
     }
@@ -761,38 +745,8 @@ public final class ApplicationMasterService implements Service {
   }
 
   @Override
-  public ListenableFuture<State> start() {
-    return serviceDelegate.start();
-  }
-
-  @Override
-  public State startAndWait() {
-    return Futures.getUnchecked(start());
-  }
-
-  @Override
-  public boolean isRunning() {
-    return serviceDelegate.isRunning();
-  }
-
-  @Override
-  public State state() {
-    return serviceDelegate.state();
-  }
-
-  @Override
-  public ListenableFuture<State> stop() {
-    return serviceDelegate.stop();
-  }
-
-  @Override
-  public State stopAndWait() {
-    return Futures.getUnchecked(stop());
-  }
-
-  @Override
-  public void addListener(Listener listener, Executor executor) {
-    serviceDelegate.addListener(listener, executor);
+  protected Service getServiceDelegate() {
+    return serviceDelegate;
   }
 
   /**

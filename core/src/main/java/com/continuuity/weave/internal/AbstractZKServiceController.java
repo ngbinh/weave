@@ -67,13 +67,12 @@ public abstract class AbstractZKServiceController extends AbstractExecutionServi
 
   @Override
   public final ListenableFuture<Command> sendCommand(Command command) {
-    return ZKMessages.sendMessage(zkClient, getMessagePrefix(), Messages.createForAll(command), command);
+    return sendMessage(Messages.createForAll(command), command);
   }
 
   @Override
   public final ListenableFuture<Command> sendCommand(String runnableName, Command command) {
-    return ZKMessages.sendMessage(zkClient, getMessagePrefix(),
-                                  Messages.createForRunnable(runnableName, command), command);
+    return sendMessage(Messages.createForRunnable(runnableName, command), command);
   }
 
   @Override
