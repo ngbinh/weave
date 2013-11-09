@@ -28,6 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
+import java.io.IOException;
 import java.util.concurrent.Executor;
 
 /**
@@ -48,6 +49,22 @@ public abstract class AbstractWeaveService implements Service {
   protected abstract Service getServiceDelegate();
 
   /**
+   * Returns the location of the secure store, or {@code null} if either not running in secure mode or an error
+   * occur when trying to acquire the location.
+   */
+  protected final Location getSecureStoreLocation() {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return null;
+    }
+    try {
+      return applicationLocation.append(Constants.Files.CREDENTIALS);
+    } catch (IOException e) {
+      LOG.error("Failed to create secure store location.", e);
+      return null;
+    }
+  }
+
+  /**
    * Attempts to handle secure store update.
    *
    * @param message The message received
@@ -58,9 +75,14 @@ public abstract class AbstractWeaveService implements Service {
       return false;
     }
 
+    // If not in secure mode, simply ignore the message.
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return true;
+    }
+
     try {
       Credentials credentials = new Credentials();
-      Location location = applicationLocation.append(Constants.Files.CREDENTIALS);
+      Location location = getSecureStoreLocation();
       DataInputStream input = new DataInputStream(new BufferedInputStream(location.getInputStream()));
       try {
         credentials.readTokenStorageStream(input);
@@ -73,8 +95,8 @@ public abstract class AbstractWeaveService implements Service {
 
       LOG.info("Secure store updated from {}.", location.toURI());
 
-    } catch (Exception e) {
-      LOG.error("Failed to update secure store.", e);
+    } catch (Throwable t) {
+      LOG.error("Failed to update secure store.", t);
     }
 
     return true;

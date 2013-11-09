@@ -18,17 +18,24 @@ package com.continuuity.weave.internal;
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.RuntimeSpecification;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.StateNode;
 import com.continuuity.weave.launcher.WeaveLauncher;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.util.concurrent.ListenableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
 
 /**
  * This class helps launching a container.
  */
 public final class WeaveContainerLauncher {
+
+  private static final Logger LOG = LoggerFactory.getLogger(WeaveContainerLauncher.class);
 
   private static final double HEAP_MIN_RATIO = 0.7d;
 
@@ -38,27 +45,50 @@ public final class WeaveContainerLauncher {
   private final int instanceCount;
   private final String jvmOpts;
   private final int reservedMemory;
+  private final Location secureStoreLocation;
 
   public WeaveContainerLauncher(RuntimeSpecification runtimeSpec, ProcessLauncher.PrepareLaunchContext launchContext,
-                                ZKClient zkClient, int instanceCount, String jvmOpts, int reservedMemory) {
+                                ZKClient zkClient, int instanceCount, String jvmOpts, int reservedMemory,
+                                Location secureStoreLocation) {
     this.runtimeSpec = runtimeSpec;
     this.launchContext = launchContext;
     this.zkClient = zkClient;
     this.instanceCount = instanceCount;
     this.jvmOpts = jvmOpts;
     this.reservedMemory = reservedMemory;
+    this.secureStoreLocation = secureStoreLocation;
   }
 
   public WeaveContainerController start(RunId runId, int instanceId, Class<?> mainClass, String classPath) {
     ProcessLauncher.PrepareLaunchContext.AfterResources afterResources = null;
-    if (runtimeSpec.getLocalFiles().isEmpty()) {
-      afterResources = launchContext.noResources();
-    } else {
-      ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = launchContext.withResources();
+    ProcessLauncher.PrepareLaunchContext.ResourcesAdder resourcesAdder = null;
+
+    // Adds all file to be localized to container
+    if (!runtimeSpec.getLocalFiles().isEmpty()) {
+      resourcesAdder = launchContext.withResources();
 
       for (LocalFile localFile : runtimeSpec.getLocalFiles()) {
         afterResources = resourcesAdder.add(localFile);
       }
+    }
+
+    // Optionally localize secure store.
+    try {
+      if (secureStoreLocation != null && secureStoreLocation.exists()) {
+        if (resourcesAdder == null) {
+          resourcesAdder = launchContext.withResources();
+        }
+        afterResources = resourcesAdder.add(new DefaultLocalFile(Constants.Files.CREDENTIALS,
+                                                                 secureStoreLocation.toURI(),
+                                                                 secureStoreLocation.lastModified(),
+                                                                 secureStoreLocation.length(), false, null));
+      }
+    } catch (IOException e) {
+      LOG.warn("Failed to launch container with secure store {}.", secureStoreLocation.toURI());
+    }
+
+    if (afterResources == null) {
+      afterResources = launchContext.noResources();
     }
 
     int memory = runtimeSpec.getResourceSpecification().getMemorySize();

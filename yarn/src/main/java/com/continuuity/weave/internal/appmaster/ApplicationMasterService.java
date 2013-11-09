@@ -75,7 +75,6 @@ import com.google.common.util.concurrent.SettableFuture;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -455,6 +454,10 @@ public final class ApplicationMasterService extends AbstractWeaveService {
 
   private Credentials createCredentials() {
     Credentials credentials = new Credentials();
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return credentials;
+    }
+
     try {
       credentials.addAll(UserGroupInformation.getCurrentUser().getCredentials());
 
@@ -540,7 +543,7 @@ public final class ApplicationMasterService extends AbstractWeaveService {
       WeaveContainerLauncher launcher = new WeaveContainerLauncher(
         weaveSpec.getRunnables().get(runnableName), launchContext,
         ZKClients.namespace(zkClient, getZKNamespace(runnableName)),
-        containerCount, jvmOpts, reservedMemory);
+        containerCount, jvmOpts, reservedMemory, getSecureStoreLocation());
 
       runningContainers.start(runnableName, processLauncher.getContainerInfo(), launcher);
 

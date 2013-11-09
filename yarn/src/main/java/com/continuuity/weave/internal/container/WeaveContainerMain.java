@@ -43,9 +43,15 @@ import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdfs.HdfsConfiguration;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.concurrent.TimeUnit;
@@ -55,11 +61,16 @@ import java.util.concurrent.TimeUnit;
  */
 public final class WeaveContainerMain extends ServiceMain {
 
+  private static final Logger LOG = LoggerFactory.getLogger(WeaveContainerMain.class);
+
   /**
    * Main method for launching a {@link WeaveContainerService} which runs
    * a {@link com.continuuity.weave.api.WeaveRunnable}.
    */
   public static void main(final String[] args) throws Exception {
+    // Try to load the secure store from localized file (which AM does that)
+    loadSecureStore();
+
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
     File weaveSpecFile = new File(Constants.Files.WEAVE_SPEC);
     RunId appRunId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_APP_RUN_ID));
@@ -95,6 +106,26 @@ public final class WeaveContainerMain extends ServiceMain {
                                                 runId, runnableSpec, getClassLoader(),
                                                 createAppLocation(conf));
     new WeaveContainerMain().doMain(zkClientService, service);
+  }
+
+  private static void loadSecureStore() throws IOException {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return;
+    }
+
+    File file = new File(Constants.Files.CREDENTIALS);
+    if (file.exists()) {
+      Credentials credentials = new Credentials();
+      DataInputStream input = new DataInputStream(new FileInputStream(file));
+      try {
+        credentials.readTokenStorageStream(input);
+      } finally {
+        input.close();
+      }
+
+      UserGroupInformation.getCurrentUser().addCredentials(credentials);
+      LOG.info("Secure store updated from {}", file);
+    }
   }
 
   private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {
