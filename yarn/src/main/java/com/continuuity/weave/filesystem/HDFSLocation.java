@@ -15,9 +15,11 @@
  */
 package com.continuuity.weave.filesystem;
 
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Options;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DistributedFileSystem;
 
 import java.io.IOException;
@@ -71,6 +73,18 @@ final class HDFSLocation implements Location {
   @Override
   public OutputStream getOutputStream() throws IOException {
     return fs.create(path);
+  }
+
+  @Override
+  public OutputStream getOutputStream(String permission) throws IOException {
+    Configuration conf = fs.getConf();
+    return fs.create(path,
+                     new FsPermission(permission),
+                     true,
+                     conf.getInt("io.file.buffer.size", 4096),
+                     fs.getDefaultReplication(path),
+                     fs.getDefaultBlockSize(path),
+                     null);
   }
 
   /**

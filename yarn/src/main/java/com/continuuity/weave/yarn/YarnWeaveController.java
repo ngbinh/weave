@@ -24,11 +24,13 @@ import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.appmaster.TrackerService;
 import com.continuuity.weave.internal.state.StateNode;
+import com.continuuity.weave.internal.state.SystemMessages;
 import com.continuuity.weave.internal.yarn.YarnApplicationReport;
 import com.continuuity.weave.zookeeper.NodeData;
 import com.continuuity.weave.zookeeper.ZKClient;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.apache.commons.lang.time.StopWatch;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
@@ -64,6 +66,14 @@ final class YarnWeaveController extends AbstractWeaveController implements Weave
                       Callable<ProcessController<YarnApplicationReport>> startUp) {
     super(runId, zkClient, logHandlers);
     this.startUp = startUp;
+  }
+
+
+  /**
+   * Sends a message to application to notify the secure store has be updated.
+   */
+  ListenableFuture<Void> secureStoreUpdated() {
+    return sendMessage(SystemMessages.SECURE_STORE_UPDATED, null);
   }
 
   @Override

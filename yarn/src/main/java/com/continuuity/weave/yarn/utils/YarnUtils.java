@@ -141,14 +141,14 @@ public class YarnUtils {
                                                    LocationFactory locationFactory,
                                                    Credentials credentials) throws IOException {
     if (!UserGroupInformation.isSecurityEnabled()) {
-      LOG.info("Security is not enabled");
+      LOG.debug("Security is not enabled");
       return ImmutableList.of();
     }
 
     FileSystem fileSystem = getFileSystem(locationFactory);
 
     if (fileSystem == null) {
-      LOG.info("LocationFactory is not HDFS");
+      LOG.debug("LocationFactory is not HDFS");
       return ImmutableList.of();
     }
 

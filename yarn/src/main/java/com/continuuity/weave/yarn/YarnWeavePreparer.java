@@ -38,7 +38,7 @@ import com.continuuity.weave.internal.LogOnlyEventHandler;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.RunIds;
-import com.continuuity.weave.internal.WeaveContainerMain;
+import com.continuuity.weave.internal.container.WeaveContainerMain;
 import com.continuuity.weave.internal.appmaster.ApplicationMasterMain;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.LocalFileCodec;
@@ -210,9 +210,9 @@ final class YarnWeavePreparer implements WeavePreparer {
 
   @Override
   public WeavePreparer addSecureStore(SecureStore secureStore) {
-    Preconditions.checkArgument(secureStore instanceof YarnSecureStore, "Only YarnSecureStore is supported.");
-    Credentials credentials = secureStore.getStore();
-    this.credentials.mergeAll(credentials);
+    Object store = secureStore.getStore();
+    Preconditions.checkArgument(store instanceof Credentials, "Only Hadoop Credentials is supported.");
+    this.credentials.mergeAll((Credentials) store);
     return this;
   }
 

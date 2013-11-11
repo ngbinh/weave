@@ -25,6 +25,7 @@ import com.continuuity.weave.internal.DefaultWeaveRunResources;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.WeaveContainerController;
 import com.continuuity.weave.internal.WeaveContainerLauncher;
+import com.continuuity.weave.internal.container.WeaveContainerMain;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.yarn.YarnContainerStatus;
 import com.google.common.base.Function;
@@ -108,7 +109,8 @@ final class RunningContainers {
     try {
       int instanceId = getStartInstanceId(runnableName);
       RunId runId = getRunId(runnableName, instanceId);
-      WeaveContainerController controller = launcher.start(runId, instanceId);
+      WeaveContainerController controller = launcher.start(runId, instanceId,
+                                                           WeaveContainerMain.class, "$HADOOP_CONF_DIR");
       containers.put(runnableName, containerInfo.getId(), controller);
 
       WeaveRunResources resources = new DefaultWeaveRunResources(instanceId,

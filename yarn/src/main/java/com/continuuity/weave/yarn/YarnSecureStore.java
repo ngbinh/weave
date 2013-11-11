@@ -25,10 +25,6 @@ public final class YarnSecureStore implements SecureStore {
 
   private final Credentials credentials;
 
-  public static SecureStore create() {
-    return create(new Credentials());
-  }
-
   public static SecureStore create(Credentials credentials) {
     return new YarnSecureStore(credentials);
   }
@@ -38,7 +34,7 @@ public final class YarnSecureStore implements SecureStore {
   }
 
   @Override
-  public <T> T getStore() {
-    return (T) credentials;
+  public Credentials getStore() {
+    return credentials;
   }
 }

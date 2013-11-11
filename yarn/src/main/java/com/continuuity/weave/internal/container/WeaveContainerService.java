@@ -13,13 +13,19 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal;
+package com.continuuity.weave.internal.container;
 
 import com.continuuity.weave.api.Command;
 import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveRunnable;
 import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.common.Threads;
+import com.continuuity.weave.filesystem.Location;
+import com.continuuity.weave.internal.AbstractWeaveService;
+import com.continuuity.weave.internal.BasicWeaveContext;
+import com.continuuity.weave.internal.ContainerInfo;
+import com.continuuity.weave.internal.ContainerLiveNodeData;
+import com.continuuity.weave.internal.ZKServiceDecorator;
 import com.continuuity.weave.internal.logging.Loggings;
 import com.continuuity.weave.internal.state.Message;
 import com.continuuity.weave.internal.state.MessageCallback;
@@ -37,14 +43,13 @@ import com.google.gson.JsonElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
  * This class act as a yarn container and run a {@link WeaveRunnable}.
  */
-public final class WeaveContainerService implements Service {
+public final class WeaveContainerService extends AbstractWeaveService {
 
   private static final Logger LOG = LoggerFactory.getLogger(WeaveContainerService.class);
 
@@ -57,7 +62,10 @@ public final class WeaveContainerService implements Service {
   private WeaveRunnable runnable;
 
   public WeaveContainerService(BasicWeaveContext context, ContainerInfo containerInfo, ZKClient zkClient,
-                               RunId runId, WeaveRunnableSpecification specification, ClassLoader classLoader) {
+                               RunId runId, WeaveRunnableSpecification specification, ClassLoader classLoader,
+                               Location applicationLocation) {
+    super(applicationLocation);
+
     this.specification = specification;
     this.classLoader = classLoader;
     this.serviceDelegate = new ZKServiceDecorator(zkClient, runId, createLiveNodeSupplier(), new ServiceDelegate());
@@ -67,7 +75,12 @@ public final class WeaveContainerService implements Service {
   }
 
   private ListenableFuture<String> processMessage(final String messageId, final Message message) {
-    LOG.info("Message received: " + message);
+    LOG.debug("Message received: {} {}.", messageId, message);
+
+    if (handleSecureStoreUpdate(message)) {
+      return Futures.immediateFuture(messageId);
+    }
+
     final SettableFuture<String> result = SettableFuture.create();
     Command command = message.getCommand();
     if (message.getType() == Message.Type.SYSTEM
@@ -100,46 +113,17 @@ public final class WeaveContainerService implements Service {
   }
 
   @Override
-  public ListenableFuture<State> start() {
-    commandExecutor = Executors.newSingleThreadExecutor(Threads.createDaemonThreadFactory("runnable-command-executor"));
-    return serviceDelegate.start();
-  }
-
-  @Override
-  public State startAndWait() {
-    return Futures.getUnchecked(start());
-  }
-
-  @Override
-  public boolean isRunning() {
-    return serviceDelegate.isRunning();
-  }
-
-  @Override
-  public State state() {
-    return serviceDelegate.state();
-  }
-
-  @Override
-  public ListenableFuture<State> stop() {
-    commandExecutor.shutdownNow();
-    return serviceDelegate.stop();
-  }
-
-  @Override
-  public State stopAndWait() {
-    return Futures.getUnchecked(stop());
-  }
-
-  @Override
-  public void addListener(Listener listener, Executor executor) {
-    serviceDelegate.addListener(listener, executor);
+  protected Service getServiceDelegate() {
+    return serviceDelegate;
   }
 
   private final class ServiceDelegate extends AbstractExecutionThreadService implements MessageCallback {
 
     @Override
     protected void startUp() throws Exception {
+      commandExecutor = Executors.newSingleThreadExecutor(
+        Threads.createDaemonThreadFactory("runnable-command-executor"));
+
       Class<?> runnableClass = classLoader.loadClass(specification.getClassName());
       Preconditions.checkArgument(WeaveRunnable.class.isAssignableFrom(runnableClass),
                                   "Class %s is not instance of WeaveRunnable.", specification.getClassName());
@@ -159,6 +143,7 @@ public final class WeaveContainerService implements Service {
 
     @Override
     protected void shutDown() throws Exception {
+      commandExecutor.shutdownNow();
       runnable.destroy();
       Loggings.forceFlush();
     }

@@ -67,6 +67,16 @@ public interface Location {
   OutputStream getOutputStream() throws IOException;
 
   /**
+   * Creates an {@link OutputStream} for this location with the given permission. The actual permission supported
+   * depends on implementation.
+   *
+   * @param permission A POSIX permission string.
+   * @return An {@link OutputStream} for writing to this location.
+   * @throws IOException If failed to create the {@link OutputStream}.
+   */
+  OutputStream getOutputStream(String permission) throws IOException;
+
+  /**
    * Appends the child to the current {@link Location}.
    * <p>
    * Returns a new instance of Location.

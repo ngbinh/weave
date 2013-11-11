@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-package com.continuuity.weave.internal;
+package com.continuuity.weave.internal.container;
 
 import com.continuuity.weave.api.LocalFile;
 import com.continuuity.weave.api.RunId;
@@ -22,6 +22,14 @@ import com.continuuity.weave.api.WeaveRunnableSpecification;
 import com.continuuity.weave.api.WeaveSpecification;
 import com.continuuity.weave.discovery.DiscoveryService;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
+import com.continuuity.weave.internal.Arguments;
+import com.continuuity.weave.internal.BasicWeaveContext;
+import com.continuuity.weave.internal.Constants;
+import com.continuuity.weave.internal.ContainerInfo;
+import com.continuuity.weave.internal.EnvContainerInfo;
+import com.continuuity.weave.internal.EnvKeys;
+import com.continuuity.weave.internal.RunIds;
+import com.continuuity.weave.internal.ServiceMain;
 import com.continuuity.weave.internal.json.ArgumentsCodec;
 import com.continuuity.weave.internal.json.WeaveSpecificationAdapter;
 import com.continuuity.weave.zookeeper.RetryStrategies;
@@ -33,8 +41,17 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Files;
 import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hdfs.HdfsConfiguration;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.concurrent.TimeUnit;
@@ -44,11 +61,16 @@ import java.util.concurrent.TimeUnit;
  */
 public final class WeaveContainerMain extends ServiceMain {
 
+  private static final Logger LOG = LoggerFactory.getLogger(WeaveContainerMain.class);
+
   /**
-   * Main method for launching a {@link com.continuuity.weave.internal.WeaveContainerService} which runs
+   * Main method for launching a {@link WeaveContainerService} which runs
    * a {@link com.continuuity.weave.api.WeaveRunnable}.
    */
   public static void main(final String[] args) throws Exception {
+    // Try to load the secure store from localized file, which AM requested RM to localize it for this container.
+    loadSecureStore();
+
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
     File weaveSpecFile = new File(Constants.Files.WEAVE_SPEC);
     RunId appRunId = RunIds.fromString(System.getenv(EnvKeys.WEAVE_APP_RUN_ID));
@@ -78,10 +100,32 @@ public final class WeaveContainerMain extends ServiceMain {
       containerInfo.getMemoryMB(), containerInfo.getVirtualCores()
     );
 
+    Configuration conf = new YarnConfiguration(new HdfsConfiguration(new Configuration()));
     Service service = new WeaveContainerService(context, containerInfo,
                                                 getContainerZKClient(zkClientService, appRunId, runnableName),
-                                                runId, runnableSpec, getClassLoader());
+                                                runId, runnableSpec, getClassLoader(),
+                                                createAppLocation(conf));
     new WeaveContainerMain().doMain(zkClientService, service);
+  }
+
+  private static void loadSecureStore() throws IOException {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return;
+    }
+
+    File file = new File(Constants.Files.CREDENTIALS);
+    if (file.exists()) {
+      Credentials credentials = new Credentials();
+      DataInputStream input = new DataInputStream(new FileInputStream(file));
+      try {
+        credentials.readTokenStorageStream(input);
+      } finally {
+        input.close();
+      }
+
+      UserGroupInformation.getCurrentUser().addCredentials(credentials);
+      LOG.info("Secure store updated from {}", file);
+    }
   }
 
   private static void renameLocalFiles(RuntimeSpecification runtimeSpec) {

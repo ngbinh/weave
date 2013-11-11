@@ -23,7 +23,9 @@ import com.google.common.base.Preconditions;
  */
 public final class SystemMessages {
 
-  private static final Command STOP_COMMAND = Command.Builder.of("stop").build();
+  public static final Command STOP_COMMAND = Command.Builder.of("stop").build();
+  public static final Message SECURE_STORE_UPDATED = new SimpleMessage(
+    Message.Type.SYSTEM, Message.Scope.APPLICATION, null, Command.Builder.of("secureStoreUpdated").build());
 
   public static Message stopApplication() {
     return new SimpleMessage(Message.Type.SYSTEM, Message.Scope.APPLICATION, null, STOP_COMMAND);

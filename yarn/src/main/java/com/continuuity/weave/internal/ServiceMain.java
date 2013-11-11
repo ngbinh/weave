@@ -16,6 +16,9 @@
 package com.continuuity.weave.internal;
 
 import com.continuuity.weave.common.Services;
+import com.continuuity.weave.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.LocalLocationFactory;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.internal.logging.KafkaAppender;
 import com.continuuity.weave.zookeeper.ZKClientService;
 import ch.qos.logback.classic.LoggerContext;
@@ -26,6 +29,9 @@ import com.google.common.base.Throwables;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.Service;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +39,7 @@ import org.xml.sax.InputSource;
 
 import java.io.File;
 import java.io.StringReader;
+import java.net.URI;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -85,6 +92,39 @@ public abstract class ServiceMain {
   protected abstract String getHostname();
 
   protected abstract String getKafkaZKConnect();
+
+  /**
+   * Returns the {@link Location} for the application based on the env {@link EnvKeys#WEAVE_APP_DIR}.
+   */
+  protected static Location createAppLocation(Configuration conf) {
+    // Note: It's a little bit hacky based on the uri schema to create the LocationFactory, refactor it later.
+    URI appDir = URI.create(System.getenv(EnvKeys.WEAVE_APP_DIR));
+
+    try {
+      if ("file".equals(appDir.getScheme())) {
+        return new LocalLocationFactory().create(appDir);
+      }
+
+      if ("hdfs".equals(appDir.getScheme())) {
+        if (UserGroupInformation.isSecurityEnabled()) {
+          return new HDFSLocationFactory(FileSystem.get(conf)).create(appDir);
+        }
+
+        String fsUser = System.getenv(EnvKeys.WEAVE_FS_USER);
+        if (fsUser == null) {
+          throw new IllegalStateException("Missing environment variable " + EnvKeys.WEAVE_FS_USER);
+        }
+        return new HDFSLocationFactory(FileSystem.get(FileSystem.getDefaultUri(conf), conf, fsUser)).create(appDir);
+      }
+
+      LOG.warn("Unsupported location type {}.", appDir);
+      throw new IllegalArgumentException("Unsupported location type " + appDir);
+
+    } catch (Exception e) {
+      LOG.error("Failed to create application location for {}.", appDir);
+      throw Throwables.propagate(e);
+    }
+  }
 
   private void configureLogger() {
     // Check if SLF4J is bound to logback in the current environment

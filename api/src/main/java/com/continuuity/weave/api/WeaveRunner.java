@@ -15,6 +15,10 @@
  */
 package com.continuuity.weave.api;
 
+import com.continuuity.weave.common.Cancellable;
+
+import java.util.concurrent.TimeUnit;
+
 /**
  * This interface prepares execution of {@link WeaveRunnable} and {@link WeaveApplication}.
  */
@@ -78,8 +82,24 @@ public interface WeaveRunner {
 
   /**
    * Gets an {@link Iterable} of {@link LiveInfo}.
-   * @return A live {@link Iterable} that gives the latest information on the set of applications that have running instances
-   *         when {@link Iterable#iterator()}} is invoked.
+   * @return A live {@link Iterable} that gives the latest information on the set of applications that
+   *         have running instances when {@link Iterable#iterator()}} is invoked.
    */
   Iterable<LiveInfo> lookupLive();
+
+  /**
+   * Schedules a periodic update of SecureStore. The first call to the given {@link SecureStoreUpdater} will be made
+   * after {@code initialDelay}, and subsequently with the given {@code delay} between completion of one update
+   * and starting of the next. If exception is thrown on call
+   * {@link SecureStoreUpdater#update(String, RunId)}, the exception will only get logged
+   * and won't suppress the next update call.
+   *
+   * @param updater A {@link SecureStoreUpdater} for creating new SecureStore.
+   * @param initialDelay Delay before the first call to update method.
+   * @param delay Delay between completion of one update call to the next one.
+   * @param unit time unit for the initialDelay and delay.
+   * @return A {@link Cancellable} for cancelling the scheduled update.
+   */
+  Cancellable scheduleSecureStoreUpdate(final SecureStoreUpdater updater,
+                                        long initialDelay, long delay, TimeUnit unit);
 }

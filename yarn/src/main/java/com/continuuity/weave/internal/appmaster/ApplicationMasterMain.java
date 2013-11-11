@@ -27,6 +27,7 @@ import com.continuuity.weave.zookeeper.ZKClientServices;
 import com.continuuity.weave.zookeeper.ZKClients;
 import com.google.common.util.concurrent.Service;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hdfs.HdfsConfiguration;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 
 import java.io.File;
@@ -60,9 +61,9 @@ public final class ApplicationMasterMain extends ServiceMain {
             ZKClientService.Builder.of(zkConnect).build(),
             RetryStrategies.fixDelay(1, TimeUnit.SECONDS))));
 
-    Configuration conf = new YarnConfiguration();
-    Service service = new ApplicationMasterService(runId, zkClientService, weaveSpec, conf,
-                                                   new VersionDetectYarnAMClientFactory(conf));
+    Configuration conf = new YarnConfiguration(new HdfsConfiguration(new Configuration()));
+    Service service = new ApplicationMasterService(runId, zkClientService, weaveSpec,
+                                                   new VersionDetectYarnAMClientFactory(conf), createAppLocation(conf));
     new ApplicationMasterMain(String.format("%s/%s/kafka", zkConnect, runId.getId())).doMain(zkClientService, service);
   }
 

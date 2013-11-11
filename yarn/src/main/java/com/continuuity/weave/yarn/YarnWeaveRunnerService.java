@@ -17,6 +17,8 @@ package com.continuuity.weave.yarn;
 
 import com.continuuity.weave.api.ResourceSpecification;
 import com.continuuity.weave.api.RunId;
+import com.continuuity.weave.api.SecureStore;
+import com.continuuity.weave.api.SecureStoreUpdater;
 import com.continuuity.weave.api.WeaveApplication;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.WeavePreparer;
@@ -28,7 +30,9 @@ import com.continuuity.weave.common.Cancellable;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
 import com.continuuity.weave.filesystem.HDFSLocationFactory;
+import com.continuuity.weave.filesystem.Location;
 import com.continuuity.weave.filesystem.LocationFactory;
+import com.continuuity.weave.internal.Constants;
 import com.continuuity.weave.internal.ProcessController;
 import com.continuuity.weave.internal.RunIds;
 import com.continuuity.weave.internal.SingleRunnableApplication;
@@ -52,12 +56,14 @@ import com.google.common.base.Predicate;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.HashBasedTable;
+import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableTable;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Table;
 import com.google.common.util.concurrent.AbstractIdleService;
@@ -68,6 +74,9 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.hdfs.DFSConfigKeys;
+import org.apache.hadoop.security.Credentials;
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.yarn.api.records.ApplicationId;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.zookeeper.CreateMode;
@@ -75,11 +84,18 @@ import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -97,13 +113,21 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       return RunIds.fromString(input);
     }
   };
+  private static final Function<YarnWeaveController, WeaveController> CAST_CONTROLLER =
+    new Function<YarnWeaveController, WeaveController>() {
+    @Override
+    public WeaveController apply(YarnWeaveController controller) {
+      return controller;
+    }
+  };
 
   private final YarnConfiguration yarnConfig;
   private final YarnAppClient yarnAppClient;
   private final ZKClientService zkClientService;
   private final LocationFactory locationFactory;
+  private final Table<String, RunId, YarnWeaveController> controllers;
+  private ScheduledExecutorService secureStoreScheduler;
 
-  private final Table<String, RunId, WeaveController> controllers;
   private Iterable<LiveInfo> liveInfos;
   private Cancellable watchCancellable;
   private volatile String jvmOptions = "";
@@ -133,6 +157,59 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
   public void setJVMOptions(String options) {
     Preconditions.checkArgument(options != null, "JVM options cannot be null.");
     this.jvmOptions = options;
+  }
+
+  @Override
+  public Cancellable scheduleSecureStoreUpdate(final SecureStoreUpdater updater,
+                                               long initialDelay, long delay, TimeUnit unit) {
+    if (!UserGroupInformation.isSecurityEnabled()) {
+      return new Cancellable() {
+        @Override
+        public void cancel() {
+          // No-op
+        }
+      };
+    }
+
+    synchronized (this) {
+      if (secureStoreScheduler == null) {
+        secureStoreScheduler = Executors.newSingleThreadScheduledExecutor(
+          Threads.createDaemonThreadFactory("secure-store-updater"));
+      }
+    }
+
+    final ScheduledFuture<?> future = secureStoreScheduler.scheduleWithFixedDelay(new Runnable() {
+      @Override
+      public void run() {
+        // Collects all <application, runId> pairs first
+        Multimap<String, RunId> liveApps = HashMultimap.create();
+        synchronized (YarnWeaveRunnerService.this) {
+          for (Table.Cell<String, RunId, YarnWeaveController> cell : controllers.cellSet()) {
+            liveApps.put(cell.getRowKey(), cell.getColumnKey());
+          }
+        }
+
+        // Collect all secure stores that needs to be updated.
+        Table<String, RunId, SecureStore> secureStores = HashBasedTable.create();
+        for (Map.Entry<String, RunId> entry : liveApps.entries()) {
+          try {
+            secureStores.put(entry.getKey(), entry.getValue(), updater.update(entry.getKey(), entry.getValue()));
+          } catch (Throwable t) {
+            LOG.warn("Exception thrown by SecureStoreUpdater {}", updater, t);
+          }
+        }
+
+        // Update secure stores.
+        updateSecureStores(secureStores);
+      }
+    }, initialDelay, delay, unit);
+
+    return new Cancellable() {
+      @Override
+      public void cancel() {
+        future.cancel(false);
+      }
+    };
   }
 
   @Override
@@ -181,7 +258,8 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       @Override
       public Iterator<WeaveController> iterator() {
         synchronized (YarnWeaveRunnerService.this) {
-          return ImmutableList.copyOf(controllers.row(applicationName).values()).iterator();
+          return Iterators.transform(ImmutableList.copyOf(controllers.row(applicationName).values()).iterator(),
+                                     CAST_CONTROLLER);
         }
       }
     };
@@ -204,6 +282,14 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
     watchCancellable = watchLiveApps();
     liveInfos = createLiveInfos();
+
+    // Schedule an updater for updating HDFS delegation tokens
+    if (UserGroupInformation.isSecurityEnabled()) {
+      long delay = yarnConfig.getLong(DFSConfigKeys.DFS_NAMENODE_DELEGATION_TOKEN_RENEW_INTERVAL_KEY,
+                                      DFSConfigKeys.DFS_NAMENODE_DELEGATION_TOKEN_RENEW_INTERVAL_DEFAULT);
+      scheduleSecureStoreUpdate(new LocationSecureStoreUpdater(yarnConfig, locationFactory),
+                                delay, delay, TimeUnit.MILLISECONDS);
+    }
   }
 
   @Override
@@ -212,6 +298,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
     // running. However, this assumes that this WeaveRunnerService is a long running service and you only stop it
     // when the JVM process is about to exit. Hence it is important that threads created in the controllers are
     // daemon threads.
+    synchronized (this) {
+      if (secureStoreScheduler != null) {
+        secureStoreScheduler.shutdownNow();
+      }
+    }
     watchCancellable.cancel();
     zkClientService.stopAndWait();
     yarnAppClient.stopAndWait();
@@ -326,11 +417,11 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
       @Override
       public Iterator<LiveInfo> iterator() {
-        Map<String, Map<RunId, WeaveController>> controllerMap = ImmutableTable.copyOf(controllers).rowMap();
+        Map<String, Map<RunId, YarnWeaveController>> controllerMap = ImmutableTable.copyOf(controllers).rowMap();
         return Iterators.transform(controllerMap.entrySet().iterator(),
-                                   new Function<Map.Entry<String, Map<RunId, WeaveController>>, LiveInfo>() {
+                                   new Function<Map.Entry<String, Map<RunId, YarnWeaveController>>, LiveInfo>() {
           @Override
-          public LiveInfo apply(final Map.Entry<String, Map<RunId, WeaveController>> entry) {
+          public LiveInfo apply(final Map.Entry<String, Map<RunId, YarnWeaveController>> entry) {
             return new LiveInfo() {
               @Override
               public String getApplicationName() {
@@ -339,7 +430,7 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
 
               @Override
               public Iterable<WeaveController> getControllers() {
-                return entry.getValue().values();
+                return Iterables.transform(entry.getValue().values(), CAST_CONTROLLER);
               }
             };
           }
@@ -415,6 +506,69 @@ public final class YarnWeaveRunnerService extends AbstractIdleService implements
       LOG.warn("Failed to decode application live node data.", e);
       return null;
     }
+  }
+
+  private void updateSecureStores(Table<String, RunId, SecureStore> secureStores) {
+    for (Table.Cell<String, RunId, SecureStore> cell : secureStores.cellSet()) {
+      Object store = cell.getValue().getStore();
+      if (!(store instanceof Credentials)) {
+        LOG.warn("Only Hadoop Credentials is supported. Ignore update for {}.", cell);
+        continue;
+      }
+
+      Credentials credentials = (Credentials) store;
+      if (credentials.getAllTokens().isEmpty()) {
+        // Nothing to update.
+        continue;
+      }
+
+      try {
+        updateCredentials(cell.getRowKey(), cell.getColumnKey(), credentials);
+        synchronized (YarnWeaveRunnerService.this) {
+          // Notify the application for secure store updates if it is still running.
+          YarnWeaveController controller = controllers.get(cell.getRowKey(), cell.getColumnKey());
+          if (controller != null) {
+            controller.secureStoreUpdated();
+          }
+        }
+      } catch (Throwable t) {
+        LOG.warn("Failed to update secure store for {}.", cell, t);
+      }
+    }
+  }
+
+  private void updateCredentials(String application, RunId runId, Credentials updates) throws IOException {
+    Location credentialsLocation = locationFactory.create(String.format("/%s/%s/%s", application, runId.getId(),
+                                                                        Constants.Files.CREDENTIALS));
+    // Try to read the old credentials.
+    Credentials credentials = new Credentials();
+    if (credentialsLocation.exists()) {
+      DataInputStream is = new DataInputStream(new BufferedInputStream(credentialsLocation.getInputStream()));
+      try {
+        credentials.readTokenStorageStream(is);
+      } finally {
+        is.close();
+      }
+    }
+
+    // Overwrite with the updates.
+    credentials.addAll(updates);
+
+    // Overwrite the credentials.
+    Location tmpLocation = credentialsLocation.getTempFile(Constants.Files.CREDENTIALS);
+
+    // Save the credentials store with user-only permission.
+    DataOutputStream os = new DataOutputStream(new BufferedOutputStream(tmpLocation.getOutputStream("600")));
+    try {
+      credentials.writeTokenStorageToStream(os);
+    } finally {
+      os.close();
+    }
+
+    // Rename the tmp file into the credentials location
+    tmpLocation.renameTo(credentialsLocation);
+
+    LOG.debug("Secure store for {} {} saved to {}.", application, runId, credentialsLocation.toURI());
   }
 
   private static FileSystem getFileSystem(YarnConfiguration configuration) {
