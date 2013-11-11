@@ -68,7 +68,7 @@ public final class WeaveContainerMain extends ServiceMain {
    * a {@link com.continuuity.weave.api.WeaveRunnable}.
    */
   public static void main(final String[] args) throws Exception {
-    // Try to load the secure store from localized file (which AM does that)
+    // Try to load the secure store from localized file, which AM requested RM to localize it for this container.
     loadSecureStore();
 
     String zkConnectStr = System.getenv(EnvKeys.WEAVE_ZK_CONNECT);
