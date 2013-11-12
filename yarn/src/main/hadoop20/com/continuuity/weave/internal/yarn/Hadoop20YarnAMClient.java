@@ -19,6 +19,7 @@ import com.continuuity.weave.internal.ProcessLauncher;
 import com.continuuity.weave.internal.appmaster.RunnableProcessLauncher;
 import com.continuuity.weave.internal.yarn.ports.AMRMClient;
 import com.continuuity.weave.internal.yarn.ports.AMRMClientImpl;
+import com.continuuity.weave.internal.yarn.ports.AllocationResponse;
 import com.continuuity.weave.yarn.utils.YarnUtils;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
@@ -31,7 +32,6 @@ import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.yarn.api.ApplicationConstants;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
-import org.apache.hadoop.yarn.api.records.AMResponse;
 import org.apache.hadoop.yarn.api.records.Container;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.ContainerStatus;
@@ -123,11 +123,11 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
 
   @Override
   public synchronized void allocate(float progress, AllocateHandler handler) throws Exception {
-    AMResponse amResponse = amrmClient.allocate(progress).getAMResponse();
+    AllocationResponse response = amrmClient.allocate(progress);
     List<ProcessLauncher<YarnContainerInfo>> launchers
-      = Lists.newArrayListWithCapacity(amResponse.getAllocatedContainers().size());
+      = Lists.newArrayListWithCapacity(response.getAllocatedContainers().size());
 
-    for (Container container : amResponse.getAllocatedContainers()) {
+    for (Container container : response.getAllocatedContainers()) {
       launchers.add(new RunnableProcessLauncher(new Hadoop20YarnContainerInfo(container), nmClient));
     }
 
@@ -147,7 +147,7 @@ public final class Hadoop20YarnAMClient extends AbstractIdleService implements Y
     }
 
     List<YarnContainerStatus> completed = ImmutableList.copyOf(
-      Iterables.transform(amResponse.getCompletedContainersStatuses(), STATUS_TRANSFORM));
+      Iterables.transform(response.getCompletedContainersStatuses(), STATUS_TRANSFORM));
     if (!completed.isEmpty()) {
       handler.completed(completed);
     }

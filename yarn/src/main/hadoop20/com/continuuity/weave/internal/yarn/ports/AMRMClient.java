@@ -17,7 +17,6 @@
  */
 package com.continuuity.weave.internal.yarn.ports;
 
-import org.apache.hadoop.yarn.api.protocolrecords.AllocateResponse;
 import org.apache.hadoop.yarn.api.protocolrecords.RegisterApplicationMasterResponse;
 import org.apache.hadoop.yarn.api.records.ContainerId;
 import org.apache.hadoop.yarn.api.records.FinalApplicationStatus;
@@ -95,7 +94,7 @@ public interface AMRMClient extends Service {
    * @return the response of the allocate request
    * @throws YarnRemoteException
    */
-  public AllocateResponse allocate(float progressIndicator)
+  public AllocationResponse allocate(float progressIndicator)
     throws YarnRemoteException;
 
   /**
