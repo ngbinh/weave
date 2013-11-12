@@ -66,7 +66,6 @@ public class ControllerTest {
       service.startAndWait();
 
       WeaveController controller = getController(zkClientService, runId);
-
       controller.sendCommand(Command.Builder.of("test").build()).get(2, TimeUnit.SECONDS);
       controller.stop().get(2, TimeUnit.SECONDS);
 
@@ -204,7 +203,7 @@ public class ControllerTest {
         return null;
       }
     };
-    controller.start();
+    controller.startAndWait();
     return controller;
   }
 }

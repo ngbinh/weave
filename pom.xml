@@ -212,6 +212,35 @@
             </build>
         </profile>
         <profile>
+            <id>cdh-4.4.0</id>
+            <properties>
+                <hadoop.version>2.0.0-cdh4.4.0</hadoop.version>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>1.8</version>
+                        <executions>
+                            <execution>
+                                <id>add-source</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>add-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>src/main/hadoop20</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <id>hadoop-2.1</id>
             <properties>
                 <hadoop.version>2.1.0-beta</hadoop.version>
