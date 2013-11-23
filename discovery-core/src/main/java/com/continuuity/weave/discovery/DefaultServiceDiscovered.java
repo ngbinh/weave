@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -119,29 +120,37 @@ final class DefaultServiceDiscovered implements ServiceDiscovered {
 
     private final ChangeListener listener;
     private final Executor executor;
+    private final AtomicBoolean cancelled;
 
     private ListenerCaller(ChangeListener listener, Executor executor) {
       this.listener = listener;
       this.executor = executor;
+      this.cancelled = new AtomicBoolean(false);
     }
 
     void invoke() {
-      executor.execute(this);
+      if (!cancelled.get()) {
+        executor.execute(this);
+      }
     }
 
     @Override
     public void run() {
-      listener.onChange(DefaultServiceDiscovered.this);
+      if (!cancelled.get()) {
+        listener.onChange(DefaultServiceDiscovered.this);
+      }
     }
 
     @Override
     public void cancel() {
-      Lock writeLock = callerLock.writeLock();
-      writeLock.lock();
-      try {
-        listenerCallers.remove(this);
-      } finally {
-        writeLock.unlock();
+      if (cancelled.compareAndSet(false, true)) {
+        Lock writeLock = callerLock.writeLock();
+        writeLock.lock();
+        try {
+          listenerCallers.remove(this);
+        } finally {
+          writeLock.unlock();
+        }
       }
     }
   }

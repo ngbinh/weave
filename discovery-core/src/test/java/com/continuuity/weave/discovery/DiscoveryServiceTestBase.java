@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -126,6 +127,54 @@ public abstract class DiscoveryServiceTestBase {
     }
 
     Assert.assertTrue(discoverables.isEmpty());
+  }
+
+  @Test
+  public void testCancelChangeListener() throws InterruptedException {
+    Map.Entry<DiscoveryService, DiscoveryServiceClient> entry = create();
+    DiscoveryService discoveryService = entry.getKey();
+    DiscoveryServiceClient discoveryServiceClient = entry.getValue();
+
+    String serviceName = "cancel_listener";
+    ServiceDiscovered serviceDiscovered = discoveryServiceClient.discover(serviceName);
+
+    // An executor that delay execute a Runnable. It's for testing race because listener cancel and discovery changes.
+    Executor delayExecutor = new Executor() {
+      @Override
+      public void execute(final Runnable command) {
+        Thread t = new Thread() {
+          @Override
+          public void run() {
+            try {
+              TimeUnit.SECONDS.sleep(2);
+              command.run();
+            } catch (InterruptedException e) {
+              throw Throwables.propagate(e);
+            }
+          }
+        };
+        t.start();
+      }
+    };
+
+    final BlockingQueue<List<Discoverable>> events = new ArrayBlockingQueue<List<Discoverable>>(10);
+    Cancellable cancelWatch = serviceDiscovered.watchChanges(new ServiceDiscovered.ChangeListener() {
+      @Override
+      public void onChange(ServiceDiscovered serviceDiscovered) {
+        events.add(ImmutableList.copyOf(serviceDiscovered));
+      }
+    }, delayExecutor);
+
+    // Wait for the init event call
+    Assert.assertNotNull(events.poll(3, TimeUnit.SECONDS));
+
+    // Register a new service endpoint, wait a short while and then cancel the listener
+    register(discoveryService, serviceName, "localhost", 1);
+    TimeUnit.SECONDS.sleep(1);
+    cancelWatch.cancel();
+
+    // The change listener shouldn't get any event, since the invocation is delayed by the executor.
+    Assert.assertNull(events.poll(3, TimeUnit.SECONDS));
   }
 
   @Test
