@@ -19,8 +19,8 @@ import com.continuuity.weave.api.RunId;
 import com.continuuity.weave.api.WeaveController;
 import com.continuuity.weave.api.logging.LogEntry;
 import com.continuuity.weave.api.logging.LogHandler;
-import com.continuuity.weave.discovery.Discoverable;
 import com.continuuity.weave.discovery.DiscoveryServiceClient;
+import com.continuuity.weave.discovery.ServiceDiscovered;
 import com.continuuity.weave.discovery.ZKDiscoveryService;
 import com.continuuity.weave.internal.json.StackTraceElementCodec;
 import com.continuuity.weave.internal.kafka.client.SimpleKafkaClient;
@@ -95,7 +95,7 @@ public abstract class AbstractWeaveController extends AbstractZKServiceControlle
   }
 
   @Override
-  public final Iterable<Discoverable> discoverService(String serviceName) {
+  public final ServiceDiscovered discoverService(String serviceName) {
     return discoveryServiceClient.discover(serviceName);
   }
 
