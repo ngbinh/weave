@@ -45,14 +45,14 @@ import java.util.concurrent.TimeoutException;
  * Using echo server to test various behavior of YarnWeaveService.
  * This test is executed by {@link YarnTestSuite}.
  */
-public class EchoServerTestRun {
+public final class EchoServerTestRun extends BaseYarnTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(EchoServerTestRun.class);
 
   @Test
   public void testEchoServer() throws InterruptedException, ExecutionException, IOException,
     URISyntaxException, TimeoutException {
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
 
     WeaveController controller = runner.prepare(new EchoServer(),
                                                 ResourceSpecification.Builder.with()
@@ -76,7 +76,7 @@ public class EchoServerTestRun {
     Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
 
     Iterable<Discoverable> echoServices = controller.discoverService("echo");
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 2, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 2, 60));
 
     for (Discoverable discoverable : echoServices) {
       String msg = "Hello: " + discoverable.getSocketAddress();
@@ -96,36 +96,36 @@ public class EchoServerTestRun {
 
     // Increase number of instances
     controller.changeInstances("EchoServer", 3);
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 3, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 3, 60));
 
     echoServices = controller.discoverService("echo2");
 
     // Decrease number of instances
     controller.changeInstances("EchoServer", 1);
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 1, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 1, 60));
 
     // Increase number of instances again
     controller.changeInstances("EchoServer", 2);
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 2, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 2, 60));
 
     // Make sure still only one app is running
     Iterable<WeaveRunner.LiveInfo> apps = runner.lookupLive();
-    Assert.assertTrue(YarnTestSuite.waitForSize(apps, 1, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(apps, 1, 60));
 
     // Creates a new runner service to check it can regain control over running app.
-    WeaveRunnerService runnerService = YarnTestSuite.createWeaveRunnerService();
+    WeaveRunnerService runnerService = YarnTestUtils.createWeaveRunnerService(tmpFolder.newFolder());
     runnerService.startAndWait();
 
     try {
       Iterable <WeaveController> controllers = runnerService.lookup("EchoServer");
-      Assert.assertTrue(YarnTestSuite.waitForSize(controllers, 1, 60));
+      Assert.assertTrue(YarnTestUtils.waitForSize(controllers, 1, 60));
 
       for (WeaveController c : controllers) {
         LOG.info("Stopping application: " + c.getRunId());
         c.stop().get(30, TimeUnit.SECONDS);
       }
 
-      Assert.assertTrue(YarnTestSuite.waitForSize(apps, 0, 60));
+      Assert.assertTrue(YarnTestUtils.waitForSize(apps, 0, 60));
     } finally {
       runnerService.stopAndWait();
     }

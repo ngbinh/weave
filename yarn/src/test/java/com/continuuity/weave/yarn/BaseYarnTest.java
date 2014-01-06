@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2013 Continuuity,Inc.
+ * Copyright 2012-2014 Continuuity,Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy of
@@ -15,22 +15,21 @@
  */
 package com.continuuity.weave.yarn;
 
-import org.junit.runner.RunWith;
-import org.junit.runners.Suite;
+import org.junit.BeforeClass;
+import org.junit.ClassRule;
+import org.junit.rules.TemporaryFolder;
+
+import java.io.IOException;
 
 /**
- * Test suite for all tests with mini yarn cluster.
+ * Base class for all YARN tests.
  */
-@RunWith(Suite.class)
-@Suite.SuiteClasses({
-                      EchoServerTestRun.class,
-                      ResourceReportTestRun.class,
-                      TaskCompletedTestRun.class,
-                      DistributeShellTestRun.class,
-                      LocalFileTestRun.class,
-                      FailureRestartTestRun.class,
-                      ProvisionTimeoutTestRun.class
-                    })
-public final class YarnTestSuite {
+public abstract class BaseYarnTest {
+  @ClassRule
+  public static TemporaryFolder tmpFolder = new TemporaryFolder();
 
+  @BeforeClass
+  public static final void init() throws IOException {
+    YarnTestUtils.init(tmpFolder.newFolder());
+  }
 }

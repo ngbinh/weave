@@ -15,13 +15,7 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.ResourceReport;
-import com.continuuity.weave.api.ResourceSpecification;
-import com.continuuity.weave.api.WeaveApplication;
-import com.continuuity.weave.api.WeaveController;
-import com.continuuity.weave.api.WeaveRunResources;
-import com.continuuity.weave.api.WeaveRunner;
-import com.continuuity.weave.api.WeaveSpecification;
+import com.continuuity.weave.api.*;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.ServiceListenerAdapter;
 import com.continuuity.weave.common.Threads;
@@ -52,7 +46,7 @@ import java.util.concurrent.TimeoutException;
  * Using echo server to test resource reports.
  * This test is executed by {@link com.continuuity.weave.yarn.YarnTestSuite}.
  */
-public class ResourceReportTestRun {
+public final class ResourceReportTestRun extends BaseYarnTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(ResourceReportTestRun.class);
 
@@ -78,7 +72,7 @@ public class ResourceReportTestRun {
   @Test
   public void testRunnablesGetAllowedResourcesInEnv() throws InterruptedException, IOException,
     TimeoutException, ExecutionException {
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
 
     ResourceSpecification resourceSpec = ResourceSpecification.Builder.with()
       .setVirtualCores(1)
@@ -102,7 +96,7 @@ public class ResourceReportTestRun {
     Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
 
     Iterable<Discoverable> envEchoServices = controller.discoverService("envecho");
-    Assert.assertTrue(YarnTestSuite.waitForSize(envEchoServices, 1, 30));
+    Assert.assertTrue(YarnTestUtils.waitForSize(envEchoServices, 1, 30));
 
     // TODO: check virtual cores once yarn adds the ability
     Map<String, String> expectedValues = Maps.newHashMap();
@@ -132,7 +126,7 @@ public class ResourceReportTestRun {
   @Test
   public void testResourceReportWithFailingContainers() throws InterruptedException, IOException,
     TimeoutException, ExecutionException {
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
 
     ResourceSpecification resourceSpec = ResourceSpecification.Builder.with()
       .setVirtualCores(1)
@@ -156,7 +150,7 @@ public class ResourceReportTestRun {
     Assert.assertTrue(running.await(30, TimeUnit.SECONDS));
 
     Iterable<Discoverable> echoServices = controller.discoverService("echo");
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 2, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 2, 60));
     // check that we have 2 runnables.
     ResourceReport report = controller.getResourceReport();
     Assert.assertEquals(2, report.getRunnableResources("BuggyServer").size());
@@ -186,7 +180,7 @@ public class ResourceReportTestRun {
   @Test
   public void testResourceReport() throws InterruptedException, ExecutionException, IOException,
     URISyntaxException, TimeoutException {
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
 
     WeaveController controller = runner.prepare(new ResourceApplication())
                                         .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))
@@ -207,7 +201,7 @@ public class ResourceReportTestRun {
 
     // wait for 3 echo servers to come up
     Iterable<Discoverable> echoServices = controller.discoverService("echo");
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 3, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 3, 60));
     ResourceReport report = controller.getResourceReport();
     // make sure resources for echo1 and echo2 are there
     Map<String, Collection<WeaveRunResources>> usedResources = report.getResources();
@@ -234,7 +228,7 @@ public class ResourceReportTestRun {
     // Decrease number of instances of echo1 from 2 to 1
     controller.changeInstances("echo1", 1);
     echoServices = controller.discoverService("echo1");
-    Assert.assertTrue(YarnTestSuite.waitForSize(echoServices, 1, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(echoServices, 1, 60));
     report = controller.getResourceReport();
 
     // make sure resources for echo1 and echo2 are there

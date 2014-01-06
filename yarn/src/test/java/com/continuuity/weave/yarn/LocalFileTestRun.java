@@ -33,13 +33,7 @@ import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.concurrent.TimeUnit;
@@ -59,7 +53,7 @@ public class LocalFileTestRun {
     String header = Files.readFirstLine(new File(getClass().getClassLoader().getResource("header.txt").toURI()),
                                         Charsets.UTF_8);
 
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
     if (runner instanceof YarnWeaveRunnerService) {
       ((YarnWeaveRunnerService) runner).setJVMOptions("-verbose:gc -Xloggc:gc.log -XX:+PrintGCDetails");
     }
@@ -75,7 +69,7 @@ public class LocalFileTestRun {
     }
 
     Iterable<Discoverable> discoverables = controller.discoverService("local");
-    Assert.assertTrue(YarnTestSuite.waitForSize(discoverables, 1, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(discoverables, 1, 60));
 
     InetSocketAddress socketAddress = discoverables.iterator().next().getSocketAddress();
     Socket socket = new Socket(socketAddress.getAddress(), socketAddress.getPort());
@@ -93,7 +87,7 @@ public class LocalFileTestRun {
 
     controller.stopAndWait();
 
-    Assert.assertTrue(YarnTestSuite.waitForSize(discoverables, 0, 60));
+    Assert.assertTrue(YarnTestUtils.waitForSize(discoverables, 0, 60));
 
     TimeUnit.SECONDS.sleep(2);
   }

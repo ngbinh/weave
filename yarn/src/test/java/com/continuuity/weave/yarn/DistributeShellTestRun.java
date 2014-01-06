@@ -32,12 +32,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * This test is executed by {@link YarnTestSuite}.
  */
-public class DistributeShellTestRun {
+public final class DistributeShellTestRun extends BaseYarnTest {
 
   @Ignore
   @Test
   public void testDistributedShell() throws InterruptedException {
-    WeaveRunner weaveRunner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner weaveRunner = YarnTestUtils.getWeaveRunner();
 
     WeaveController controller = weaveRunner.prepare(new DistributedShell("pwd", "ls -al"))
                                             .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out)))

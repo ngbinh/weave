@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit;
  * Testing application master will shutdown itself when all tasks are completed.
  * This test is executed by {@link YarnTestSuite}.
  */
-public class TaskCompletedTestRun {
+public final class TaskCompletedTestRun extends BaseYarnTest {
 
   public static final class SleepTask extends AbstractWeaveRunnable {
 
@@ -58,7 +58,7 @@ public class TaskCompletedTestRun {
 
   @Test
   public void testTaskCompleted() throws InterruptedException {
-    WeaveRunner weaveRunner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner weaveRunner = YarnTestUtils.getWeaveRunner();
     WeaveController controller = weaveRunner.prepare(new SleepTask(),
                                                 ResourceSpecification.Builder.with()
                                                   .setVirtualCores(1)

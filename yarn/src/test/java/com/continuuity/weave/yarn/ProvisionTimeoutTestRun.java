@@ -15,14 +15,7 @@
  */
 package com.continuuity.weave.yarn;
 
-import com.continuuity.weave.api.AbstractWeaveRunnable;
-import com.continuuity.weave.api.EventHandler;
-import com.continuuity.weave.api.EventHandlerContext;
-import com.continuuity.weave.api.ResourceSpecification;
-import com.continuuity.weave.api.WeaveApplication;
-import com.continuuity.weave.api.WeaveController;
-import com.continuuity.weave.api.WeaveRunner;
-import com.continuuity.weave.api.WeaveSpecification;
+import com.continuuity.weave.api.*;
 import com.continuuity.weave.api.logging.PrinterLogHandler;
 import com.continuuity.weave.common.Services;
 import com.google.common.base.Throwables;
@@ -39,11 +32,11 @@ import java.util.concurrent.TimeoutException;
 /**
  *
  */
-public class ProvisionTimeoutTestRun {
+public final class ProvisionTimeoutTestRun extends BaseYarnTest {
 
   @Test
   public void testProvisionTimeout() throws InterruptedException, ExecutionException, TimeoutException {
-    WeaveRunner runner = YarnTestSuite.getWeaveRunner();
+    WeaveRunner runner = YarnTestUtils.getWeaveRunner();
 
     WeaveController controller = runner.prepare(new TimeoutApplication())
                                        .addLogHandler(new PrinterLogHandler(new PrintWriter(System.out, true)))

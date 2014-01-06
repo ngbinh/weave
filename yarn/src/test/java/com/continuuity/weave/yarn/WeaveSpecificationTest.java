@@ -26,7 +26,7 @@ import java.util.List;
 /**
  *
  */
-public class WeaveSpecificationTest {
+public final class WeaveSpecificationTest extends BaseYarnTest {
 
   /**
    * Dummy for test.
